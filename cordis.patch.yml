@@ -1,0 +1,11 @@
+# This bundle replaces the original adapter; never enable both for the same route.
+# Copy any other provider configuration into the replacement before enabling.
+- id: llm-pi-ai
+  name: '@deepseek-ai/dsh-llm-pi-ai'
+  disabled: true
+- insert:
+    - id: llm-pi-ai-catalog
+      name: dsh-copilot-catalog
+      config:
+        providers:
+          github-copilot: {}

@@ -1,0 +1,75 @@
+{
+  "name": "dsh-copilot-catalog",
+  "version": "0.1.0",
+  "description": "Account-aware GitHub Copilot model discovery for DeepSeek Harness, wrapping the existing pi-ai adapter.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./catalog": { "types": "./dist/catalog.d.ts", "import": "./dist/catalog.js" },
+    "./discovery": { "types": "./dist/discovery.d.ts", "import": "./dist/discovery.js" },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/",
+    "cordis.patch.yml",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test test/catalog.test.mjs test/discovery.test.mjs test/plugin.test.mjs test/secrets.test.mjs",
+    "check": "npm run typecheck && node scripts/check.mjs",
+    "verify": "npm run check:secrets && npm run check && npm test && npm run test:integration && npm run test:types && npm run test:pack",
+    "check:secrets": "node scripts/check-secrets.mjs",
+    "test:types": "npm run build && tsc -p test/types/tsconfig.json",
+    "test:integration": "npm run build && node --test test/integration/runtime.test.mjs",
+    "test:pack": "npm run build && node scripts/check-pack.mjs",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run verify"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "cordis-plugin",
+    "github-copilot",
+    "model-catalog",
+    "oauth"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/1yefuwang1/dsh-copilot-catalog.git"
+  },
+  "homepage": "https://github.com/1yefuwang1/dsh-copilot-catalog#readme",
+  "bugs": {
+    "url": "https://github.com/1yefuwang1/dsh-copilot-catalog/issues"
+  },
+  "engines": {
+    "node": ">=22.19.0",
+    "dsh": "0.2.0-rc.2"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-llm-pi-ai": "0.2.0-rc.2",
+    "@earendil-works/pi-ai": "0.87.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-llm-pi-ai": "0.2.0-rc.2",
+    "@earendil-works/pi-ai": "0.87.1",
+    "@types/node": "^22.19.0",
+    "typescript": "~5.9.3"
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

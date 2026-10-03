@@ -1,0 +1,44 @@
+name: Publish to npm
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: ${{ !github.event.release.prerelease && !github.event.release.draft }}
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          registry-url: https://registry.npmjs.org/
+      - name: Validate release identity
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+        run: |
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+            if (process.env.RELEASE_TAG !== `v${pkg.version}`) throw new Error("Release tag must match package version");
+            const expected = `git+https://github.com/${process.env.RELEASE_REPOSITORY}.git`;
+            if (pkg.repository?.url !== expected) throw new Error("Set package.json repository.url to the actual GitHub repository before publishing");
+          '
+      - name: Install without dependency lifecycle scripts
+        run: npm ci --ignore-scripts
+      - name: Verify release
+        run: npm run verify
+      - name: Publish using npm trusted publishing
+        run: npm publish --provenance --access public --ignore-scripts
