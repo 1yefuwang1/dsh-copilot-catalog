@@ -29,5 +29,5 @@
 - Add DSH bundle metadata, regression tests, peer integration tests, npm package
   allowlist checks, cross-platform CI, and a trusted-publishing release workflow.
 
-These entries describe prepared versions; source is available on GitHub, but no
-npm publication is implied.
+Version 0.2.0 was published to npm through staged GitHub Actions publishing with
+SLSA provenance on 2026-10-03. The 0.1.0 entry describes preparation history only.

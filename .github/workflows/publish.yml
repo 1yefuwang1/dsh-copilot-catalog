@@ -46,12 +46,7 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Verify release
         run: npm run verify
-      - name: Stage package on npm
-        # NPM_TOKEN bootstraps the first release because an unclaimed package has
-        # no npm settings page on which to register an OIDC trusted publisher.
+      - name: Stage package on npm using trusted publishing
+        # npm exchanges GitHub's short-lived OIDC identity; no registry token is stored.
         # A maintainer must review and approve the staged version with 2FA.
-        # After configuring trusted publishing, delete the environment secret;
-        # npm detects GitHub OIDC before falling back to this token.
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm stage publish --provenance --access public --ignore-scripts
