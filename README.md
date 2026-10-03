@@ -267,24 +267,26 @@ author details remain intentionally unset.
 4. The unclaimed package has no npm settings page yet, so the first GitHub Actions
    release needs a one-time granular npm token. Because the package does not yet
    exist, grant the shortest-lived token the minimum package read/write permission
-   that can create a public package; enable 2FA bypass only if your npm account
-   policy requires it. Store it as the `NPM_TOKEN` secret in the
-   GitHub `npm` environment. Never commit or paste the token into an issue, log,
-   workflow, or configuration file.
+   that can stage a public package. A stage-only token is sufficient; no 2FA bypass
+   is needed. Store it as the `NPM_TOKEN` secret in the GitHub `npm` environment.
+   Never commit or paste the token into an issue, log, workflow, or configuration.
 5. Push a matching `vX.Y.Z` tag and publish a GitHub Release for it. The workflow
    validates tag/version and repository metadata, runs the credential audit,
-   tests, peer integration, declarations, and tarball allowlist, then publishes
-   from GitHub Actions with provenance.
-6. Immediately after the first release, configure npm **Trusted Publisher** for:
-   GitHub user `1yefuwang1`, repository `dsh-copilot-catalog`, workflow
-   `publish.yml`, environment `npm`, with direct `npm publish` allowed. Delete the
-   GitHub `NPM_TOKEN` environment secret. Later releases authenticate only through
-   short-lived GitHub OIDC; npm detects OIDC before token fallback.
+   tests, peer integration, declarations, and tarball allowlist, then runs
+   `npm stage publish` from GitHub Actions with provenance. For a new package, npm
+   exposes a `0.0.0-stage` placeholder; version contents remain private.
+6. Review `0.2.0` in npm's **Staged Packages** page and approve it with 2FA. Then
+   configure npm **Trusted Publisher** for GitHub user `1yefuwang1`, repository
+   `dsh-copilot-catalog`, workflow `publish.yml`, environment `npm`, allowing
+   `npm stage publish`. Delete the GitHub `NPM_TOKEN` environment secret. Later
+   releases authenticate through short-lived GitHub OIDC and still require staged
+   review/approval; npm detects OIDC before token fallback.
 
 CI runs on Linux, macOS and Windows, on Node 22 and 24. The publish workflow requires
 Node 24/npm 11.5.1+ for trusted publishing and only runs for a published GitHub
-Release, not for pull requests. The `NPM_TOKEN` fallback is only for the first
-publication and should be deleted as soon as npm trusted publishing is configured.
+Release, not for pull requests. The workflow stages rather than directly publishes;
+a maintainer approves each release with 2FA. The `NPM_TOKEN` fallback is only for
+the first staging operation and should be deleted after trusted publishing is configured.
 Generated `dist/` files stay out of Git; only the
 compiled runtime, declarations, DSH bundle patch, README, changelog and license
 enter the npm tarball. Review files, tests, dependencies and credentials do not.
