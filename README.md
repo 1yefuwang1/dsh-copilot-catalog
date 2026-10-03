@@ -265,9 +265,10 @@ author details remain intentionally unset.
    ```
 
 4. The unclaimed package has no npm settings page yet, so the first GitHub Actions
-   release needs a one-time granular npm token. Create a token scoped to
-   `dsh-copilot-catalog` with publish permission, require 2FA bypass only if your
-   npm account policy requires it, and store it as the `NPM_TOKEN` secret in the
+   release needs a one-time granular npm token. Because the package does not yet
+   exist, grant the shortest-lived token the minimum package read/write permission
+   that can create a public package; enable 2FA bypass only if your npm account
+   policy requires it. Store it as the `NPM_TOKEN` secret in the
    GitHub `npm` environment. Never commit or paste the token into an issue, log,
    workflow, or configuration file.
 5. Push a matching `vX.Y.Z` tag and publish a GitHub Release for it. The workflow
@@ -283,7 +284,8 @@ author details remain intentionally unset.
 CI runs on Linux, macOS and Windows, on Node 22 and 24. The publish workflow requires
 Node 24/npm 11.5.1+ for trusted publishing and only runs for a published GitHub
 Release, not for pull requests. The `NPM_TOKEN` fallback is only for the first
-publication and should be deleted as soon as npm trusted publishing is configured. Generated `dist/` files stay out of Git; only the
+publication and should be deleted as soon as npm trusted publishing is configured.
+Generated `dist/` files stay out of Git; only the
 compiled runtime, declarations, DSH bundle patch, README, changelog and license
 enter the npm tarball. Review files, tests, dependencies and credentials do not.
 
