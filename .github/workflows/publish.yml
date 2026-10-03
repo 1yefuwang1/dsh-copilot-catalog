@@ -40,5 +40,11 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Verify release
         run: npm run verify
-      - name: Publish using npm trusted publishing
+      - name: Publish to npm
+        # NPM_TOKEN bootstraps the first release because an unclaimed package has
+        # no npm settings page on which to register an OIDC trusted publisher.
+        # After configuring trusted publishing, delete the environment secret;
+        # npm detects GitHub OIDC before falling back to this token.
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --provenance --access public --ignore-scripts
