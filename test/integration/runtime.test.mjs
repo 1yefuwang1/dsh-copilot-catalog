@@ -31,22 +31,31 @@ test('discovery mutates the catalog visible to the real adapter catalog APIs', a
         refresh: async (value) => value,
         toAuth: async () => ({ apiKey: 'synthetic', baseUrl: 'https://api.individual.githubcopilot.com' }),
       },
-      fetcher: async () => ({ ok: true, json: async () => ({ data: [accountItem('gpt-6.1-sol')] }) }),
+      fetcher: async () => ({ ok: true, json: async () => ({ data: [accountItem('future-responses-model')] }) }),
     });
     assert.equal(result.status, 'synced');
-    assert.deepEqual(getBuiltinModels('github-copilot').map((model) => model.id), ['gpt-6.1-sol']);
+    assert.deepEqual(getBuiltinModels('github-copilot').map((model) => model.id), ['future-responses-model']);
     const provider = builtinProviders().find((value) => value.id === 'github-copilot');
-    assert.deepEqual(provider.getModels().map((model) => model.id), ['gpt-6.1-sol']);
+    assert.deepEqual(provider.getModels().map((model) => model.id), ['future-responses-model']);
   } finally {
     replaceCatalog(catalog, snapshot);
   }
 });
 
-test('actual published catalog supports both declared sibling templates', async () => {
+test('actual published provider supports every dynamically selected protocol', async () => {
   const { catalog } = await loadRuntime();
-  const { models } = selectAccountModels({ data: [accountItem('gpt-6.1-sol'), accountItem('gpt-5.6-sol-fast')] }, catalog);
-  for (const id of ['gpt-6.1-sol', 'gpt-5.6-sol-fast']) {
-    assert.equal(models[id].api, 'openai-responses');
+  const items = [
+    accountItem('future-responses-model'),
+    accountItem('future-chat-model', { supported_endpoints: ['/chat/completions'] }),
+    accountItem('future-messages-model', { supported_endpoints: ['/v1/messages'] }),
+  ];
+  const { models } = selectAccountModels({ data: items }, catalog);
+  for (const [id, api] of [
+    ['future-responses-model', 'openai-responses'],
+    ['future-chat-model', 'openai-completions'],
+    ['future-messages-model', 'anthropic-messages'],
+  ]) {
+    assert.equal(models[id].api, api);
     assert.equal(models[id].provider, 'github-copilot');
     assert.equal(models[id].contextWindow, 1000000);
   }

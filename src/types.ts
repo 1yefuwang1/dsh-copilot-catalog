@@ -20,16 +20,27 @@ export interface AccountSelection {
 }
 
 export type SyncResult =
-  | { status: 'no OAuth grant' }
+  | { status: 'no Copilot credential' }
   | { status: 'synced'; count: number; unsupported: string[] };
 
-export interface DiscoveryOptions {
+export interface CopilotAuthOptions {
+  /** Explicit API-key route endpoint; OAuth grants still own their derived endpoint. */
+  baseUrl?: string;
+  /** An explicit apiKeyEnv reference wins over the stored account grant, as in pi-ai. */
+  resolveApiKey?: () => Promise<string | undefined>;
+  /** Read-only ambient lookup, consulted only when no OAuth grant owns the route. */
+  resolveAmbientApiKey?: () => Promise<string | undefined>;
+}
+
+export interface DiscoveryOptions extends CopilotAuthOptions {
   catalog: ModelCatalog;
   oauth: CopilotOAuth;
   recordKey: CredentialKey;
   fetcher?: typeof globalThis.fetch;
   timeoutMs?: number;
   now?: () => number;
+  /** Routing may adopt a validated account endpoint even if model listing later fails. */
+  onEndpoint?: (baseUrl: string) => void;
 }
 
 export interface PluginDependencies extends Omit<DiscoveryOptions, 'recordKey'> {
@@ -40,7 +51,7 @@ export interface CatalogPlugin {
   name: OriginalAdapter['name'];
   Config: OriginalAdapter['Config'];
   inject: string[];
-  sync(credentials?: CredentialReader): Promise<SyncResult>;
+  sync(credentials?: CredentialReader, authOptions?: CopilotAuthOptions): Promise<SyncResult>;
   apply(ctx: PluginContext, config: PluginConfig): Promise<void>;
 }
 

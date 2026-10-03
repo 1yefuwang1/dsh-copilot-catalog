@@ -1,4 +1,4 @@
-import { replaceCatalog, selectAccountModels } from './catalog.js';
+import { copilotHeaders, replaceCatalog, selectAccountModels } from './catalog.js';
 import { asRecord, type CopilotGrant, type CredentialReader, type DiscoveryOptions, type SyncResult } from './types.js';
 
 export const VERSION_HEADER = '2026-06-01';
@@ -43,6 +43,10 @@ export async function syncCopilotCatalog(credentials: CredentialReader | undefin
   fetcher = globalThis.fetch,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   now = Date.now,
+  baseUrl,
+  resolveApiKey,
+  resolveAmbientApiKey,
+  onEndpoint,
 }: DiscoveryOptions): Promise<SyncResult> {
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 60_000) {
     throw new TypeError('timeoutMs must be an integer between 1 and 60000');
@@ -60,24 +64,55 @@ export async function syncCopilotCatalog(credentials: CredentialReader | undefin
     }, timeoutMs);
   });
   const work = async (): Promise<SyncResult> => {
-    let credential = oauthGrant(await credentials?.readRecord(recordKey));
+    const record = resolveApiKey ? undefined : await credentials?.readRecord(recordKey);
     signal.throwIfAborted();
-    if (!credential) return { status: 'no OAuth grant' };
-    if (now() + 5 * 60_000 >= credential.expires) {
-      // Deliberately no credential-store writes. The original adapter owns
-      // persisted refresh and its cross-process locking on model requests.
-      credential = await oauth.refresh(credential, signal);
+    let credential = resolveApiKey ? undefined : oauthGrant(record);
+    let apiKey: string | undefined;
+    let url: URL;
+    const adoptEndpoint = (value: unknown): URL => {
       signal.throwIfAborted();
+      const endpoint = discoveryUrl(value);
+      onEndpoint?.(endpoint.origin);
+      return endpoint;
+    };
+    if (credential) {
+      // Capture routing before refresh/listing: fallback must not send an
+      // Enterprise account to the bundled Individual endpoint.
+      let auth = await oauth.toAuth(credential);
+      url = adoptEndpoint(auth.baseUrl);
+      if (now() + 5 * 60_000 >= credential.expires) {
+        // No credential-store writes. The original adapter owns locked refresh.
+        credential = await oauth.refresh(credential, signal);
+        signal.throwIfAborted();
+        auth = await oauth.toAuth(credential);
+        url = adoptEndpoint(auth.baseUrl);
+      }
+      apiKey = auth.apiKey;
+    } else {
+      const entry = asRecord(record);
+      const storedKey = entry?.kind === 'api-key' && typeof entry.key === 'string' ? entry.key : undefined;
+      apiKey = resolveApiKey ? await resolveApiKey()
+        : storedKey ?? (entry?.kind === 'grant' ? undefined : await resolveAmbientApiKey?.());
+      signal.throwIfAborted();
+      if (typeof apiKey !== 'string' || !apiKey.trim()) return { status: 'no Copilot credential' };
+      if (baseUrl !== undefined) {
+        url = adoptEndpoint(baseUrl);
+      } else if (/(?:^|;)proxy-ep=[^;]+/.test(apiKey)) {
+        // toAuth is read-only. It can decode an access token's proxy-ep without
+        // requiring a refresh token or synthesizing a persisted OAuth grant.
+        const auth = await oauth.toAuth({ type: 'oauth', access: apiKey, refresh: '', expires: 0 });
+        url = adoptEndpoint(auth.baseUrl);
+      } else {
+        throw new DiscoveryError('MISSING_ENDPOINT', 'API-key auth requires a Copilot proxy endpoint or explicit baseURL');
+      }
     }
-    const auth = await oauth.toAuth(credential);
     signal.throwIfAborted();
-    const url = discoveryUrl(auth.baseUrl);
-    if (typeof auth.apiKey !== 'string' || !auth.apiKey.trim()) {
+    if (typeof apiKey !== 'string' || !apiKey.trim()) {
       throw new DiscoveryError('INVALID_AUTH', 'No usable Copilot API token');
     }
-    const headers = new Headers(catalog['gpt-6-sol']?.headers);
+    const headers = new Headers(copilotHeaders(catalog));
     headers.set('Accept', 'application/json');
-    headers.set('Authorization', `Bearer ${auth.apiKey}`);
+    headers.set('Authorization', `Bearer ${apiKey}`);
     headers.set('X-GitHub-Api-Version', VERSION_HEADER);
     const response = await fetcher(url, { headers, signal, redirect: 'error' });
     signal.throwIfAborted();
@@ -87,7 +122,7 @@ export async function syncCopilotCatalog(credentials: CredentialReader | undefin
     const body: unknown = await response.json();
     signal.throwIfAborted();
     let selected;
-    try { selected = selectAccountModels(body, catalog); } catch {
+    try { selected = selectAccountModels(body, catalog, { baseUrl: url.origin }); } catch {
       throw new DiscoveryError('INVALID_CATALOG', 'No valid supported account catalog');
     }
     signal.throwIfAborted();

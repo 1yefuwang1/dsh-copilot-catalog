@@ -21,18 +21,84 @@ test('discovery uses shared catalog, authoritative auth headers, HTTPS and no re
   assert.equal(init.signal.aborted, false);
 });
 
-test('missing, invalid or api-key credentials leave defaults intact with no network call', async () => {
+test('generic discovery uses the OAuth origin and survives catalogs with no original models', async () => {
+  const f = discoveryFixture();
+  for (const id of Object.keys(f.catalog)) delete f.catalog[id];
+  let generation = 0;
+  f.options.fetcher = async (url, init) => {
+    f.requests.push(['fetch', url, init]);
+    generation++;
+    assert.equal(init.headers.get('Editor-Version'), 'vscode/1.107.0');
+    return { ok: true, json: async () => ({ data: [accountItem(`future-model-${generation}`)] }) };
+  };
+  for (const generation of [1, 2]) {
+    const result = await sync(f);
+    assert.equal(result.status, 'synced');
+    assert.deepEqual(Object.keys(f.catalog), [`future-model-${generation}`]);
+    const model = f.catalog[`future-model-${generation}`];
+    assert.equal(model.baseUrl, 'https://api.enterprise.githubcopilot.com');
+    assert.equal(model.headers.Authorization, undefined);
+  }
+});
+
+test('missing or malformed credentials leave defaults intact with no network call', async () => {
   for (const record of [undefined, { kind: 'api-key', payload: 'test' },
     grantFixture({ refresh: '' }), grantFixture({ access: ' ' }), grantFixture({ expires: Infinity }),
   ]) {
     const f = discoveryFixture();
     f.credentials.readRecord = async () => record;
     const before = structuredClone(f.catalog);
-    assert.deepEqual(await sync(f), { status: 'no OAuth grant' });
+    assert.deepEqual(await sync(f), { status: 'no Copilot credential' });
     assert.deepEqual(f.catalog, before);
     assert.deepEqual(f.requests, []);
   }
-  assert.deepEqual(await syncCopilotCatalog(undefined, discoveryFixture().options), { status: 'no OAuth grant' });
+  assert.deepEqual(await syncCopilotCatalog(undefined, discoveryFixture().options), { status: 'no Copilot credential' });
+});
+
+test('stored API-key Copilot tokens derive an Enterprise endpoint without refresh or writes', async () => {
+  const f = discoveryFixture();
+  const token = ['synthetic-token', 'proxy-ep=proxy.enterprise.githubcopilot.com'].join(';');
+  const record = { kind: 'api-key', key: token };
+  f.credentials.readRecord = async () => record;
+  f.options.oauth.refresh = () => { throw new Error('API-key credentials cannot refresh'); };
+  f.options.oauth.toAuth = async (credential) => {
+    assert.equal(credential.access, token);
+    return { apiKey: token, baseUrl: 'https://api.enterprise.githubcopilot.com' };
+  };
+  const before = structuredClone(record);
+  await sync(f);
+  assert.deepEqual(record, before);
+  assert.equal(f.requests[0][1].origin, 'https://api.enterprise.githubcopilot.com');
+  assert.equal(f.requests[0][2].headers.get('Authorization'), `Bearer ${token}`);
+});
+
+test('opaque API-key credentials need an explicit endpoint rather than guessing Individual', async () => {
+  const f = discoveryFixture({ resolveApiKey: async () => 'synthetic-token' });
+  const before = structuredClone(f.catalog);
+  await assert.rejects(sync(f), { code: 'MISSING_ENDPOINT' });
+  assert.deepEqual(f.catalog, before);
+  assert.deepEqual(f.requests, []);
+  f.options.baseUrl = 'https://api.enterprise.githubcopilot.com';
+  f.options.oauth.toAuth = () => { throw new Error('An explicit API-key endpoint needs no OAuth derivation'); };
+  await sync(f);
+  assert.equal(f.requests[0][1].origin, 'https://api.enterprise.githubcopilot.com');
+});
+
+test('validated OAuth routing is published before a failed refresh/listing but never after timeout', async () => {
+  const f = discoveryFixture();
+  const seen = [];
+  f.options.onEndpoint = (endpoint) => seen.push(endpoint);
+  f.record.payload.expires = 0;
+  f.options.oauth.refresh = async () => { throw new Error('synthetic failure'); };
+  await assert.rejects(sync(f));
+  assert.deepEqual(seen, ['https://api.enterprise.githubcopilot.com']);
+  const late = discoveryFixture({ timeoutMs: 10, onEndpoint: (endpoint) => seen.push(endpoint) });
+  let release;
+  late.options.oauth.toAuth = () => new Promise((resolve) => { release = resolve; });
+  await assert.rejects(sync(late), { code: 'TIMEOUT' });
+  release({ apiKey: 'synthetic', baseUrl: 'https://api.business.githubcopilot.com' });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(seen, ['https://api.enterprise.githubcopilot.com']);
 });
 
 test('expiring credentials refresh only a cloned in-memory grant and share the deadline signal', async () => {

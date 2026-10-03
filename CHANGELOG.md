@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.0 — General discovery and Enterprise routing
+
+- Remove the model-ID allowlist and sibling templates. Construct any newly
+  discovered chat model from its advertised endpoint, limits, vision, reasoning,
+  and billing metadata.
+- Support Responses, Chat Completions, and native Anthropic Messages with
+  conservative protocol defaults and deterministic endpoint preference.
+- Stop guessing another model's pricing or reasoning capabilities. Preserve
+  upstream descriptors for IDs the bundled catalog already knows.
+- Remove discovery's dependency on a particular model's headers.
+- Derive Enterprise endpoints for OAuth grants and API-key access tokens, honor
+  explicit API-key URLs/references, and overlay routing defaults in memory for
+  new and bundled models even when listing fails.
+- Add actual DSH-adapter/SDK discovery and inference regressions with synthetic
+  Enterprise credentials and SSE responses; no live account calls or secret writes.
+
 ## 0.1.0 — Initial release preparation
 
 - Convert the local Copilot catalog wrapper to strict TypeScript with ESM output
@@ -13,5 +29,5 @@
 - Add DSH bundle metadata, regression tests, peer integration tests, npm package
   allowlist checks, cross-platform CI, and a trusted-publishing release workflow.
 
-This entry describes prepared source, not a claim that the package has already
-been published to npm or GitHub.
+These entries describe prepared versions; source is available on GitHub, but no
+npm publication is implied.

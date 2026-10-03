@@ -6,9 +6,16 @@ are ESM JavaScript under [`test/`](test/) and exercise the compiled output. No l
 OAuth grant or Copilot account is required. Keep the lockfile committed.
 
 Do not add application-specific paths, install-time profile edits, credential
-writes, tokens in fixtures, or raw network/auth errors in logs. New model templates
-must have an explicitly verified compatible API, valid limits, and tests for
-reasoning/vision/pricing behavior. Do not guess protocols for arbitrary new IDs.
+writes, real tokens in fixtures, or raw network/auth errors in logs. Model IDs are
+opaque: do not reintroduce model-name allowlists or sibling templates. New protocol
+mappings must use advertised endpoints, valid limits, and tests for reasoning,
+vision, pricing, and actual SDK request construction. Keep protocol defaults
+conservative; do not infer vendor-specific features from names.
+
+Enterprise routing is part of the core contract. Test discovery and inference for
+OAuth and API-key auth, including known bundled models and failed `/models` calls.
+Validate credential-reference grammar and endpoint origins before using them.
+Inferred routing must remain an in-memory default, not a profile or grant write.
 
 Preserve the original adapter's schema and credential record key. Run the peer
 integration suite after any dependency upgrade. Widen version ranges only after

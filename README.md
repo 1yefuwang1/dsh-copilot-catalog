@@ -13,16 +13,26 @@ No hard-coded application paths, credential-file edits, or signed-app modificati
 - Shows picker-enabled models whose policy is enabled or absent and which do not
   explicitly reject tool calls.
 - Preserves upstream descriptors for known IDs, including mixed API protocols.
-- Adds two explicitly reviewed Responses-compatible sibling templates:
+- Builds descriptors for **any newly discovered model ID**, without a model-name
+  allowlist, sibling template, or vendor-name heuristic. Transport selection uses
+  the advertised `supported_endpoints`:
 
-  | New model | Bundled template |
+  | Advertised endpoint | pi-ai transport |
   | --- | --- |
-  | `gpt-6.1-sol` | `gpt-6-sol` |
-  | `gpt-5.6-sol-fast` | `gpt-5.6-sol` |
+  | `/responses` | `openai-responses` |
+  | `/v1/messages` | `anthropic-messages` |
+  | `/chat/completions` | `openai-completions` |
 
-- Uses live positive context/output limits, vision support, reasoning restrictions,
-  and validated pricing for those new siblings. Unknown new IDs are logged and
-  skipped; protocols are never inferred from arbitrary model names.
+  When multiple supported endpoints are offered, preference is Responses, native
+  Messages, then Chat Completions, independent of array order or model name.
+- Uses live positive context/output limits, vision support, advertised reasoning
+  efforts, and validated pricing for new models. Only unknown protocols, invalid
+  request IDs, non-chat/non-streaming models, or insufficient limits are skipped.
+  Missing pricing uses zero-valued **unknown rates**, not another model's prices.
+- Keeps **Enterprise routing for discovery and inference**, including known
+  bundled models and API-key auth. A validated account endpoint is applied as an
+  in-memory provider default even if the model listing later fails. Explicit
+  configured API-key endpoints are preserved; no profile setting is rewritten.
 - Leaves the current catalog untouched if discovery fails or yields no supported
   models. On first startup this means all bundled defaults remain available.
 - Bounds the whole attempt to **10 seconds**, including credential reads, refresh,
@@ -47,6 +57,46 @@ plugin to update a different pi-ai instance. Type-only imports are erased by the
 compiler. The public Copilot provider supplies OAuth hooks; private auth modules
 are not imported. Version ranges are deliberately conservative: verify a new DSH
 or pi-ai version before widening them.
+
+## Enterprise authentication and endpoint routing
+
+This plugin also works around pi-ai's API-key path: an explicit API key bypasses
+OAuth `toAuth()`, so upstream otherwise retains the bundled Individual endpoint.
+The wrapper discovers an account endpoint and supplies it to the original adapter
+as a **runtime-only `baseURL` default**, covering new and bundled models.
+
+- **Stored Copilot OAuth grant:** use the provider's public `toAuth()` to derive
+  the account endpoint. The original adapter still owns persisted refresh and
+  derives request auth normally; Enterprise grants do not become Individual keys.
+- **Copilot access token supplied as an API key:** use its `proxy-ep` metadata to
+  derive the endpoint through the same read-only OAuth hook. This applies to stored
+  API-key records, explicit `apiKeyEnv` references, and ambient `COPILOT_GITHUB_TOKEN`.
+  An explicit reference wins over a different stored OAuth account, as in pi-ai.
+- **Opaque token:** no account endpoint can be inferred safely. Set the existing
+  provider `baseURL` field explicitly, or use DSH's normal Copilot OAuth sign-in.
+  Discovery reports `MISSING_ENDPOINT` rather than assuming the Individual API.
+- **GitHub PAT:** it is not a Copilot access token. The wrapper does not guess the
+  Enterprise GitHub domain or implement a second sign-in/exchange flow; use OAuth.
+
+For an explicit Enterprise API-key route, use a credential reference, not a literal
+key in your profile:
+
+```yaml
+- id: llm-pi-ai-catalog
+  name: dsh-copilot-catalog
+  config:
+    providers:
+      github-copilot:
+        apiKeyEnv: COPILOT_ACCESS_TOKEN
+        baseURL: https://api.enterprise.githubcopilot.com
+```
+
+Use the endpoint belonging to **your** account; do not assume Enterprise seats all
+share a GitHub Enterprise Server domain. Discovery only trusts HTTPS
+`*.githubcopilot.com` origins. Inferred API-key routing is a startup snapshot;
+restart after changing accounts or moving a key to a different endpoint. If no
+endpoint can be identified, the original adapter remains mounted with its original
+configuration, so an opaque Enterprise key still needs an explicit `baseURL`.
 
 ## Installation
 
@@ -113,6 +163,8 @@ custom URLs, models, headers and overrides, as needed:
 
 All original adapter configuration fields remain valid. The wrapper exports the
 original `Config` schema unchanged; it adds no secret or custom discovery settings.
+An inferred endpoint is overlaid only while the adapter reads the configuration;
+settings persistence, explicit URLs, and other providers are left untouched.
 If your original adapter has a different entry ID, adjust the disabling override
 in your profile accordingly.
 
@@ -120,9 +172,10 @@ in your profile accordingly.
 
 Successful discovery logs `Copilot catalog synced` with the supported model count
 and JSON-escaped unsupported IDs. Failures log one of `TIMEOUT`, `HTTP_ERROR`,
-`INVALID_CATALOG`, `UNTRUSTED_ENDPOINT`, `INVALID_AUTH`, `IMMUTABLE_CATALOG`, or
-`DISCOVERY_FAILED`; startup still delegates to the original adapter. Missing OAuth
-credentials keep the defaults. Sign in through DSH's normal Copilot authorization
+`INVALID_CATALOG`, `UNTRUSTED_ENDPOINT`, `INVALID_AUTH`, `MISSING_ENDPOINT`,
+`IMMUTABLE_CATALOG`, or `DISCOVERY_FAILED`; startup still delegates to the original
+adapter. Missing Copilot credentials keep the defaults. A validated runtime
+endpoint is logged separately without any token or credential value. Sign in through DSH's normal Copilot authorization
 flow, then restart to perform account discovery.
 
 ### Rollback
@@ -149,11 +202,14 @@ npm run verify         # all of the above
 npm pack --dry-run
 ```
 
-The tests use synthetic credentials and response fixtures. They cover filtering,
-unknown/prototype-sensitive IDs, mixed APIs, reasoning mappings, billing fallback,
-read-only refresh, endpoint restrictions, full-attempt deadlines, late responses,
-fail-open delegation, safe diagnostics, and actual peer loading. No live Copilot
-request or authentication flow is run automatically.
+The tests use synthetic credentials and response/SSE fixtures. They cover arbitrary
+new IDs, three advertised protocols, prototype-sensitive IDs, reasoning metadata,
+unknown pricing, read-only refresh, endpoint restrictions, deadlines, late responses,
+fail-open delegation, and safe diagnostics. Integration tests mount the **actual DSH
+adapter** and exercise real SDK request construction for OAuth Enterprise grants,
+API-key overrides, stored access tokens, explicit URLs, and failed model listing.
+Every mocked discovery/inference request is asserted to target the Enterprise origin.
+No live Copilot request or authentication flow is run automatically.
 
 - [`src/index.ts`](src/index.ts): DSH entry point.
 - [`src/runtime.ts`](src/runtime.ts): shared adapter/pi-ai resolution.
@@ -243,7 +299,18 @@ enter the npm tarball. Review files, tests, dependencies and credentials do not.
   adapter instance. A failed later mount keeps the current process's catalog, not
   necessarily the original defaults; a full restart resets it.
 - Existing upstream model descriptors are intentionally preserved, not refreshed
-  field-by-field. Only the two allowlisted new sibling IDs use live metadata.
+  field-by-field. Newly discovered IDs use live metadata and conservative per-protocol
+  defaults. Unknown pricing is zero-valued metadata, not a claim that access is free.
+- New models require advertised supported endpoints and valid positive context/output
+  limits. No endpoint, family, or protocol is guessed from a model name. Optional
+  strict tools, developer-role support, long cache retention and advanced features
+  are not assumed; correct a model with the original adapter's `modelOverrides` if
+  its gateway needs additional compatibility settings.
+- Only recognized advertised reasoning-effort values are selectable (`none` maps to
+  `off`). Absent/unrecognized effort metadata does not invent reasoning settings;
+  native Anthropic `thinking: true` without an effort list uses standard budget
+  levels. Native Messages effort lists use adaptive thinking. Endpoint metadata is
+  not a guarantee that every optional feature works identically on every gateway.
 - Original adapter credential filtering, explicit `models` lists, and
   `modelOverrides` still apply. This plugin neither enables account policies nor
   changes stored `availableModelIds`; an upstream credential allowlist can still
@@ -251,8 +318,9 @@ enter the npm tarball. Review files, tests, dependencies and credentials do not.
 - Enterprise OAuth endpoints outside HTTPS `*.githubcopilot.com` are rejected by
   discovery; normal adapter behavior remains available as fallback.
 - Upstream catalog structure, protocol compatibility and Copilot billing metadata
-  are not stable public contracts. Re-test templates after updates. This package
-  is not affiliated with DeepSeek, GitHub, or the pi-ai maintainers.
+  are not stable public contracts. Re-test protocol defaults and Enterprise routing
+  after updates. This package is not affiliated with DeepSeek, GitHub, or the pi-ai
+  maintainers.
 
 ## License
 

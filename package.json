@@ -1,6 +1,6 @@
 {
   "name": "dsh-copilot-catalog",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Account-aware GitHub Copilot model discovery for DeepSeek Harness, wrapping the existing pi-ai adapter.",
   "type": "module",
   "main": "./dist/index.js",
@@ -26,7 +26,7 @@
     "verify": "npm run check:secrets && npm run check && npm test && npm run test:integration && npm run test:types && npm run test:pack",
     "check:secrets": "node scripts/check-secrets.mjs",
     "test:types": "npm run build && tsc -p test/types/tsconfig.json",
-    "test:integration": "npm run build && node --test test/integration/runtime.test.mjs",
+    "test:integration": "npm run build && node --test test/integration/runtime.test.mjs test/integration/enterprise.test.mjs",
     "test:pack": "npm run build && node scripts/check-pack.mjs",
     "prepare": "npm run build",
     "prepublishOnly": "npm run verify"
@@ -58,10 +58,12 @@
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-llm-pi-ai": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-launch-environment": "0.2.0-rc.2",
     "@earendil-works/pi-ai": "0.87.1"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-llm-pi-ai": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-launch-environment": "0.2.0-rc.2",
     "@earendil-works/pi-ai": "0.87.1",
     "@types/node": "^22.19.0",
     "typescript": "~5.9.3"

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createPlugin } from '../dist/plugin.js';
+import { createPlugin, withCopilotEndpoint } from '../dist/plugin.js';
 import { accountItem, catalogFixture, discoveryFixture } from './helpers.mjs';
 
 function fixture(overrides = {}) {
@@ -23,7 +23,7 @@ function fixture(overrides = {}) {
   return { ...f, plugin, original, ctx, config, calls };
 }
 
-test('wrapper preserves original schema, name, dependencies, return and config identity', async () => {
+test('wrapper preserves original schema and settings while adding an Enterprise runtime default', async () => {
   const f = fixture();
   assert.equal(f.plugin.name, f.original.name);
   assert.equal(f.plugin.Config, f.original.Config);
@@ -31,7 +31,8 @@ test('wrapper preserves original schema, name, dependencies, return and config i
   assert.equal(await f.plugin.apply(f.ctx, f.config), 'adapter-result');
   const invocation = f.calls.find((call) => call[0] === 'apply');
   assert.equal(invocation[1], f.ctx);
-  assert.equal(invocation[2], f.config);
+  assert.equal(invocation[2].providers.get()['github-copilot'].baseURL, 'https://api.enterprise.githubcopilot.com');
+  assert.equal(f.config.providers.get()['github-copilot'].baseURL, undefined);
   assert.deepEqual(invocation[3], ['gpt-6-sol']);
 });
 
@@ -66,6 +67,46 @@ test('new model diagnostics escape control characters', async () => {
   await f.plugin.apply(f.ctx, f.config);
   const diagnostic = f.calls[0].at(-1);
   assert.equal(diagnostic, '["unknown\\nFORGED-LOG"]');
+});
+
+test('validated Enterprise routing survives a failed model listing without changing bundled descriptors', async () => {
+  const f = fixture({ fetcher: async () => ({ ok: false, status: 503 }) });
+  const before = structuredClone(f.catalog);
+  await f.plugin.apply(f.ctx, f.config);
+  const invocation = f.calls.find((call) => call[0] === 'apply');
+  assert.equal(invocation[2].providers.get()['github-copilot'].baseURL, 'https://api.enterprise.githubcopilot.com');
+  assert.deepEqual(f.catalog, before);
+});
+
+test('runtime default preserves explicit URLs, other providers, volatile updates, and snapshot memoization', () => {
+  let raw = { 'github-copilot': {}, openai: { baseURL: 'https://example.invalid' } };
+  const config = { providers: { get: () => raw } };
+  const routed = withCopilotEndpoint(config, 'https://api.enterprise.githubcopilot.com');
+  const first = routed.providers.get();
+  assert.equal(routed.providers.get(), first);
+  assert.equal(first.openai, raw.openai);
+  assert.equal(raw['github-copilot'].baseURL, undefined);
+  raw = { ...raw, 'github-copilot': { baseURL: 'https://api.business.githubcopilot.com' } };
+  assert.equal(routed.providers.get(), raw);
+  assert.equal(routed.providers.get()['github-copilot'].baseURL, 'https://api.business.githubcopilot.com');
+  raw = { ...raw, 'github-copilot': {} };
+  assert.equal(routed.providers.get()['github-copilot'].baseURL, 'https://api.enterprise.githubcopilot.com');
+  assert.equal(withCopilotEndpoint(config, undefined), config);
+});
+
+test('an explicit API-key reference wins over an unrelated stored OAuth account', async () => {
+  const f = fixture();
+  const token = ['synthetic-token', 'proxy-ep=proxy.enterprise.githubcopilot.com'].join(';');
+  f.config.providers.get = () => ({ 'github-copilot': { apiKeyEnv: 'SYNTHETIC_COPILOT_TOKEN' } });
+  f.credentials.resolve = async (ref) => {
+    assert.equal(ref, 'SYNTHETIC_COPILOT_TOKEN');
+    return { value: token };
+  };
+  f.credentials.readRecord = () => { throw new Error('Explicit API key must bypass the unrelated stored grant'); };
+  await f.plugin.apply(f.ctx, f.config);
+  const invocation = f.calls.find((call) => call[0] === 'apply');
+  assert.equal(invocation[2].providers.get()['github-copilot'].baseURL, 'https://api.enterprise.githubcopilot.com');
+  assert.equal(f.requests.find((request) => request[0] === 'fetch')[2].headers.get('Authorization'), `Bearer ${token}`);
 });
 
 test('adapter mount errors remain fatal rather than being mistaken for discovery failures', async () => {
