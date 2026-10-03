@@ -7,6 +7,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: npm-publish-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
 jobs:
   publish:
     if: ${{ !github.event.release.prerelease && !github.event.release.draft }}
@@ -16,14 +20,16 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.release.tag_name }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: npm
+          package-manager-cache: false
           registry-url: https://registry.npmjs.org/
+      - name: Pin npm with trusted-publishing support
+        run: npm install --global npm@11.19.1
       - name: Validate release identity
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
