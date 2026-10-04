@@ -1,6 +1,6 @@
 {
   "name": "dsh-copilot-catalog",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Account-aware GitHub Copilot model discovery for DeepSeek Harness, wrapping the existing pi-ai adapter.",
   "type": "module",
   "main": "./dist/index.js",

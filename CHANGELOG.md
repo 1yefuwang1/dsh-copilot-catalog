@@ -15,5 +15,5 @@
 
 Package history and versions are independent:
 
-- [Catalog changelog](packages/catalog/CHANGELOG.md) — retained `0.2.0`, previously published.
-- [Search changelog](packages/search/CHANGELOG.md) — initial `0.1.0`, not published by this migration.
+- [Catalog changelog](packages/catalog/CHANGELOG.md) — `0.2.1` catalog packaging release; `0.2.0` previously published.
+- [Search changelog](packages/search/CHANGELOG.md) — `0.1.1` native-search implementation and streaming compatibility fix; not published by this migration.

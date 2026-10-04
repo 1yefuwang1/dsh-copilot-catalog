@@ -1,11 +1,13 @@
 # Changelog
 
-## Unreleased — pnpm monorepo packaging
+## 0.2.1 — pnpm monorepo packaging
 
 - Move source, tests and DSH bundle into the independently publishable catalog workspace.
 - Preserve the npm name, public exports, runtime behavior, schema and credential key.
-- Use pnpm workspace tooling and package-specific staged release tags.
-- Retain version 0.2.0 during migration; increment before the next npm release.
+- Use pnpm workspace tooling and package-specific tokenless staged release tags.
+- Validate both plugins on Windows, macOS and Linux with Node 22/24, including
+  cross-platform workspace-file line endings and credential-safe release tooling.
+- Release only the catalog package; the independent search plugin is unchanged.
 
 ## 0.2.0 — General discovery and Enterprise routing
 

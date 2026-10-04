@@ -136,10 +136,10 @@ A release selects **one package**, never the root or both packages at once:
 - `dsh-copilot-catalog-vX.Y.Z`
 - `dsh-copilot-search-vX.Y.Z`
 
-The tag must match its leaf version and repository identity. Catalog `0.2.0` is
-retained during migration; increment it before another catalog release because
-it was already published. Search is currently `0.1.1`, including the verified
-Copilot stream-ID compatibility fix, and has not been published by this migration.
+The tag must match its leaf version and repository identity. Catalog is currently
+`0.2.1`; its previously published `0.2.0` cannot be republished. Search is currently
+`0.1.1`, including the verified Copilot stream-ID compatibility fix, and has not
+been published by this migration.
 
 The [release workflow](.github/workflows/publish.yml) installs/verifies with pnpm,
 then uses native `pnpm stage publish` to stage **only the selected leaf** through

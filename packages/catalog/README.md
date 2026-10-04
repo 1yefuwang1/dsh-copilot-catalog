@@ -238,8 +238,9 @@ and tooling.
 ## Releases
 
 This package keeps the existing `dsh-copilot-catalog` name and independent version.
-Version `0.2.0` is retained during migration and was already published; increment
-its manifest version and changelog before the next release.
+Version `0.2.1` packages the preserved catalog runtime from its pnpm workspace.
+Version `0.2.0` was already published; every subsequent release must use a new
+manifest version and matching changelog entry.
 
 Use a **package-specific** tag `dsh-copilot-catalog-vX.Y.Z`. The shared release
 workflow checks that it exactly matches this leaf's version/repository directory,
