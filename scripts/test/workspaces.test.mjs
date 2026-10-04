@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { resolve } from 'node:path';
 import { readFile } from 'node:fs/promises';
-import { root, workspacePaths, packages, containedPath, releasePackage } from '../workspaces.mjs';
+import { root, workspacePaths, packages, containedPath, releasePackage, assertWorkspaceDefinition } from '../workspaces.mjs';
 import { releaseIdentity } from '../release.mjs';
 import { findCredentialIssues } from '../check-secrets.mjs';
 
@@ -11,6 +11,24 @@ const candidates = ['catalog', 'search'].map((name) => ({ path: `packages/${name
   name: `dsh-copilot-${name}`, version: name === 'catalog' ? '0.2.0' : '0.1.0',
   repository: { url: `git+https://github.com/${repository}.git`, directory: `packages/${name}` },
 } }));
+
+test('workspace validation accepts LF, CRLF, CR, mixed endings and no final newline', () => {
+  const rows = ['packages:', ...workspacePaths.map((path) => `  - ${path}`)];
+  for (const ending of ['\n', '\r\n', '\r']) {
+    assert.doesNotThrow(() => assertWorkspaceDefinition(rows.join(ending)));
+    assert.doesNotThrow(() => assertWorkspaceDefinition(rows.join(ending) + ending));
+  }
+  assert.doesNotThrow(() => assertWorkspaceDefinition('packages:\r\n  - packages/catalog\n  - packages/search\r'));
+});
+
+test('workspace validation rejects missing or substring-only package rows', () => {
+  for (const definition of [
+    'packages:\n  - packages/catalog\n',
+    'packages:\r\n  - packages/search\r\n',
+    'packages:\n  - packages/catalog-extra\n  - packages/search\n',
+    'packages:\n#  - packages/catalog\n  - packages/search\n',
+  ]) assert.throws(() => assertWorkspaceDefinition(definition), /Missing pnpm workspace/u);
+});
 
 test('the private root is not a publication target and the two leaves resolve portably', async () => {
   assert.deepEqual(workspacePaths, ['packages/catalog', 'packages/search']);

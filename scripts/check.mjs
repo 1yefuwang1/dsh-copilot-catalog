@@ -1,7 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
-import { root, packages, workspacePaths } from './workspaces.mjs';
+import { root, packages, assertWorkspaceDefinition } from './workspaces.mjs';
 
 async function sourceFiles(directory, suffix) {
   const result = [];
@@ -20,7 +20,7 @@ if (rootManifest.private !== true || rootManifest.dsh || rootManifest.main || ro
   throw new Error('Root must be a private, non-plugin pnpm workspace');
 }
 const definition = await readFile(join(root, 'pnpm-workspace.yaml'), 'utf8');
-for (const path of workspacePaths) if (!definition.includes(`  - ${path}\n`)) throw new Error(`Missing pnpm workspace: ${path}`);
+assertWorkspaceDefinition(definition);
 
 const files = [...await sourceFiles('scripts', '.mjs')];
 const sources = [];

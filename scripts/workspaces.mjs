@@ -5,6 +5,14 @@ import { fileURLToPath } from 'node:url';
 export const root = fileURLToPath(new URL('../', import.meta.url));
 export const workspacePaths = Object.freeze(['packages/catalog', 'packages/search']);
 
+/** Git may check out YAML with CRLF on Windows; validate complete rows, not LF substrings. */
+export function assertWorkspaceDefinition(definition) {
+  const lines = definition.split(/\r\n|\n|\r/u);
+  for (const path of workspacePaths) {
+    if (!lines.includes(`  - ${path}`)) throw new Error(`Missing pnpm workspace: ${path}`);
+  }
+}
+
 /** Resolve only the two known publishable leaves, never the private root or arbitrary paths. */
 export async function packages(target) {
   const requested = target === undefined ? undefined : resolve(process.cwd(), target);
