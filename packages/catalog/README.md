@@ -1,0 +1,303 @@
+# dsh-copilot-catalog
+
+Account-aware **GitHub Copilot model discovery for DeepSeek Harness (DSH)**.
+Written in strict TypeScript; published as ESM JavaScript with type declarations.
+
+This package now lives in `packages/catalog` in the pnpm monorepo. Its npm name,
+public exports, configuration schema and runtime behavior are preserved. The
+independent search plugin does not need this wrapper to be installed. The
+repository root is private tooling, not an installable plugin.
+
+This experimental, third-party plugin wraps `@deepseek-ai/dsh-llm-pi-ai`. Before the
+adapter mounts, it reads your existing Copilot OAuth grant, fetches your account's
+`/models` catalog, and updates the **same in-memory pi-ai catalog** the adapter uses.
+No hard-coded application paths, credential-file edits, or signed-app modifications.
+
+## What it does
+
+- Shows picker-enabled models whose policy is enabled or absent and which do not
+  explicitly reject tool calls.
+- Preserves upstream descriptors for known IDs, including mixed API protocols.
+- Builds descriptors for **any newly discovered model ID**, without a model-name
+  allowlist, sibling template, or vendor-name heuristic. Transport selection uses
+  the advertised `supported_endpoints`:
+
+  | Advertised endpoint | pi-ai transport |
+  | --- | --- |
+  | `/responses` | `openai-responses` |
+  | `/v1/messages` | `anthropic-messages` |
+  | `/chat/completions` | `openai-completions` |
+
+  When multiple supported endpoints are offered, preference is Responses, native
+  Messages, then Chat Completions, independent of array order or model name.
+- Uses live positive context/output limits, vision support, advertised reasoning
+  efforts, and validated pricing for new models. Only unknown protocols, invalid
+  request IDs, non-chat/non-streaming models, or insufficient limits are skipped.
+  Missing pricing uses zero-valued **unknown rates**, not another model's prices.
+- Keeps **Enterprise routing for discovery and inference**, including known
+  bundled models and API-key auth. A validated account endpoint is applied as an
+  in-memory provider default even if the model listing later fails. Explicit
+  configured API-key endpoints are preserved; no profile setting is rewritten.
+- Leaves the current catalog untouched if discovery fails or yields no supported
+  models. On first startup this means all bundled defaults remain available.
+- Bounds the whole attempt to **10 seconds**, including credential reads, refresh,
+  auth resolution, fetch, and body parsing. Timed-out work cannot commit later.
+- Makes no credential-store writes. Expiring grants are refreshed only in memory;
+  the original adapter owns normal persisted refresh and its cross-process lock.
+- Requires HTTPS Copilot subdomains, refuses redirects and unusual ports, and
+  logs controlled error codes instead of potentially sensitive exception messages.
+
+## Compatibility
+
+| Component | Supported version |
+| --- | --- |
+| DSH and `@deepseek-ai/dsh-llm-pi-ai` | `0.2.0-rc.2` |
+| `@earendil-works/pi-ai` | `0.87.1` |
+| Node.js | `>=22.19.0` |
+| Runtime format | ESM only; no CommonJS entry |
+
+DSH and pi-ai are **peer dependencies**, not vendored copies. Runtime resolution
+starts from the adapter's location, so nested or pnpm layouts do not cause the
+plugin to update a different pi-ai instance. Type-only imports are erased by the
+compiler. The public Copilot provider supplies OAuth hooks; private auth modules
+are not imported. Version ranges are deliberately conservative: verify a new DSH
+or pi-ai version before widening them.
+
+## Enterprise authentication and endpoint routing
+
+This plugin also works around pi-ai's API-key path: an explicit API key bypasses
+OAuth `toAuth()`, so upstream otherwise retains the bundled Individual endpoint.
+The wrapper discovers an account endpoint and supplies it to the original adapter
+as a **runtime-only `baseURL` default**, covering new and bundled models.
+
+- **Stored Copilot OAuth grant:** use the provider's public `toAuth()` to derive
+  the account endpoint. The original adapter still owns persisted refresh and
+  derives request auth normally; Enterprise grants do not become Individual keys.
+- **Copilot access token supplied as an API key:** use its `proxy-ep` metadata to
+  derive the endpoint through the same read-only OAuth hook. This applies to stored
+  API-key records, explicit `apiKeyEnv` references, and ambient `COPILOT_GITHUB_TOKEN`.
+  An explicit reference wins over a different stored OAuth account, as in pi-ai.
+- **Opaque token:** no account endpoint can be inferred safely. Set the existing
+  provider `baseURL` field explicitly, or use DSH's normal Copilot OAuth sign-in.
+  Discovery reports `MISSING_ENDPOINT` rather than assuming the Individual API.
+- **GitHub PAT:** it is not a Copilot access token. The wrapper does not guess the
+  Enterprise GitHub domain or implement a second sign-in/exchange flow; use OAuth.
+
+For an explicit Enterprise API-key route, use a credential reference, not a literal
+key in your profile:
+
+```yaml
+- id: llm-pi-ai-catalog
+  name: dsh-copilot-catalog
+  config:
+    providers:
+      github-copilot:
+        apiKeyEnv: COPILOT_ACCESS_TOKEN
+        baseURL: https://api.enterprise.githubcopilot.com
+```
+
+Use the endpoint belonging to **your** account; do not assume Enterprise seats all
+share a GitHub Enterprise Server domain. Discovery only trusts HTTPS
+`*.githubcopilot.com` origins. Inferred API-key routing is a startup snapshot;
+restart after changing accounts or moving a key to a different endpoint. If no
+endpoint can be identified, the original adapter remains mounted with its original
+configuration, so an opaque Enterprise key still needs an explicit `baseURL`.
+
+## Installation
+
+> **Adapter replacement, not an add-on adapter.** The included DSH bundle disables
+> the standard `llm-pi-ai` entry and inserts `llm-pi-ai-catalog`, configured for
+> `github-copilot`. Do not enable another adapter for the same provider route.
+>
+> **Existing custom routes/settings are not copied automatically.** Before enabling
+> the bundle, back up your profile patch and copy every provider and override you
+> want to retain to the replacement entry. Its settings namespace is
+> `llm-pi-ai-catalog`; your OAuth grant keeps the original `llm-pi-ai/github-copilot`
+> key. A later profile/home patch that re-enables the original adapter must be fixed.
+
+### From npm, after publication
+
+Install the bundle through DSH's Plugins page, or use the CLI for your chosen
+profile (for example `desktop` or `web`):
+
+```sh
+dsh plugin --profile <profile> add dsh-copilot-catalog
+```
+
+Restart DSH after installing or changing this host-side plugin. The code has no
+browser component and does not modify or rebuild DSH's web UI.
+
+### From this pnpm monorepo
+
+Run development commands from the repository root. Do not install the root Git
+URL as a plugin: its manifest is private monorepo tooling. Build and link the
+catalog leaf, or install its published package/tarball.
+
+```sh
+pnpm install --frozen-lockfile --ignore-scripts
+pnpm --filter dsh-copilot-catalog run build
+pnpm --filter dsh-copilot-catalog run verify
+# Only if you choose to enable it in an actual DSH profile:
+dsh plugin --profile <profile> add -w packages/catalog
+# Alternatively, pack compiled output without lifecycle scripts:
+pnpm --dir packages/catalog pack --pack-destination ../../artifacts --config.ignore-scripts=true
+```
+
+Local linking affects that profile; it is not part of the automated test suite.
+Neither this repository nor its tests automatically edits your active profile.
+
+### Preserve additional provider configuration
+
+Add a higher-priority override to your own profile patch before enabling the bundle.
+Copy the **full provider configuration** from your original adapter, including
+custom URLs, models, headers and overrides, as needed:
+
+```yaml
+- id: llm-pi-ai-catalog
+  name: dsh-copilot-catalog
+  config:
+    providers:
+      github-copilot: {}
+      openai:
+        apiKeyEnv: OPENAI_API_KEY
+```
+
+All original adapter configuration fields remain valid. The wrapper exports the
+original `Config` schema unchanged; it adds no secret or custom discovery settings.
+An inferred endpoint is overlaid only while the adapter reads the configuration;
+settings persistence, explicit URLs, and other providers are left untouched.
+If your original adapter has a different entry ID, adjust the disabling override
+in your profile accordingly.
+
+### Check startup
+
+Successful discovery logs `Copilot catalog synced` with the supported model count
+and JSON-escaped unsupported IDs. Failures log one of `TIMEOUT`, `HTTP_ERROR`,
+`INVALID_CATALOG`, `UNTRUSTED_ENDPOINT`, `INVALID_AUTH`, `MISSING_ENDPOINT`,
+`IMMUTABLE_CATALOG`, or `DISCOVERY_FAILED`; startup still delegates to the original
+adapter. Missing Copilot credentials keep the defaults. A validated runtime
+endpoint is logged separately without any token or credential value. Sign in through DSH's normal Copilot authorization
+flow, then restart to perform account discovery.
+
+### Rollback
+
+Disable or remove this bundle with DSH's Plugins page, remove any profile overrides
+that still enable the replacement, and re-enable the standard `llm-pi-ai` entry if
+your own profile has disabled it. Restore your backed-up provider configuration and
+restart the **whole DSH process** to reset its in-memory catalog. Do not delete the
+OAuth grant. The wrapper does not patch the signed application or store a catalog
+on disk.
+
+## Development and tests
+
+Run from the monorepo root:
+
+```sh
+pnpm install --frozen-lockfile --ignore-scripts
+pnpm run check:secrets
+pnpm --filter dsh-copilot-catalog run typecheck
+pnpm --filter dsh-copilot-catalog run build
+pnpm --filter dsh-copilot-catalog run test
+pnpm --filter dsh-copilot-catalog run test:integration
+pnpm --filter dsh-copilot-catalog run test:types
+pnpm --filter dsh-copilot-catalog run test:pack
+pnpm run verify  # both plugins and shared tooling
+```
+
+The tests use synthetic credentials and response/SSE fixtures. They cover arbitrary
+new IDs, three advertised protocols, prototype-sensitive IDs, reasoning metadata,
+unknown pricing, read-only refresh, endpoint restrictions, deadlines, late responses,
+fail-open delegation, and safe diagnostics. Integration tests mount the **actual DSH
+adapter** and exercise real SDK request construction for OAuth Enterprise grants,
+API-key overrides, stored access tokens, explicit URLs, and failed model listing.
+Every mocked discovery/inference request is asserted to target the Enterprise origin.
+No live Copilot request or authentication flow is run automatically.
+
+- [`src/index.ts`](src/index.ts): DSH entry point.
+- [`src/runtime.ts`](src/runtime.ts): shared adapter/pi-ai resolution.
+- [`src/catalog.ts`](src/catalog.ts): pure selection and pricing.
+- [`src/discovery.ts`](src/discovery.ts): bounded read-only discovery.
+- [`src/plugin.ts`](src/plugin.ts): adapter lifecycle and safe logging.
+- [`src/types.ts`](src/types.ts): public interfaces and upstream type integration.
+
+For scripts that only need model selection, the `dsh-copilot-catalog/catalog`
+subpath is side-effect-free. Pass an explicit bundled catalog:
+
+```ts
+import { selectAccountModels } from 'dsh-copilot-catalog/catalog';
+import { GITHUB_COPILOT_MODELS } from '@earendil-works/pi-ai/providers/github-copilot.models';
+
+const { models, unsupported } = selectAccountModels(response, GITHUB_COPILOT_MODELS);
+```
+
+The package root loads the adapter peers but does not read credentials or perform
+network I/O until `apply()` or `syncCopilotCatalog()` is called. The
+`dsh-copilot-catalog/discovery` helper takes explicit injected dependencies for tests
+and tooling.
+
+## Releases
+
+This package keeps the existing `dsh-copilot-catalog` name and independent version.
+Version `0.2.0` is retained during migration and was already published; increment
+its manifest version and changelog before the next release.
+
+Use a **package-specific** tag `dsh-copilot-catalog-vX.Y.Z`. The shared release
+workflow checks that it exactly matches this leaf's version/repository directory,
+verifies both plugins with pnpm, and stages only the catalog leaf. Legacy root
+`vX.Y.Z` tags no longer select a package.
+
+The existing npm Trusted Publisher uses this repository, workflow `publish.yml`
+and environment `npm`. Native `pnpm stage publish` uses short-lived OIDC identity
+and provenance, with exact package-specific release gating for the tagged checkout.
+Dependency management, builds, checks and package inspection also use pnpm. A maintainer
+reviews the Staged Package and approves it with 2FA. No npm token is stored in
+GitHub and no publication happens automatically during development.
+
+For a fork, update root/leaf repository metadata, preserving this package's
+`repository.directory: packages/catalog`, and configure its Trusted Publisher.
+See the monorepo's contributing and release instructions.
+
+CI verifies both plugins on Linux, macOS and Windows with Node 22/24. Generated
+`dist/` stays out of Git; tarballs contain only compiled runtime/declarations,
+manifest, bundle patch, README, changelog and license. Tests, root tooling,
+source and credentials are not published.
+
+## Limitations
+
+- Discovery is a startup/mount snapshot, not continuous sync. Restart after login,
+  account changes, upgrades or rollback. Avoid hot-reloading this wrapper: a
+  process-wide catalog mutation can outlive its plugin mount.
+- Account discovery deliberately uses strict picker semantics. Individual accounts
+  that mark every picker flag false fall back to bundled defaults; the wrapper
+  does not broaden access using policy-only heuristics.
+- A successful sync mutates a shared Copilot catalog in memory. Mount only one
+  adapter instance. A failed later mount keeps the current process's catalog, not
+  necessarily the original defaults; a full restart resets it.
+- Existing upstream model descriptors are intentionally preserved, not refreshed
+  field-by-field. Newly discovered IDs use live metadata and conservative per-protocol
+  defaults. Unknown pricing is zero-valued metadata, not a claim that access is free.
+- New models require advertised supported endpoints and valid positive context/output
+  limits. No endpoint, family, or protocol is guessed from a model name. Optional
+  strict tools, developer-role support, long cache retention and advanced features
+  are not assumed; correct a model with the original adapter's `modelOverrides` if
+  its gateway needs additional compatibility settings.
+- Only recognized advertised reasoning-effort values are selectable (`none` maps to
+  `off`). Absent/unrecognized effort metadata does not invent reasoning settings;
+  native Anthropic `thinking: true` without an effort list uses standard budget
+  levels. Native Messages effort lists use adaptive thinking. Endpoint metadata is
+  not a guarantee that every optional feature works identically on every gateway.
+- Original adapter credential filtering, explicit `models` lists, and
+  `modelOverrides` still apply. This plugin neither enables account policies nor
+  changes stored `availableModelIds`; an upstream credential allowlist can still
+  hide a model until normal refresh/sign-in updates it.
+- Enterprise OAuth endpoints outside HTTPS `*.githubcopilot.com` are rejected by
+  discovery; normal adapter behavior remains available as fallback.
+- Upstream catalog structure, protocol compatibility and Copilot billing metadata
+  are not stable public contracts. Re-test protocol defaults and Enterprise routing
+  after updates. This package is not affiliated with DeepSeek, GitHub, or the pi-ai
+  maintainers.
+
+## License
+
+[MIT](LICENSE). Original DSH and pi-ai packages retain their own licenses; they are
+not redistributed in this tarball.

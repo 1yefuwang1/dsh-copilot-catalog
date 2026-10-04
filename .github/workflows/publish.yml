@@ -1,4 +1,4 @@
-name: Publish to npm
+name: Stage package on npm
 
 on:
   release:
@@ -28,25 +28,24 @@ jobs:
           node-version: 24
           package-manager-cache: false
           registry-url: https://registry.npmjs.org/
-      - name: Pin npm with trusted-publishing support
-        run: npm install --global npm@11.19.1
-      - name: Validate release identity
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+          run_install: false
+      - name: Validate package-specific release identity
+        id: release
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           RELEASE_REPOSITORY: ${{ github.repository }}
-        run: |
-          node --input-type=module -e '
-            import { readFileSync } from "node:fs";
-            const pkg = JSON.parse(readFileSync("package.json", "utf8"));
-            if (process.env.RELEASE_TAG !== `v${pkg.version}`) throw new Error("Release tag must match package version");
-            const expected = `git+https://github.com/${process.env.RELEASE_REPOSITORY}.git`;
-            if (pkg.repository?.url !== expected) throw new Error("Set package.json repository.url to the actual GitHub repository before publishing");
-          '
+        run: node scripts/release.mjs
       - name: Install without dependency lifecycle scripts
-        run: npm ci --ignore-scripts
-      - name: Verify release
-        run: npm run verify
-      - name: Stage package on npm using trusted publishing
-        # npm exchanges GitHub's short-lived OIDC identity; no registry token is stored.
-        # A maintainer must review and approve the staged version with 2FA.
-        run: npm stage publish --provenance --access public --ignore-scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Verify both plugin packages
+        run: pnpm run verify
+      - name: Stage only the selected package using trusted publishing
+        working-directory: ${{ steps.release.outputs.directory }}
+        # pnpm exchanges short-lived OIDC identity; no registry token is stored.
+        # The release gate validates the exact package/version/repository for this
+        # immutable tag checkout; normal publish-branch checks do not fit detached tags.
+        # A maintainer reviews and approves the staged version with 2FA.
+        run: pnpm stage publish --provenance --access public --config.ignore-scripts=true --no-git-checks

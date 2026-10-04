@@ -1,0 +1,12 @@
+# Select the search provider explicitly: the base profile pins DeepSeek search.
+# This does not replace an LLM adapter or change its model/provider configuration.
+- id: web
+  name: '@deepseek-ai/dsh-web'
+  config:
+    searchProvider: github-copilot-search
+    fetchProvider: http
+- insert:
+    - id: web-search-copilot
+      name: dsh-copilot-search
+      config:
+        model: gpt-6.1-sol

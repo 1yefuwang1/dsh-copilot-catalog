@@ -1,33 +1,19 @@
-# Changelog
+# Monorepo changelog
 
-## 0.2.0 — General discovery and Enterprise routing
+## Unreleased — Two Copilot plugins, pnpm workspaces
 
-- Remove the model-ID allowlist and sibling templates. Construct any newly
-  discovered chat model from its advertised endpoint, limits, vision, reasoning,
-  and billing metadata.
-- Support Responses, Chat Completions, and native Anthropic Messages with
-  conservative protocol defaults and deterministic endpoint preference.
-- Stop guessing another model's pricing or reasoning capabilities. Preserve
-  upstream descriptors for IDs the bundled catalog already knows.
-- Remove discovery's dependency on a particular model's headers.
-- Derive Enterprise endpoints for OAuth grants and API-key access tokens, honor
-  explicit API-key URLs/references, and overlay routing defaults in memory for
-  new and bundled models even when listing fails.
-- Add actual DSH-adapter/SDK discovery and inference regressions with synthetic
-  Enterprise credentials and SSE responses; no live account calls or secret writes.
+- Move `dsh-copilot-catalog` into its own publishable workspace without changing
+  its runtime source, package identity, exports or credential ownership.
+- Add separately installable `dsh-copilot-search` for native Responses web search.
+- Introduce a private root, pnpm 11.7.0 workspaces/lockfile and shared TypeScript,
+  validation, security-audit and package-content tooling.
+- Run both plugins' unit/integration/public-type checks in cross-platform CI.
+- Select exactly one leaf for staged OIDC publication using package-specific tags;
+  preserve the existing maintainer review and 2FA approval policy.
+- Keep active profiles, signed applications and real account credentials outside
+  development/testing. Native search acceptance requires a separate live probe.
 
-## 0.1.0 — Initial release preparation
+Package history and versions are independent:
 
-- Convert the local Copilot catalog wrapper to strict TypeScript with ESM output
-  and generated type declarations.
-- Resolve the original adapter and its own pi-ai catalog using installed npm peers,
-  without platform-specific application paths or private OAuth imports.
-- Preserve upstream configuration, credential ownership, and model descriptors.
-- Add two explicit Responses-compatible sibling templates and account filtering.
-- Bound discovery end-to-end and prevent late responses from committing.
-- Harden catalog lookups, HTTP endpoint/redirect handling, and diagnostics.
-- Add DSH bundle metadata, regression tests, peer integration tests, npm package
-  allowlist checks, cross-platform CI, and a trusted-publishing release workflow.
-
-Version 0.2.0 was published to npm through staged GitHub Actions publishing with
-SLSA provenance on 2026-10-03. The 0.1.0 entry describes preparation history only.
+- [Catalog changelog](packages/catalog/CHANGELOG.md) — retained `0.2.0`, previously published.
+- [Search changelog](packages/search/CHANGELOG.md) — initial `0.1.0`, not published by this migration.

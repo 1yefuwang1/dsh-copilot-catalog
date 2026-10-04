@@ -18,12 +18,16 @@ jobs:
         node: [22, 24]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node }}
-          cache: npm
+          package-manager-cache: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+          run_install: false
       - name: Install without dependency lifecycle scripts
-        run: npm ci --ignore-scripts
-      - name: Verify types, behavior, peers, and package contents
-        run: npm run verify
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Verify both plugins and monorepo tooling
+        run: pnpm run verify

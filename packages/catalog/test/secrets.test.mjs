@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { findCredentialIssues } from '../scripts/check-secrets.mjs';
+import { findCredentialIssues } from '../../../scripts/check-secrets.mjs';
 
 test('credential scanner detects common provider tokens without exposing their values', () => {
   for (const prefix of ['ghp_', 'github_pat_', 'sk-', 'npm_', 'xoxb-']) {
