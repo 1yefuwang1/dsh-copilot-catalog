@@ -30,7 +30,6 @@ Use DSH's Plugins page or CLI for the intended profile:
 
 ```sh
 dsh plugin --profile <profile> add dsh-copilot-catalog
-# Available from npm only after publishing the new search package:
 dsh plugin --profile <profile> add dsh-copilot-search
 ```
 
@@ -138,8 +137,7 @@ A release selects **one package**, never the root or both packages at once:
 
 The tag must match its leaf version and repository identity. Catalog is currently
 `0.2.1`; its previously published `0.2.0` cannot be republished. Search is currently
-`0.1.1`, including the verified Copilot stream-ID compatibility fix, and has not
-been published by this migration.
+`0.1.1`, including the verified Copilot stream-ID compatibility fix.
 
 The [release workflow](.github/workflows/publish.yml) installs/verifies with pnpm,
 then uses native `pnpm stage publish` to stage **only the selected leaf** through

@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.1.1 — Copilot streaming ID compatibility
+## 0.1.1 — First public release and Copilot streaming compatibility
+
+- First npm release of the independent Copilot native-search provider.
+- Verify native search and structured sources with the fixed parser against a live
+  Copilot account; compatibility still depends on the account and chosen model.
 
 - Route native Responses stream items by stable `output_index`: Copilot may rewrite
   `item.id` and `item_id` between added, progress, done and terminal events.
@@ -25,4 +29,5 @@
 - Add synthetic unit, public-peer/web-registry integration, public-type and exact
   package-content tests. No live account search support has been independently probed.
 
-This package has not been published by this repository migration.
+The 0.1.0 entry records development preparation only; 0.1.1 is the first public
+npm release.

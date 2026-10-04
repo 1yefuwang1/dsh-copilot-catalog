@@ -16,4 +16,4 @@
 Package history and versions are independent:
 
 - [Catalog changelog](packages/catalog/CHANGELOG.md) — `0.2.1` catalog packaging release; `0.2.0` previously published.
-- [Search changelog](packages/search/CHANGELOG.md) — `0.1.1` native-search implementation and streaming compatibility fix; not published by this migration.
+- [Search changelog](packages/search/CHANGELOG.md) — `0.1.1` first public native-search release and streaming compatibility fix.

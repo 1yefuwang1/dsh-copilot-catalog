@@ -45,7 +45,7 @@ No live native-search compatibility is asserted by the synthetic tests.
 
 ## Install
 
-After this package is published, use DSH's Plugins page or:
+Use DSH's Plugins page to install the published package, or:
 
 ```sh
 dsh plugin --profile <profile> add dsh-copilot-search
