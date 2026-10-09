@@ -118,6 +118,98 @@ test('expiring credentials refresh only a cloned in-memory grant and share the d
   assert.equal(init.signal, refreshSignal);
 });
 
+test('GHE API validation accepts only one valid tenant label and keeps models URL normalization', () => {
+  for (const tenant of ['msft', 'example-corp', 'a', 'a'.repeat(63)]) {
+    assert.equal(discoveryUrl(`https://copilot-api.${tenant}.ghe.com:443/v1?ignored=yes#ignored`).href,
+      `https://copilot-api.${tenant}.ghe.com/models`);
+  }
+  assert.equal(discoveryUrl('https://COPILOT-API.MSFT.GHE.COM').href,
+    'https://copilot-api.msft.ghe.com/models');
+});
+
+test('untrusted GHE destinations fail before dispatching credentials or publishing routing', async () => {
+  for (const baseUrl of [
+    'https://ghe.com', 'https://msft.ghe.com', 'https://copilot-api.ghe.com',
+    'https://api.msft.ghe.com', 'https://copilot-proxy.msft.ghe.com', 'https://proxy.msft.ghe.com',
+    'https://other.msft.ghe.com', 'https://copilot-api.tenant.msft.ghe.com',
+    'https://copilot-api.-msft.ghe.com', 'https://copilot-api.msft-.ghe.com',
+    'https://copilot-api.ms_ft.ghe.com', 'https://copilot-api..ghe.com',
+    `https://copilot-api.${'a'.repeat(64)}.ghe.com`,
+    'https://copilot-api.msft.ghe.com.attacker.example', 'https://copilot-api.msft.notghe.com',
+    'http://copilot-api.msft.ghe.com', 'https://copilot-api.msft.ghe.com:8443',
+    'https://user:secret@copilot-api.msft.ghe.com',
+  ]) {
+    assert.throws(() => discoveryUrl(baseUrl), { code: 'UNTRUSTED_ENDPOINT' });
+    const endpoints = [];
+    const f = discoveryFixture({ baseUrl, resolveApiKey: async () => 'synthetic-token',
+      onEndpoint: (endpoint) => endpoints.push(endpoint) });
+    const before = structuredClone(f.catalog);
+    await assert.rejects(sync(f), { code: 'UNTRUSTED_ENDPOINT' });
+    assert.deepEqual(f.requests, [], baseUrl);
+    assert.deepEqual(endpoints, []);
+    assert.deepEqual(f.catalog, before);
+  }
+});
+
+test('GHE discovery gives new models the validated account origin without changing credentials', async () => {
+  const f = discoveryFixture();
+  f.record.payload.enterpriseUrl = 'msft.ghe.com';
+  const before = structuredClone(f.record);
+  const endpoints = [];
+  f.options.onEndpoint = (endpoint) => endpoints.push(endpoint);
+  f.options.oauth.toAuth = async (credential) => {
+    assert.equal(credential.enterpriseUrl, 'msft.ghe.com');
+    return { apiKey: credential.access, baseUrl: `https://copilot-api.${credential.enterpriseUrl}` };
+  };
+  f.options.fetcher = async (url, init) => {
+    assert.equal(url.href, 'https://copilot-api.msft.ghe.com/models');
+    assert.equal(init.headers.get('Authorization'), 'Bearer test-access-token');
+    assert.equal(init.headers.get('X-GitHub-Api-Version'), VERSION_HEADER);
+    assert.equal(init.redirect, 'error');
+    return { ok: true, json: async () => ({ data: [accountItem('future-ghe-model')] }) };
+  };
+  assert.equal((await sync(f)).status, 'synced');
+  assert.equal(f.catalog['future-ghe-model'].baseUrl, 'https://copilot-api.msft.ghe.com');
+  assert.deepEqual(endpoints, ['https://copilot-api.msft.ghe.com']);
+  assert.deepEqual(f.record, before);
+});
+
+test('GHE refresh keeps enterprise metadata read-only and revalidates the resulting endpoint', async () => {
+  for (const trusted of [true, false]) {
+    const endpoints = [];
+    const f = discoveryFixture({ onEndpoint: (endpoint) => endpoints.push(endpoint) });
+    f.record.payload.enterpriseUrl = 'msft.ghe.com';
+    f.record.payload.expires = 0;
+    const before = structuredClone(f.record);
+    const catalogBefore = structuredClone(f.catalog);
+    let refreshSignal;
+    f.options.oauth.refresh = async (credential, signal) => {
+      assert.equal(credential.enterpriseUrl, 'msft.ghe.com');
+      refreshSignal = signal;
+      credential.access = 'fresh-token';
+      return credential;
+    };
+    f.options.oauth.toAuth = async (credential) => ({ apiKey: credential.access,
+      baseUrl: credential.access === 'fresh-token'
+        ? trusted ? 'https://copilot-api.msft.ghe.com' : 'https://api.msft.ghe.com'
+        : 'https://api.enterprise.githubcopilot.com' });
+    if (trusted) {
+      await sync(f);
+      const [, url, init] = f.requests[1];
+      assert.equal(url.href, 'https://copilot-api.msft.ghe.com/models');
+      assert.equal(init.headers.get('Authorization'), 'Bearer fresh-token');
+      assert.equal(init.signal, refreshSignal);
+      assert.deepEqual(endpoints, ['https://api.enterprise.githubcopilot.com', 'https://copilot-api.msft.ghe.com']);
+    } else {
+      await assert.rejects(sync(f), { code: 'UNTRUSTED_ENDPOINT' });
+      assert.deepEqual(f.requests, [['read', 'test-record-key']]);
+      assert.deepEqual(endpoints, ['https://api.enterprise.githubcopilot.com']);
+      assert.deepEqual(f.catalog, catalogBefore);
+    }
+    assert.deepEqual(f.record, before);
+  }
+});
+
 test('host validation rejects non-Copilot hosts, credentials, HTTP, and nonstandard ports', async () => {
   for (const base of [
     'http://api.githubcopilot.com', 'https://githubcopilot.com',

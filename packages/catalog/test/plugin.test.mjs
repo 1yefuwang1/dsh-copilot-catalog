@@ -78,6 +78,26 @@ test('validated Enterprise routing survives a failed model listing without chang
   assert.deepEqual(f.catalog, before);
 });
 
+test('GHE account routing survives a failed listing as a runtime default without rewriting settings', async () => {
+  const f = fixture({ oauth: {
+    refresh: async () => { throw new Error('Valid synthetic credentials must not refresh'); },
+    toAuth: async (credential) => ({ apiKey: credential.access, baseUrl: 'https://copilot-api.msft.ghe.com' }),
+  }, fetcher: async (url, init) => {
+    assert.equal(url.origin, 'https://copilot-api.msft.ghe.com');
+    assert.equal(init.redirect, 'error');
+    return { ok: false, status: 503 };
+  } });
+  const before = structuredClone(f.catalog);
+  await f.plugin.apply(f.ctx, f.config);
+  const invocation = f.calls.find((call) => call[0] === 'apply');
+  assert.equal(invocation[2].providers.get()['github-copilot'].baseURL, 'https://copilot-api.msft.ghe.com');
+  assert.equal(f.config.providers.get()['github-copilot'].baseURL, undefined);
+  assert.deepEqual(f.catalog, before);
+  const log = JSON.stringify(f.calls.filter((call) => call[0] !== 'apply'));
+  assert.ok(log.includes('HTTP_ERROR'));
+  assert.ok(log.includes('https://copilot-api.msft.ghe.com'));
+});
+
 test('runtime default preserves explicit URLs, other providers, volatile updates, and snapshot memoization', () => {
   let raw = { 'github-copilot': {}, openai: { baseURL: 'https://example.invalid' } };
   const config = { providers: { get: () => raw } };

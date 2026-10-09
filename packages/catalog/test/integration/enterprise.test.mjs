@@ -8,7 +8,9 @@ import { accountItem, grantFixture } from '../helpers.mjs';
 import { transportResponse } from '../transport-fixtures.mjs';
 
 const enterprise = 'https://api.enterprise.githubcopilot.com';
+const ghe = 'https://copilot-api.msft.ghe.com';
 const copilotToken = (account = 'enterprise') => ['synthetic-token', `proxy-ep=proxy.${account}.githubcopilot.com`].join(';');
+const gheToken = 'synthetic-token;proxy-ep=copilot-api.msft.ghe.com';
 
 function fakeContext(record, key, ambientKey) {
   const registrations = [];
@@ -34,13 +36,13 @@ function fakeContext(record, key, ambientKey) {
   return { ctx, registrations };
 }
 
-async function verifyRequests({ record, profile = {}, explicitKey, ambientKey, expectedToken, listingFails = false }) {
+async function verifyRequests({ record, profile = {}, explicitKey, ambientKey, expectedToken, expectedOrigin = enterprise, listingFails = false }) {
   const runtime = await loadRuntime();
   const snapshot = { ...runtime.catalog };
   const originalFetch = globalThis.fetch;
   const requests = [];
   const items = [
-    accountItem('gpt-6-sol'), // Known bundled model must route to Enterprise too.
+    accountItem('gpt-6-sol'), // Known bundled model must route to the account endpoint too.
     accountItem('arbitrary-responses-model'),
     accountItem('arbitrary-chat-model', { supported_endpoints: ['/chat/completions'] }),
     accountItem('arbitrary-native-model', { supported_endpoints: ['/v1/messages'] }),
@@ -48,13 +50,14 @@ async function verifyRequests({ record, profile = {}, explicitKey, ambientKey, e
   globalThis.fetch = async (input, init) => {
     const request = new Request(input, init);
     const url = new URL(request.url);
-    assert.equal(url.origin, enterprise, 'No discovery or inference request may use the Individual endpoint');
+    assert.equal(url.origin, expectedOrigin, 'Every discovery and inference request must use the expected account endpoint');
     assert.equal(request.headers.get('Authorization'), `Bearer ${expectedToken}`);
     if (request.method === 'GET') {
       assert.equal(url.pathname, '/models');
       requests.push({ path: url.pathname, method: request.method });
       return Response.json({ data: items }, { status: listingFails ? 503 : 200 });
     }
+    assert.equal(request.method, 'POST');
     const body = await request.json();
     requests.push({ path: url.pathname, method: request.method, body });
     const api = { '/responses': 'openai-responses', '/chat/completions': 'openai-completions', '/v1/messages': 'anthropic-messages' }[url.pathname];
@@ -68,6 +71,7 @@ async function verifyRequests({ record, profile = {}, explicitKey, ambientKey, e
     const before = structuredClone(config.providers.get());
     await plugin.apply(ctx, config);
     assert.deepEqual(config.providers.get(), before, 'The active settings input must remain untouched');
+    if (listingFails) assert.deepEqual(runtime.catalog, snapshot, 'Failed discovery must preserve the bundled catalog');
     assert.equal(registrations.length, 1);
     const { adapter } = registrations[0];
     const selected = listingFails ? ['gpt-6-sol'] : items.map((item) => item.id);
@@ -85,6 +89,11 @@ async function verifyRequests({ record, profile = {}, explicitKey, ambientKey, e
     }
     assert.equal(requests.filter((request) => request.method === 'GET').length, 1);
     assert.equal(requests.filter((request) => request.method === 'POST').length, selected.length);
+    for (const model of selected) {
+      const request = requests.find((request) => request.body?.model === model);
+      const expectedPath = items.find((item) => item.id === model).supported_endpoints[0];
+      assert.equal(request?.path, expectedPath, `${model} must use its advertised inference protocol`);
+    }
     if (!listingFails) {
       const response = requests.find((request) => request.body?.model === 'arbitrary-responses-model').body;
       const chat = requests.find((request) => request.body?.model === 'arbitrary-chat-model').body;
@@ -124,4 +133,32 @@ test('actual DSH opaque API-key path respects an explicitly configured Enterpris
 
 test('actual DSH inference keeps Enterprise routing when model discovery fails', async () => {
   await verifyRequests({ record: { kind: 'api-key', key: copilotToken() }, expectedToken: copilotToken(), listingFails: true });
+});
+
+test('actual DSH OAuth enterpriseUrl fallback routes GHE discovery and all three inference protocols', async () => {
+  await verifyRequests({ record: grantFixture({ enterpriseUrl: 'msft.ghe.com', access: 'synthetic-token' }),
+    expectedToken: 'synthetic-token', expectedOrigin: ghe });
+});
+
+test('actual DSH OAuth proxy-ep routes GHE discovery and all three inference protocols', async () => {
+  await verifyRequests({ record: grantFixture({ access: gheToken }), expectedToken: gheToken, expectedOrigin: ghe });
+});
+
+test('actual DSH stored API-key proxy-ep routes GHE discovery and all three inference protocols', async () => {
+  await verifyRequests({ record: { kind: 'api-key', key: gheToken }, expectedToken: gheToken, expectedOrigin: ghe });
+});
+
+test('actual DSH opaque API-key path respects an explicitly configured GHE baseURL', async () => {
+  await verifyRequests({ record: { kind: 'api-key', key: 'synthetic-token' },
+    profile: { baseURL: ghe }, expectedToken: 'synthetic-token', expectedOrigin: ghe });
+});
+
+test('actual DSH OAuth enterpriseUrl fallback keeps GHE routing for the bundled model when listing fails', async () => {
+  await verifyRequests({ record: grantFixture({ enterpriseUrl: 'msft.ghe.com', access: 'synthetic-token' }),
+    expectedToken: 'synthetic-token', expectedOrigin: ghe, listingFails: true });
+});
+
+test('actual DSH API-key proxy-ep keeps GHE routing for the bundled model when listing fails', async () => {
+  await verifyRequests({ record: { kind: 'api-key', key: gheToken },
+    expectedToken: gheToken, expectedOrigin: ghe, listingFails: true });
 });

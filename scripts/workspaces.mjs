@@ -31,8 +31,12 @@ export async function packages(target) {
 
 export function packageManager(args) {
   const executable = process.env.npm_execpath;
-  if (executable && /(?:^|[/\\])pnpm(?:\.(?:cjs|mjs|js))?$/u.test(executable)) {
+  if (executable && /(?:^|[/\\])pnpm\.(?:cjs|mjs|js)$/u.test(executable)) {
     return { command: process.execPath, args: [executable, ...args], shell: false };
+  }
+  // Standalone pnpm is a native executable, not a Node.js entry point.
+  if (executable && /(?:^|[/\\])pnpm(?:\.exe)?$/u.test(executable)) {
+    return { command: executable, args, shell: false };
   }
   return { command: process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', args, shell: process.platform === 'win32' };
 }

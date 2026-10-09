@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.2 — GHE Cloud endpoint support
+
+- Fix GitHub Enterprise Cloud discovery on GHE.com by accepting HTTPS
+  `copilot-api.<tenant>.ghe.com` origins with a single valid tenant DNS label,
+  alongside existing `*.githubcopilot.com` routing. Preserve upstream OAuth
+  endpoint derivation, credential-read-only refresh, redirect rejection, and
+  runtime-only routing defaults without changing profiles or stored credentials.
+- Document GHE.com tenant authentication hosts versus Copilot API origins and
+  explicit API-key routing; arbitrary GHE services and enterprise domains remain
+  outside the discovery trust policy.
+
 ## 0.2.1 — pnpm monorepo packaging
 
 - Move source, tests and DSH bundle into the independently publishable catalog workspace.
