@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { WebError } from '@deepseek-ai/dsh-web';
 import { CopilotAuthError, createCopilotAuthResolver, createCopilotCredentialStore } from '../dist/auth.js';
 import { trustedCopilotOrigin } from '../dist/endpoint.js';
-import { contextFixture, credentialFixture, deferred, enterprise, grant, individual, runtimeFixture, token } from './auth-helpers.mjs';
+import { contextFixture, credentialFixture, deferred, enterprise, ghe, gheToken, grant, individual, runtimeFixture, token } from './auth-helpers.mjs';
 
 const signal = () => new AbortController().signal;
 const turn = () => new Promise((resolve) => setImmediate(resolve));
@@ -92,6 +92,45 @@ test('trusted origins reject redirects-by-configuration, userinfo, paths, ports 
   const fixture = setup(grant());
   await assert.rejects(fixture.resolve({ baseURL: rejected[0] }, signal()), safeError('WEB_PROVIDER_ENDPOINT_UNTRUSTED'));
   assert.equal(fixture.stats.reads, 0);
+});
+
+test('GHE origins accept only tenant-specific Copilot API gateways', () => {
+  for (const tenant of ['company', 'a', 'team-123', 'a'.repeat(63)]) {
+    const origin = `https://copilot-api.${tenant}.ghe.com`;
+    assert.equal(trustedCopilotOrigin(origin), origin);
+    assert.equal(trustedCopilotOrigin(`${origin}:443/`), origin);
+  }
+  assert.equal(trustedCopilotOrigin('https://COPILOT-API.COMPANY.GHE.COM/'), ghe);
+  const rejected = [
+    'https://ghe.com', 'https://company.ghe.com', 'https://api.company.ghe.com',
+    'https://copilot-api.ghe.com', 'https://copilot-api..ghe.com',
+    'https://copilot-api.team.company.ghe.com', 'https://copilot-api.company.ghe.com.evil.invalid',
+    'https://copilot-api.company.evilghe.com', 'https://evilcopilot-api.company.ghe.com',
+    'https://copilot-api.-company.ghe.com', 'https://copilot-api.company-.ghe.com',
+    'https://copilot-api.company_name.ghe.com', `https://copilot-api.${'a'.repeat(64)}.ghe.com`,
+    'https://copilot-api.company.ghe.com.', 'http://copilot-api.company.ghe.com',
+    `${ghe}:444`, `${ghe}/responses`, `${ghe}?query=value`, `${ghe}#fragment`,
+    ` ${ghe}`, `${ghe}\n`, 'https://@copilot-api.company.ghe.com',
+    'https://' + 'user:secret@copilot-api.company.ghe.com',
+    'https://copilot-api.company.ghe.com\\responses',
+  ];
+  for (const value of rejected) assert.throws(() => trustedCopilotOrigin(value), safeError('WEB_PROVIDER_ENDPOINT_UNTRUSTED'));
+});
+
+test('GHE OAuth keeps token-derived or Enterprise fallback routing without a global override', async () => {
+  for (const access of [gheToken(), 'synthetic-token']) {
+    const stored = grant({ access, enterpriseUrl: 'company.ghe.com' });
+    const fixture = setup(stored);
+    const auth = await fixture.resolve({ baseURL: individual }, signal());
+    assert.equal(auth.baseUrl, ghe);
+    assert.equal(auth.apiKey, access);
+    assert.equal(fixture.current(), stored);
+    assert.equal(fixture.stats.writes, 0);
+  }
+  const keyed = setup({ kind: 'api-key', key: gheToken() });
+  assert.equal((await keyed.resolve({}, signal())).baseUrl, ghe);
+  const opaque = setup({ kind: 'api-key', key: 'synthetic-token' });
+  assert.equal((await opaque.resolve({ baseURL: ghe }, signal())).baseUrl, ghe);
 });
 
 test('expired OAuth refresh is serialized globally and normalizes optional JSON fields', async () => {

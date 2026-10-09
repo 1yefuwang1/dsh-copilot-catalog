@@ -17,4 +17,4 @@
 Package history and versions are independent:
 
 - [Catalog changelog](packages/catalog/CHANGELOG.md) — `0.2.2` GHE Cloud endpoint support; earlier versions previously published.
-- [Search changelog](packages/search/CHANGELOG.md) — `0.1.1` first public native-search release and streaming compatibility fix.
+- [Search changelog](packages/search/CHANGELOG.md) — `0.1.2` GHE Cloud endpoint support; `0.1.1` first public native-search release and streaming compatibility fix.

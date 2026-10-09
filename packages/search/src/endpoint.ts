@@ -15,7 +15,11 @@ export function trustedCopilotOrigin(value: unknown): string {
   }
   let url: URL;
   try { url = new URL(value); } catch { throw new CopilotEndpointError(); }
-  if (url.protocol !== 'https:' || !url.hostname.endsWith('.githubcopilot.com') ||
+  // GHE Cloud routes Copilot through a tenant-specific API, not the tenant apex
+  // or api.<tenant> authentication service. Tenant slugs are single DNS labels.
+  const trustedHost = url.hostname.endsWith('.githubcopilot.com') ||
+    /^copilot-api\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.ghe\.com$/u.test(url.hostname);
+  if (url.protocol !== 'https:' || !trustedHost ||
       url.username || url.password || (url.port && url.port !== '443') ||
       url.pathname !== '/' || url.search || url.hash) {
     throw new CopilotEndpointError();

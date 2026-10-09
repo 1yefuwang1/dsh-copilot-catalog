@@ -137,7 +137,7 @@ A release selects **one package**, never the root or both packages at once:
 
 The tag must match its leaf version and repository identity. Catalog is currently
 `0.2.2`, adding GHE Cloud endpoint support; published versions cannot be republished. Search is currently
-`0.1.1`, including the verified Copilot stream-ID compatibility fix.
+`0.1.2`, adding GHE Cloud endpoint support alongside the Copilot stream-ID compatibility fix.
 
 The [release workflow](.github/workflows/publish.yml) installs/verifies with pnpm,
 then uses native `pnpm stage publish` to stage **only the selected leaf** through
