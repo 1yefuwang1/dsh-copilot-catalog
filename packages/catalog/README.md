@@ -65,6 +65,23 @@ or pi-ai version before widening them.
 
 ## Enterprise authentication and endpoint routing
 
+Both GitHub.com Copilot Enterprise accounts and GitHub Enterprise Cloud accounts
+on GHE.com are supported. These are distinct routing cases: a GitHub.com account
+may use `https://api.enterprise.githubcopilot.com`, while a GHE.com account has an
+enterprise tenant such as `company.ghe.com`. This is not general support for
+arbitrary GitHub Enterprise Server domains.
+
+For GHE.com, follow GitHub's [account authentication guide](https://docs.github.com/en/copilot/how-tos/copilot-in-your-ide/set-up-copilot/authenticate-to-ghecom)
+and [network allowlist guidance](https://docs.github.com/en/copilot/reference/copilot-allowlist-reference#copilot-on-ghecom).
+Use the tenant URL/domain, for example `https://company.ghe.com`, in the normal
+Copilot OAuth sign-in prompt. That is the **authentication host**, not the Copilot
+API origin. The public pi-ai `toAuth()` hook derives the API origin from token
+metadata first; without that metadata, it uses `https://copilot-api.company.ghe.com`
+for this tenant. The wrapper preserves that upstream selection rather than
+rewriting domains. The network guide describes tenant-scoped services; the
+`copilot-api` fallback is derived by pi-ai, not an exhaustive endpoint list in
+that guide.
+
 This plugin also works around pi-ai's API-key path: an explicit API key bypasses
 OAuth `toAuth()`, so upstream otherwise retains the bundled Individual endpoint.
 The wrapper discovers an account endpoint and supplies it to the original adapter
@@ -77,8 +94,9 @@ as a **runtime-only `baseURL` default**, covering new and bundled models.
   derive the endpoint through the same read-only OAuth hook. This applies to stored
   API-key records, explicit `apiKeyEnv` references, and ambient `COPILOT_GITHUB_TOKEN`.
   An explicit reference wins over a different stored OAuth account, as in pi-ai.
-- **Opaque token:** no account endpoint can be inferred safely. Set the existing
-  provider `baseURL` field explicitly, or use DSH's normal Copilot OAuth sign-in.
+- **Opaque API-key token:** no account endpoint can be inferred safely from the
+  key alone. Set the existing provider `baseURL` field explicitly, or use DSH's
+  normal Copilot OAuth sign-in, which preserves the GHE.com tenant in the grant.
   Discovery reports `MISSING_ENDPOINT` rather than assuming the Individual API.
 - **GitHub PAT:** it is not a Copilot access token. The wrapper does not guess the
   Enterprise GitHub domain or implement a second sign-in/exchange flow; use OAuth.
@@ -96,12 +114,32 @@ key in your profile:
         baseURL: https://api.enterprise.githubcopilot.com
 ```
 
-Use the endpoint belonging to **your** account; do not assume Enterprise seats all
-share a GitHub Enterprise Server domain. Discovery only trusts HTTPS
-`*.githubcopilot.com` origins. Inferred API-key routing is a startup snapshot;
-restart after changing accounts or moving a key to a different endpoint. If no
-endpoint can be identified, the original adapter remains mounted with its original
-configuration, so an opaque Enterprise key still needs an explicit `baseURL`.
+For an explicit GHE.com API-key route, reference a **Copilot access token** and
+use its Copilot API origin, not the tenant authentication URL:
+
+```yaml
+- id: llm-pi-ai-catalog
+  name: dsh-copilot-catalog
+  config:
+    providers:
+      github-copilot:
+        apiKeyEnv: COPILOT_ACCESS_TOKEN
+        baseURL: https://copilot-api.company.ghe.com
+```
+
+Replace `company` with your enterprise tenant and use the endpoint belonging to
+**your** account. Discovery trusts HTTPS `*.githubcopilot.com` origins and
+`copilot-api.<tenant>.ghe.com`, where `<tenant>` is one valid DNS label. It does not
+trust arbitrary `*.ghe.com` hosts, tenant authentication hosts, or `copilot-proxy`
+origins. URLs with userinfo or non-default ports and redirects remain rejected.
+Inferred API-key routing is a startup snapshot; restart after changing accounts
+or moving a key to a different endpoint. If no endpoint can be identified, the
+original adapter remains mounted with its original configuration, so an opaque
+Enterprise key still needs an explicit `baseURL`.
+
+The wrapper does not write credentials, switch accounts, migrate active profiles,
+or add a separate `github-copilot-ghe` route. A local plugin supplying that route
+remains independently configured; enabling this wrapper does not replace it.
 
 ## Installation
 
@@ -238,6 +276,7 @@ and tooling.
 ## Releases
 
 This package keeps the existing `dsh-copilot-catalog` name and independent version.
+Version `0.2.2` adds GHE Cloud discovery and inference routing support.
 Version `0.2.1` packages the preserved catalog runtime from its pnpm workspace.
 Version `0.2.0` was already published; every subsequent release must use a new
 manifest version and matching changelog entry.
@@ -291,8 +330,11 @@ source and credentials are not published.
   `modelOverrides` still apply. This plugin neither enables account policies nor
   changes stored `availableModelIds`; an upstream credential allowlist can still
   hide a model until normal refresh/sign-in updates it.
-- Enterprise OAuth endpoints outside HTTPS `*.githubcopilot.com` are rejected by
-  discovery; normal adapter behavior remains available as fallback.
+- Discovery accepts only HTTPS `*.githubcopilot.com` and
+  `copilot-api.<tenant>.ghe.com` origins with a single valid tenant DNS label, no
+  userinfo, and the default HTTPS port. Other GHE services, arbitrary enterprise
+  domains, and redirects are rejected; normal adapter behavior remains available
+  as fallback.
 - Upstream catalog structure, protocol compatibility and Copilot billing metadata
   are not stable public contracts. Re-test protocol defaults and Enterprise routing
   after updates. This package is not affiliated with DeepSeek, GitHub, or the pi-ai

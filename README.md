@@ -136,7 +136,7 @@ A release selects **one package**, never the root or both packages at once:
 - `dsh-copilot-search-vX.Y.Z`
 
 The tag must match its leaf version and repository identity. Catalog is currently
-`0.2.1`; its previously published `0.2.0` cannot be republished. Search is currently
+`0.2.2`, adding GHE Cloud endpoint support; published versions cannot be republished. Search is currently
 `0.1.1`, including the verified Copilot stream-ID compatibility fix.
 
 The [release workflow](.github/workflows/publish.yml) installs/verifies with pnpm,

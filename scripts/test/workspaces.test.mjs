@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { resolve } from 'node:path';
 import { readFile } from 'node:fs/promises';
-import { root, workspacePaths, packages, containedPath, releasePackage, assertWorkspaceDefinition } from '../workspaces.mjs';
+import { root, workspacePaths, packages, containedPath, releasePackage, assertWorkspaceDefinition, packageManager } from '../workspaces.mjs';
 import { releaseIdentity } from '../release.mjs';
 import { findCredentialIssues } from '../check-secrets.mjs';
 
@@ -11,6 +11,33 @@ const candidates = ['catalog', 'search'].map((name) => ({ path: `packages/${name
   name: `dsh-copilot-${name}`, version: name === 'catalog' ? '0.2.0' : '0.1.0',
   repository: { url: `git+https://github.com/${repository}.git`, directory: `packages/${name}` },
 } }));
+
+test('pnpm launcher distinguishes JavaScript and native executables without splitting arguments', () => {
+  const previous = process.env.npm_execpath;
+  const args = ['pack', '--pack-destination', 'directory with spaces'];
+  const before = [...args];
+  try {
+    for (const executable of ['/tools/pnpm.cjs', '/tools with spaces/pnpm.mjs', String.raw`C:\tools\pnpm.js`]) {
+      process.env.npm_execpath = executable;
+      assert.deepEqual(packageManager(args), { command: process.execPath, args: [executable, ...args], shell: false });
+    }
+    for (const executable of ['/tools/pnpm', '/tools with spaces/pnpm', '/tools/pnpm.exe', String.raw`C:\tools with spaces\pnpm.exe`]) {
+      process.env.npm_execpath = executable;
+      assert.deepEqual(packageManager(args), { command: executable, args, shell: false });
+    }
+    for (const executable of [undefined, '', '/tools/npm-cli.js', '/tools/yarn.js', '/tools/notpnpm', String.raw`C:\tools\pnpm.cmd`]) {
+      if (executable === undefined) delete process.env.npm_execpath;
+      else process.env.npm_execpath = executable;
+      assert.deepEqual(packageManager(args), {
+        command: process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', args, shell: process.platform === 'win32',
+      });
+    }
+    assert.deepEqual(args, before);
+  } finally {
+    if (previous === undefined) delete process.env.npm_execpath;
+    else process.env.npm_execpath = previous;
+  }
+});
 
 test('workspace validation accepts LF, CRLF, CR, mixed endings and no final newline', () => {
   const rows = ['packages:', ...workspacePaths.map((path) => `  - ${path}`)];

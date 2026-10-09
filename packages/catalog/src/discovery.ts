@@ -28,7 +28,12 @@ export function discoveryUrl(baseUrl: unknown): URL {
   } catch {
     throw new DiscoveryError('UNTRUSTED_ENDPOINT', 'Unexpected Copilot API endpoint');
   }
-  if (base.protocol !== 'https:' || !base.hostname.endsWith('.githubcopilot.com') ||
+  // GHE Cloud uses a tenant-specific Copilot API, not public subscription routing.
+  // Trust only that API service; the tenant apex and api.<tenant> auth service
+  // are not model-discovery destinations. Tenant slugs are single DNS labels.
+  const trustedHost = base.hostname.endsWith('.githubcopilot.com') ||
+    /^copilot-api\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.ghe\.com$/u.test(base.hostname);
+  if (base.protocol !== 'https:' || !trustedHost ||
       base.username || base.password || (base.port && base.port !== '443')) {
     throw new DiscoveryError('UNTRUSTED_ENDPOINT', 'Unexpected Copilot API endpoint');
   }
