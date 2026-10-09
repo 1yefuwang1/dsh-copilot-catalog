@@ -6,7 +6,7 @@ import { WebRuntime } from '@deepseek-ai/dsh-web';
 import { recordKeyFor } from '@deepseek-ai/dsh-llm-pi-ai';
 import { loadRuntime } from '../../dist/runtime.js';
 import { COPILOT_SEARCH_PROVIDER_ID } from '../../dist/provider.js';
-import { contextFixture, credentialFixture, enterprise, grant, token } from '../auth-helpers.mjs';
+import { contextFixture, credentialFixture, enterprise, ghe, gheToken, grant, token } from '../auth-helpers.mjs';
 
 const resultBody = () => ({ status: 'completed', output: [
   { id: 'ws_synthetic', type: 'web_search_call', status: 'completed', action: { type: 'search', sources: [
@@ -37,6 +37,49 @@ test('published search entry loads real peers without credential reads or networ
     assert.deepEqual(plugin.inject, ['web']);
     assert.equal(plugin.COPILOT_SEARCH_PROVIDER_ID, COPILOT_SEARCH_PROVIDER_ID);
   } finally { globalThis.fetch = originalFetch; }
+});
+
+test('GHE search resolves and refreshes real public auth through the actual DSH web seam', async () => {
+  const { createPlugin, Config } = await import('../../dist/plugin.js');
+  const requests = [];
+  const runtime = await loadRuntime({ fetcher: async (url, init) => {
+    requests.push(url);
+    assert.equal(init.redirect, 'error');
+    if (url === 'https://api.company.ghe.com/copilot_internal/v2/token') {
+      assert.equal(init.headers.get('authorization'), 'Bearer test-refresh-token');
+      return Response.json({ token: gheToken(), expires_at: Math.floor(Date.now() / 1000) + 1800 });
+    }
+    assert.equal(url, `${ghe}/models`);
+    assert.equal(init.headers.get('authorization'), `Bearer ${gheToken()}`);
+    return Response.json({ data: [{ id: 'synthetic-responses-model', model_picker_enabled: true, policy: { state: 'enabled' } }] });
+  } });
+  const host = new Context();
+  const web = new WebRuntime(host, { searchProvider: COPILOT_SEARCH_PROVIDER_ID, fetchProvider: 'http' });
+  const fixture = credentialFixture(grant({ access: gheToken(), enterpriseUrl: 'company.ghe.com', expires: 0 }));
+  let dispose;
+  const ctx = { ...contextFixture(fixture.service), web: { registerSearchProvider(provider) {
+    dispose = web.registerSearchProvider(provider);
+    return dispose;
+  } } };
+  createPlugin(runtime, { fetcher: async (url, init) => {
+    requests.push(url);
+    assert.equal(url, `${ghe}/responses`);
+    assert.equal(init.headers.get('authorization'), `Bearer ${gheToken()}`);
+    assert.equal(init.redirect, 'error');
+    assert.deepEqual(JSON.parse(init.body).tools, [{ type: 'web_search' }]);
+    return Response.json(resultBody());
+  } }).apply(ctx, Config({ model: 'synthetic-responses-model' }));
+  try {
+    const result = await web.search({ query: 'synthetic GHE query', maxResults: 1 });
+    assert.equal(result.sources.length, 1);
+    assert.equal(result.truncated, true);
+    assert.deepEqual(requests, [
+      'https://api.company.ghe.com/copilot_internal/v2/token', `${ghe}/models`, `${ghe}/responses`,
+    ]);
+    assert.equal(fixture.stats.writes, 1);
+    assert.equal(fixture.current().payload.enterpriseUrl, 'company.ghe.com');
+    assert.equal(fixture.current().payload.refresh, 'test-refresh-token');
+  } finally { dispose(); }
 });
 
 test('actual DSH web seam selects the Copilot provider, caps results, and disposes registration', async () => {

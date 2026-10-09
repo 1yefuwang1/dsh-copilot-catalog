@@ -4,6 +4,8 @@ import { recordKeyFor } from '@deepseek-ai/dsh-llm-pi-ai';
 
 export const enterprise = 'https://api.enterprise.githubcopilot.com';
 export const individual = 'https://api.individual.githubcopilot.com';
+export const ghe = 'https://copilot-api.company.ghe.com';
+export const gheToken = () => ['test-access-token', 'proxy-ep=copilot-api.company.ghe.com'].join(';');
 export const token = (account = 'enterprise') => ['test-access-token', `proxy-ep=proxy.${account}.githubcopilot.com`].join(';');
 export const grant = (fields = {}) => ({ kind: 'grant', payload: {
   type: 'oauth', access: token(), refresh: 'test-refresh-token', expires: Date.now() + 3_600_000, ...fields,

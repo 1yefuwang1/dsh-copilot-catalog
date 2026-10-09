@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.2 — GHE Cloud endpoint support
+
+- Accept tenant-specific HTTPS `copilot-api.<tenant>.ghe.com` gateways for GHE Cloud
+  authentication, OAuth refresh, and native search, preserving account routing.
+- Keep origin-only validation, single-label tenant restrictions, redirect refusal,
+  and rejection of tenant apex/auth hosts and lookalike domains.
+- Add synthetic GHE endpoint, authentication, refresh, dispatch, and public-peer
+  web-registry integration regressions; live tenant search support is not asserted.
+
 ## 0.1.1 — First public release and Copilot streaming compatibility
 
 - First npm release of the independent Copilot native-search provider.

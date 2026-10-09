@@ -147,10 +147,15 @@ Opaque tokens need an explicit origin. Example:
     model: gpt-6.1-sol
 ```
 
-Use the origin belonging to your account. Only plain HTTPS `*.githubcopilot.com`
-origins are accepted: no userinfo, custom port, path, query, fragment, ambiguous
-backslashes or control characters. A GitHub PAT is not a Copilot access token;
-use DSH sign-in rather than inventing another exchange flow.
+Use the origin belonging to your account. Plain HTTPS `*.githubcopilot.com` and
+GHE Cloud `copilot-api.<tenant>.ghe.com` origins are accepted. The GHE tenant must
+be a single valid DNS label; tenant apex hosts, `api.<tenant>.ghe.com` auth hosts
+and arbitrary `*.ghe.com` services are not search destinations. No userinfo,
+non-default port, path, query, fragment, ambiguous backslashes or control characters
+are allowed. OAuth retains its account's endpoint; GHE credentials are not rerouted
+to global Copilot. A GitHub PAT is not a Copilot access token; use DSH sign-in
+rather than inventing another exchange flow. Endpoint acceptance does not guarantee
+native-search support for the tenant/model.
 
 Search only persists normal refreshes of **existing OAuth grants** through public
 `Models.getAuth()` and DSH's lock; it cannot create/delete records, replace API

@@ -4,7 +4,7 @@ import { WebError } from '@deepseek-ai/dsh-web';
 import { createSafeCopilotRefresh } from '../dist/refresh.js';
 import { createCopilotAuthResolver } from '../dist/auth.js';
 import { loadRuntime } from '../dist/runtime.js';
-import { contextFixture, credentialFixture, deferred, enterprise, grant, individual, runtimeFixture, token } from './auth-helpers.mjs';
+import { contextFixture, credentialFixture, deferred, enterprise, ghe, gheToken, grant, individual, runtimeFixture, token } from './auth-helpers.mjs';
 
 const expiry = () => Math.floor(Date.now() / 1000) + 1800;
 const freshToken = (value = token()) => Response.json({ token: value, expires_at: expiry() });
@@ -45,6 +45,31 @@ test('real public Models auth refresh uses validated local transport and the sha
   assert.equal(fixture.stats.writes, 1);
   assert.deepEqual(fixture.current().payload.availableModelIds, ['synthetic-model']);
   assert.equal(fixture.current().payload.refresh, 'test-refresh-token');
+});
+
+test('GHE refresh keeps the tenant exchange and catalog routes for token and metadata endpoints', async () => {
+  for (const access of [gheToken(), 'synthetic-token']) {
+    const original = grant({ access, expires: 0, enterpriseUrl: 'company.ghe.com' });
+    const fixture = await setup(original, ({ url, init }, count) => {
+      if (count === 1) {
+        assert.equal(url, 'https://api.company.ghe.com/copilot_internal/v2/token');
+        assert.equal(init.headers.get('authorization'), 'Bearer test-refresh-token');
+        return freshToken(access);
+      }
+      assert.equal(url, `${ghe}/models`);
+      assert.equal(init.headers.get('authorization'), `Bearer ${access}`);
+      return catalog([enabled('synthetic-model'), enabled('policy-only', { model_picker_enabled: false })]);
+    });
+    const auth = await fixture.resolve({}, signal());
+    assert.equal(auth.baseUrl, ghe);
+    assert.equal(auth.apiKey, access);
+    assert.equal(fixture.requests.length, 2);
+    assert.ok(fixture.requests.every(({ init }) => init.redirect === 'error'));
+    assert.equal(fixture.stats.writes, 1);
+    assert.equal(fixture.current().payload.enterpriseUrl, original.payload.enterpriseUrl);
+    assert.equal(fixture.current().payload.refresh, original.payload.refresh);
+    assert.deepEqual(fixture.current().payload.availableModelIds, ['synthetic-model']);
+  }
 });
 
 test('response-derived untrusted catalog origin is rejected before dispatch or commit', async () => {

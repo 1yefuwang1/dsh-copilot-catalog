@@ -104,6 +104,29 @@ test('origin trust rejects non-Copilot, insecure, credentialed, pathful, or unus
   assert.equal(requests[0].url, 'https://account.enterprise.githubcopilot.com/responses');
 });
 
+test('GHE search dispatches only to the tenant Copilot API and never global routing', async () => {
+  const { requests, config } = captureOptions({ resolveAuth: async () => ({
+    ...syntheticAuth(), baseUrl: 'https://copilot-api.company.ghe.com:443/',
+  }) });
+  const result = await new CopilotSearchProvider(() => config).search(query);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url, 'https://copilot-api.company.ghe.com/responses');
+  assert.equal(requests[0].init.redirect, 'error');
+  assert.equal(new Headers(requests[0].init.headers).get('authorization'), 'Bearer synthetic-token');
+  assert.equal(result.content, 'Synthetic answer');
+  for (const baseUrl of [
+    'https://company.ghe.com', 'https://api.company.ghe.com', 'https://copilot-api.team.company.ghe.com',
+    'https://copilot-api.company.ghe.com.evil.test', 'https://copilot-api.-company.ghe.com',
+    'https://copilot-api.company.ghe.com:8443', 'http://copilot-api.company.ghe.com',
+    'https://@copilot-api.company.ghe.com', 'https://copilot-api.company.ghe.com/responses',
+    'https://copilot-api.company.ghe.com?token=private', 'https://copilot-api.company.ghe.com#fragment',
+  ]) {
+    const rejected = captureOptions({ resolveAuth: async () => ({ ...syntheticAuth(), baseUrl }) });
+    await assert.rejects(new CopilotSearchProvider(() => rejected.config).search(query), errorCode('WEB_PROVIDER_ENDPOINT_UNTRUSTED'));
+    assert.equal(rejected.requests.length, 0);
+  }
+});
+
 test('only safe auth identity headers dispatch; critical headers cannot be overridden', async () => {
   const { config, requests } = captureOptions({ resolveAuth: async () => ({ ...syntheticAuth(), headers: {
     'uSeR-aGeNt': 'SyntheticIdentity/1', 'EDITOR-VERSION': 'vscode/synthetic',
