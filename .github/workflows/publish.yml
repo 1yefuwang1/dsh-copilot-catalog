@@ -40,7 +40,7 @@ jobs:
         run: node scripts/release.mjs
       - name: Install without dependency lifecycle scripts
         run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Verify both plugin packages
+      - name: Verify all plugin packages
         run: pnpm run verify
       - name: Stage only the selected package using trusted publishing
         working-directory: ${{ steps.release.outputs.directory }}

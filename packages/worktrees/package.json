@@ -1,0 +1,70 @@
+{
+  "name": "dsh-worktrees",
+  "version": "0.2.6",
+  "description": "Multi-folder projects with Local and isolated Git worktree threads, freshly fetched remote branches and guarded local handoff.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./git": { "types": "./dist/git.d.ts", "import": "./dist/git.js" },
+    "./naming": { "types": "./dist/naming.d.ts", "import": "./dist/naming.js" },
+    "./projects": { "types": "./dist/projects.d.ts", "import": "./dist/projects.js" },
+    "./types": { "types": "./dist/types.d.ts", "import": "./dist/types.js" },
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./locale/en.json": "./locale/en.json"
+  },
+  "files": ["dist/", "client.js", "cordis.patch.yml", "locale/en.json", "icon.svg", "README.md", "CHANGELOG.md", "LICENSE"],
+  "icon": "./icon.svg",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "pnpm run build && node --test test/*.test.mjs",
+    "test:integration": "pnpm run build && node --test test/integration/*.test.mjs",
+    "test:types": "pnpm run build && tsc -p test/types/tsconfig.json",
+    "test:pack": "pnpm run build && node ../../scripts/check-pack.mjs .",
+    "check": "pnpm run typecheck && node ../../scripts/check.mjs",
+    "check:secrets": "node ../../scripts/check-secrets.mjs"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/1yefuwang1/dsh-copilot-catalog.git",
+    "directory": "packages/worktrees"
+  },
+  "engines": { "node": ">=22.19.0", "dsh": "0.2.0-rc.2" },
+  "dependencies": { "zod": "^4.4.3" },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.0.4",
+    "@deepseek-ai/schemastery": "~3.18.4",
+    "@deepseek-ai/dsh-agent": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-agent-preset-registry": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-api-session-controller": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-commands": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-connection": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-home-paths": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-plan-mode": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-sandbox": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-sandbox-policy": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-scope": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-session": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-session-query": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-session-persistence": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-storage-domain": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-subprocess": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-system-prompt": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-tools": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-user-approval": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-workspace": "0.2.0-rc.2"
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": ["@deepseek-ai/dsh-client-ui-conversation", "@deepseek-ai/dsh-client-ui-workspace", "@deepseek-ai/dsh-api-remotes"]
+    }
+  }
+}

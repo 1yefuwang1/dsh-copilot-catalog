@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Projects and worktrees",
+    "description": "Group Local and worktree threads in multi-folder projects, with visible checkout backing, fresh remote bases and guarded local handoff."
+  }
+}

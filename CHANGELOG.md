@@ -1,6 +1,21 @@
 # Monorepo changelog
 
-## Unreleased — Two Copilot plugins, pnpm workspaces
+## Unreleased — Three independent plugin workspaces
+
+- Add the unpublished `dsh-worktrees` `0.2.6` Host/Web Client package: persistent
+  multi-folder projects, project-bound Local/worktree threads, visible backing
+  indicators, native new-conversation worktree choice, lazy first-Send creation
+  from a fresh remote base, staged progress and pre-admission fast branch naming, manager/reminders and
+  explicitly guarded optimistic Local handoff with retained sources/history.
+- Keep cross-root Git mutations Full-access-only; no privilege fallback, cached
+  fetch fallback, continuous synchronization or physical-delete operation.
+- Extend release targeting/public declaration checks and exact publication
+  allowlists to the third leaf without widening either existing package's files
+  or 150,000-byte size bound; worktrees has a separate 450,000-byte bound.
+- Include local-Git fixtures and static/pure Client protocols; installed browser
+  registration/interaction still requires separate live verification.
+
+### Existing Copilot package migration
 
 - Move `dsh-copilot-catalog` into its own publishable workspace without changing
   its runtime source, package identity, exports or credential ownership.
@@ -17,4 +32,5 @@
 Package history and versions are independent:
 
 - [Catalog changelog](packages/catalog/CHANGELOG.md) — `0.2.2` GHE Cloud endpoint support; earlier versions previously published.
-- [Search changelog](packages/search/CHANGELOG.md) — `0.1.2` GHE Cloud endpoint support; `0.1.1` first public native-search release and streaming compatibility fix.
+- [Search changelog](<packages/search/CHANGELOG.md>) — `0.1.2` GHE Cloud endpoint support; `0.1.1` first public native-search release and streaming compatibility fix.
+- [Worktrees changelog](<packages/worktrees/CHANGELOG.md>) — `0.2.6` unreleased; not published.

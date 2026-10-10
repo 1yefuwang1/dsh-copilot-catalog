@@ -3,7 +3,7 @@ import { resolve, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const root = fileURLToPath(new URL('../', import.meta.url));
-export const workspacePaths = Object.freeze(['packages/catalog', 'packages/search']);
+export const workspacePaths = Object.freeze(['packages/catalog', 'packages/search', 'packages/worktrees']);
 
 /** Git may check out YAML with CRLF on Windows; validate complete rows, not LF substrings. */
 export function assertWorkspaceDefinition(definition) {
@@ -13,7 +13,7 @@ export function assertWorkspaceDefinition(definition) {
   }
 }
 
-/** Resolve only the two known publishable leaves, never the private root or arbitrary paths. */
+/** Resolve only the explicitly registered publishable leaves, never the private root or arbitrary paths. */
 export async function packages(target) {
   const requested = target === undefined ? undefined : resolve(process.cwd(), target);
   const results = [];
@@ -25,7 +25,7 @@ export async function packages(target) {
     if (manifest.private) throw new Error(`Workspace must be publishable: ${path}`);
     results.push({ path, directory, manifest });
   }
-  if (!results.length) throw new Error('Select packages/catalog or packages/search, not the private monorepo root');
+  if (!results.length) throw new Error(`Select one of ${workspacePaths.join(', ')}, not the private monorepo root or an arbitrary path`);
   return results;
 }
 

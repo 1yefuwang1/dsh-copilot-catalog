@@ -1,7 +1,8 @@
 packages:
   - packages/catalog
   - packages/search
+  - packages/worktrees
 
-# Dependency lifecycle scripts are not needed to build either plugin.
+# Dependency lifecycle scripts are not needed to build these plugins.
 # Install with --ignore-scripts, then run the explicit workspace build.
 onlyBuiltDependencies: []
