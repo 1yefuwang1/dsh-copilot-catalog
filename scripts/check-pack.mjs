@@ -13,7 +13,7 @@ const policies = {
     modules: ['index', 'auth', 'endpoint', 'errors', 'plugin', 'provider', 'refresh', 'responses', 'runtime', 'types'],
     extras: [], maxBytes: 150_000,
   },
-  'dsh-worktrees': {
+  '@1yefuwang1/dsh-worktrees': {
     modules: ['index', 'types', 'errors', 'runtime', 'schema', 'store', 'sessions', 'context', 'service', 'git', 'naming', 'rpc', 'projects', 'project-store', 'project-rpc', 'project-context', 'quiet-rpc', 'first-message'],
     extras: ['client.js', 'locale/en.json', 'icon.svg'], maxBytes: 525_000,
   },

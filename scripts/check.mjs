@@ -38,7 +38,18 @@ for (const { path, manifest } of leaves) {
   }
   files.push(...await sourceFiles(`${path}/test`, '.mjs'));
   sources.push(...await sourceFiles(`${path}/src`, '.ts'));
-  await readFile(join(root, path, manifest.dsh.bundle.patch), 'utf8');
+  const patch = await readFile(join(root, path, manifest.dsh.bundle.patch), 'utf8');
+  if (path === 'packages/worktrees') {
+    const client = await readFile(join(root, path, 'client.js'), 'utf8');
+    const moduleId = client.match(/window\.__ModuleLoader__\.load\(\{\s*id: '([^']+)'/u)?.[1];
+    const configKey = client.match(/name: 'plugins\.row\.config', key: '([^']+)'/u)?.[1];
+    if (manifest.name !== '@1yefuwang1/dsh-worktrees' || moduleId !== manifest.name ||
+        configKey !== `${manifest.name}#git-worktrees` ||
+        !patch.includes(`      name: '${manifest.name}'`) || !patch.includes('    - id: git-worktrees') ||
+        manifest.publishConfig?.access !== 'public' || manifest.publishConfig.registry !== 'https://registry.npmjs.org/') {
+      throw new Error('Worktree package, Client loader, native config row and public npm identity must agree');
+    }
+  }
 }
 for (const file of files) {
   const result = spawnSync(process.execPath, ['--check', join(root, file)], { stdio: 'inherit' });

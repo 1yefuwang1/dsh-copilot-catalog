@@ -1,6 +1,10 @@
-# dsh-worktrees changelog
+# @1yefuwang1/dsh-worktrees changelog
 
-## 0.2.13 — Unreleased
+## 0.2.13 — First scoped release preparation
+
+- Package as `@1yefuwang1/dsh-worktrees` to avoid an unrelated unscoped npm name;
+  publish only this leaf through the staged trusted-publishing workflow. Preserve
+  stable tool/command, UI, RPC and storage identifiers across the identity change.
 
 - Match Projects working-session markers to native Folder view: a neutral 14px
   SVG ring with synchronized 1.5s rotation/breathing and reduced-motion support.

@@ -9,7 +9,7 @@ import { publicationPolicy, validatePublicationMetadata, validatePublicationSize
 
 const repository = '1yefuwang1/dsh-copilot-catalog';
 const candidates = ['catalog', 'search', 'worktrees'].map((name) => ({ path: `packages/${name}`, manifest: {
-  name: name === 'worktrees' ? 'dsh-worktrees' : `dsh-copilot-${name}`, version: name === 'catalog' ? '0.2.0' : '0.1.0',
+  name: name === 'worktrees' ? '@1yefuwang1/dsh-worktrees' : `dsh-copilot-${name}`, version: name === 'catalog' ? '0.2.0' : '0.1.0',
   repository: { url: `git+https://github.com/${repository}.git`, directory: `packages/${name}` },
 } }));
 
@@ -61,7 +61,7 @@ test('workspace validation rejects every missing, substring-only or commented pa
 test('the private root is not a publication target and all three leaves resolve portably', async () => {
   assert.deepEqual(workspacePaths, ['packages/catalog', 'packages/search', 'packages/worktrees']);
   const leaves = await packages();
-  assert.deepEqual(leaves.map(({ manifest }) => manifest.name), ['dsh-copilot-catalog', 'dsh-copilot-search', 'dsh-worktrees']);
+  assert.deepEqual(leaves.map(({ manifest }) => manifest.name), ['dsh-copilot-catalog', 'dsh-copilot-search', '@1yefuwang1/dsh-worktrees']);
   for (const path of workspacePaths) {
     const selected = await packages(resolve(root, path));
     assert.equal(selected.length, 1);
@@ -80,8 +80,8 @@ test('publication content paths cannot escape their selected package', () => {
 test('versioned package tags select exactly one package, never the legacy root tag', () => {
   assert.equal(releasePackage('dsh-copilot-catalog-v0.2.0', candidates), candidates[0]);
   assert.equal(releasePackage('dsh-copilot-search-v0.1.0', candidates), candidates[1]);
-  assert.equal(releasePackage('dsh-worktrees-v0.1.0', candidates), candidates[2]);
-  for (const tag of ['v0.2.0', 'dsh-copilot-search-v0.2.0', 'dsh-copilot-search-v0.1.0\n', 'dsh-worktrees-v0.2.0', 'dsh-worktrees-v0.1.0\n', 'dsh-copilot-worktrees-v0.1.0', undefined]) {
+  assert.equal(releasePackage('@1yefuwang1/dsh-worktrees-v0.1.0', candidates), candidates[2]);
+  for (const tag of ['v0.2.0', 'dsh-worktrees-v0.1.0', '1yefuwang1-dsh-worktrees-v0.1.0', 'dsh-copilot-search-v0.2.0', 'dsh-copilot-search-v0.1.0\n', '@1yefuwang1/dsh-worktrees-v0.2.0', '@1yefuwang1/dsh-worktrees-v0.1.0\n', 'dsh-copilot-worktrees-v0.1.0', undefined]) {
     assert.throws(() => releasePackage(tag, candidates), /Release tag/u);
   }
   assert.throws(() => releasePackage('dsh-copilot-search-v0.1.0', [candidates[1], candidates[1]]), /ambiguously/u);
@@ -91,14 +91,14 @@ test('release metadata must match its actual GitHub repository and package direc
   assert.deepEqual(releaseIdentity('dsh-copilot-search-v0.1.0', repository, candidates), {
     package: 'dsh-copilot-search', version: '0.1.0', directory: 'packages/search',
   });
-  assert.deepEqual(releaseIdentity('dsh-worktrees-v0.1.0', repository, candidates), {
-    package: 'dsh-worktrees', version: '0.1.0', directory: 'packages/worktrees',
+  assert.deepEqual(releaseIdentity('@1yefuwang1/dsh-worktrees-v0.1.0', repository, candidates), {
+    package: '@1yefuwang1/dsh-worktrees', version: '0.1.0', directory: 'packages/worktrees',
   });
   assert.throws(() => releaseIdentity('dsh-copilot-search-v0.1.0', 'someone/else', candidates), /repository/u);
-  assert.throws(() => releaseIdentity('dsh-worktrees-v0.1.0', 'someone/else', candidates), /repository/u);
+  assert.throws(() => releaseIdentity('@1yefuwang1/dsh-worktrees-v0.1.0', 'someone/else', candidates), /repository/u);
   const unknown = structuredClone(candidates[2]);
-  unknown.manifest.name = 'dsh-worktrees-extra';
-  assert.throws(() => releaseIdentity('dsh-worktrees-extra-v0.1.0', repository, [unknown]), /Invalid release package identity/u);
+  unknown.manifest.name = '@1yefuwang1/dsh-worktrees-extra';
+  assert.throws(() => releaseIdentity('@1yefuwang1/dsh-worktrees-extra-v0.1.0', repository, [unknown]), /Invalid release package identity/u);
   assert.throws(() => releaseIdentity('dsh-copilot-search-v0.1.0', `${repository}\n`, candidates), /repository/u);
   const incorrect = structuredClone(candidates);
   incorrect[1].manifest.repository.directory = 'packages/catalog';
@@ -119,24 +119,27 @@ test('publication allowlists and bounds preserve both old leaves and explicitly 
   const modules = {
     'dsh-copilot-catalog': ['index', 'catalog', 'discovery', 'plugin', 'runtime', 'types'],
     'dsh-copilot-search': ['index', 'auth', 'endpoint', 'errors', 'plugin', 'provider', 'refresh', 'responses', 'runtime', 'types'],
-    'dsh-worktrees': ['index', 'types', 'errors', 'runtime', 'schema', 'store', 'sessions', 'context', 'service', 'git', 'naming', 'rpc', 'projects', 'project-store', 'project-rpc', 'project-context', 'quiet-rpc', 'first-message'],
+    '@1yefuwang1/dsh-worktrees': ['index', 'types', 'errors', 'runtime', 'schema', 'store', 'sessions', 'context', 'service', 'git', 'naming', 'rpc', 'projects', 'project-store', 'project-rpc', 'project-context', 'quiet-rpc', 'first-message'],
   };
   for (const [name, names] of Object.entries(modules)) {
     const policy = publicationPolicy(name);
-    const extras = name === 'dsh-worktrees' ? ['client.js', 'locale/en.json', 'icon.svg'] : [];
+    const extras = name === '@1yefuwang1/dsh-worktrees' ? ['client.js', 'locale/en.json', 'icon.svg'] : [];
     assert.deepEqual(policy.files, [...common, ...names.flatMap(module => [`dist/${module}.js`, `dist/${module}.d.ts`]), ...extras].sort());
-    assert.equal(policy.maxBytes, name === 'dsh-worktrees' ? 525_000 : 150_000);
+    assert.equal(policy.maxBytes, name === '@1yefuwang1/dsh-worktrees' ? 525_000 : 150_000);
     assert.doesNotThrow(() => validatePublicationSize(name, policy.maxBytes - 1));
     assert.throws(() => validatePublicationSize(name, policy.maxBytes), /Unexpectedly large/u);
     assert.throws(() => validatePublicationSize(name, -1), /Unexpectedly large/u);
     assert.throws(() => validatePublicationSize(name, NaN), /Unexpectedly large/u);
   }
-  for (const name of ['private-root', 'unknown', 'toString']) assert.throws(() => publicationPolicy(name), /explicit publication allowlist/u);
+  for (const name of ['private-root', 'dsh-worktrees', 'unknown', 'toString']) assert.throws(() => publicationPolicy(name), /explicit publication allowlist/u);
 });
 
 test('worktree tarball metadata rejects extra/missing files, wrong identity and absent exported targets', async () => {
   const [{ manifest }] = await packages(resolve(root, 'packages/worktrees'));
+  assert.equal(manifest.name, '@1yefuwang1/dsh-worktrees');
+  assert.deepEqual(manifest.publishConfig, { access: 'public', registry: 'https://registry.npmjs.org/' });
   const files = publicationPolicy(manifest.name).files;
+  assert.equal(files.length, 44);
   const packed = { name: manifest.name, version: manifest.version, files: files.map(path => ({ path })) };
   assert.deepEqual(validatePublicationMetadata(manifest, packed), files);
   assert.throws(() => validatePublicationMetadata(manifest, { ...packed, files: [...packed.files, { path: 'src/service.ts' }] }), /Unexpected published files/u);

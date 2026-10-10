@@ -2,7 +2,7 @@
 
 ## Unreleased — Three independent plugin workspaces
 
-- Add the unpublished `dsh-worktrees` `0.2.13` Host/Web Client package: persistent
+- Prepare the `@1yefuwang1/dsh-worktrees` `0.2.13` Host/Web Client release: persistent
   multi-folder projects with durable main-folder defaults and agent folder reminders,
   project-bound Local/worktree threads, visible backing
   indicators, native new-conversation worktree choice, lazy first-Send creation
@@ -38,4 +38,4 @@ Package history and versions are independent:
 
 - [Catalog changelog](packages/catalog/CHANGELOG.md) — `0.2.2` GHE Cloud endpoint support; earlier versions previously published.
 - [Search changelog](<packages/search/CHANGELOG.md>) — `0.1.2` GHE Cloud endpoint support; `0.1.1` first public native-search release and streaming compatibility fix.
-- [Worktrees changelog](<packages/worktrees/CHANGELOG.md>) — `0.2.13` unreleased; not published.
+- [Worktrees changelog](<packages/worktrees/CHANGELOG.md>) — `@1yefuwang1/dsh-worktrees@0.2.13`; staged release requires maintainer approval before npm availability.

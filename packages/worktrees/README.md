@@ -1,8 +1,11 @@
-# dsh-worktrees
+# @1yefuwang1/dsh-worktrees
 
 Multi-folder projects with Local and isolated Git worktree threads for DeepSeek
-Harness. This experimental Host + Web Client package is **`0.2.13`, not yet
-published**. It does not require Copilot, the catalog plugin, or the search plugin.
+Harness. This experimental Host + Web Client package is **`0.2.13`**, prepared for
+scoped npm release with maintainer review/2FA. It does not require Copilot, the
+catalog plugin, or the search plugin. The scoped name avoids collision with the
+unrelated npm package `dsh-worktrees`; stable tool, command and metadata names are
+unchanged.
 
 ## Projects and threads
 
@@ -324,12 +327,19 @@ capabilities. The manifest names `@deepseek-ai/dsh-agent-preset-registry` and
 `@deepseek-ai/dsh-plan-mode`; the Web Client mounts beside the existing
 conversation/workspace UI. Development uses pnpm `11.7.0`.
 
-This version is not available as a promised npm release. Build explicitly from
+After the staged release is approved and appears on npm, install the scoped
+package (the similarly named unscoped package is unrelated):
+
+```sh
+dsh plugin --profile <profile> add @1yefuwang1/dsh-worktrees@0.2.13
+```
+
+For local development or while release approval is pending, build explicitly from
 the private monorepo root, then opt into a local leaf installation:
 
 ```sh
 pnpm install --frozen-lockfile --ignore-scripts
-pnpm --filter dsh-worktrees run build
+pnpm --filter @1yefuwang1/dsh-worktrees run build
 # Alters the chosen profile only if you choose to run it:
 dsh plugin --profile <profile> add -w packages/worktrees
 ```
@@ -443,10 +453,10 @@ Public ESM exports are the root plugin/config/types, `./git`, `./naming`,
 ## Verification and release status
 
 ```sh
-pnpm --filter dsh-worktrees run test
-pnpm --filter dsh-worktrees run test:integration
-pnpm --filter dsh-worktrees run test:types
-pnpm --filter dsh-worktrees run test:pack
+pnpm --filter @1yefuwang1/dsh-worktrees run test
+pnpm --filter @1yefuwang1/dsh-worktrees run test:integration
+pnpm --filter @1yefuwang1/dsh-worktrees run test:types
+pnpm --filter @1yefuwang1/dsh-worktrees run test:pack
 ```
 
 Unit/protocol tests and temporary local-Git fixtures are not a live GUI, remote
@@ -455,7 +465,8 @@ checks, not a fake DOM or screenshot renderer. Browser interaction, visible slot
 registration and light/dark appearance still require verification in the installed
 GUI; they were unavailable during initial Client implementation.
 
-A future release uses `dsh-worktrees-vX.Y.Z`, matching only this leaf's version.
-The shared release gate/staged OIDC workflow never publishes the private root or
-all leaves together. Version `0.1.0` has not been published by this implementation.
+Release tags use `@1yefuwang1/dsh-worktrees-vX.Y.Z`, matching this leaf's full scoped
+name and version. The shared release gate/staged OIDC workflow never publishes the
+private root or all leaves together. The workflow stages the release; a maintainer
+reviews and approves it with npm 2FA before the version becomes publicly available.
 See [the package changelog](<CHANGELOG.md>) and [MIT license](<LICENSE>).

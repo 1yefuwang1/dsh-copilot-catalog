@@ -32,9 +32,16 @@ function fails(action, kind, code) {
   assert.throws(action, error => error.kind === kind && (code === undefined || error.code === code));
 }
 
-test('persistent factory uses exact id and only the React module', () => {
-  new vm.Script(source);
-  assert.match(source, /window\.__ModuleLoader__\.load\(\{\s*id: 'dsh-worktrees'/);
+test('persistent factory uses the scoped manifest id and only the React module', async () => {
+  const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  const patch = await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8');
+  let registered;
+  vm.runInNewContext(source, { window: { __ModuleLoader__: { load(value) { registered = value; } } } });
+  assert.equal(manifest.name, '@1yefuwang1/dsh-worktrees');
+  assert.equal(registered.id, manifest.name);
+  assert.match(patch, /id: git-worktrees\s+name: '@1yefuwang1\/dsh-worktrees'/u);
+  assert.match(source, /const PANEL = 'dsh-worktrees';/u);
+  assert.match(source, /const NS = 'worktrees\.ui';/u);
   const requires = [...source.matchAll(/require\('([^']+)'\)/g)].map(match => match[1]);
   assert.deepEqual(requires, ['react']);
   assert.doesNotMatch(source, /(?:document|window)\.(?:body|querySelector|getElementById)|innerHTML|appendChild|createPortal|openWorkspace\(/);
@@ -758,7 +765,8 @@ test('Local retry after target refusal waits for source reupload before its nati
 
 
 test('worktree root page uses native owner form and exact plugin-row key without custom storage or RPC', () => {
-  assert.match(source, /name: 'plugins.row.config', key: 'dsh-worktrees#git-worktrees'.*RootFolderSettings/);
+  assert.match(source, /name: 'plugins.row.config', key: '@1yefuwang1\/dsh-worktrees#git-worktrees'.*RootFolderSettings/);
+  assert.doesNotMatch(source, /key: 'dsh-worktrees#git-worktrees'/u);
   const page = source.slice(source.indexOf('    function RootFolderSettings('), source.indexOf('    function Header('));
   assert.match(page, /view === 'summary'/);
   assert.match(page, /state\.writable && state\.mode === 'host'/);

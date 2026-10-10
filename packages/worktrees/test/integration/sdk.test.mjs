@@ -13,9 +13,19 @@ import { CommandRuntime } from '@deepseek-ai/dsh-commands';
 import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt';
 import { createScope, scopeTarget } from '@deepseek-ai/dsh-scope';
 import { HostConnectionService, serverResponseSchema } from '@deepseek-ai/dsh-client-connection';
-import * as plugin from '../../dist/index.js';
+import * as plugin from '@1yefuwang1/dsh-worktrees';
 import { WorktreeReminders } from '../../dist/context.js';
 import { ProjectReminders, renderProjectContext } from '../../dist/project-context.js';
+
+test('scoped public package and subpaths keep the stable Host identity', async () => {
+  const { default: manifest } = await import('@1yefuwang1/dsh-worktrees/package.json', { with: { type: 'json' } });
+  assert.equal(manifest.name, '@1yefuwang1/dsh-worktrees');
+  assert.equal(plugin.name, 'git-worktrees');
+  for (const subpath of ['git', 'naming', 'projects', 'types']) {
+    assert.ok(await import(`@1yefuwang1/dsh-worktrees/${subpath}`));
+  }
+  assert.deepEqual((await import('@1yefuwang1/dsh-worktrees/locale/en.json', { with: { type: 'json' } })).default, JSON.parse(await readFile(new URL('../../locale/en.json', import.meta.url), 'utf8')));
+});
 
 function record(root) {
   const id = randomUUID(); return { id, operationId: randomUUID(), repoRoot: resolve(root, 'original'), commonDir: resolve(root, 'original/.git'), projectSubdir: 'project', checkoutRoot: resolve(root, 'isolated'), effectiveCwd: resolve(root, 'isolated/project'), remote: 'origin', remoteIdentity: 'opaque', remoteBranch: 'main', baseOid: 'a'.repeat(40), baseRef: `refs/dsh-worktrees/${id}/base`, fetchedAt: 1, createdAt: 1, sessionIds: [], workspaceId: null, branch: null, protected: false, archived: false, state: 'ready', error: null };

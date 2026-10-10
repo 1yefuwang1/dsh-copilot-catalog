@@ -1,8 +1,8 @@
-import { Config, apply, GitOperations as RootGitOperations, WorktreeError, ProjectController as RootProjectController, type WorktreeConfig as RootConfig, type CommandEnvelope, type ProjectRecord as RootProjectRecord } from 'dsh-worktrees';
-import { ProjectController, parseProjectRequest, projectParameterSchema, resolveMainFolder, type ProjectRequest, type ProjectThreadBinding, type ProjectSnapshot, type ProjectStartResult, type ProjectRemoveResult } from 'dsh-worktrees/projects';
-import { GitOperations } from 'dsh-worktrees/git';
-import { NAMING_DEFAULTS, namingConfig, safeSlug } from 'dsh-worktrees/naming';
-import type { WorktreeConfig, GitExecutor, GitRunSpec, GitRunResult, RepositoryInfo, RemoteBranches, CheckoutState, CreateCheckoutInput, CreatedCheckout, SnapshotInput, WorktreePreview, WorktreeRecord, SessionSettings, SessionResult, WorktreeRequest, WorktreeAction, OperationRecord, OperationPhase } from 'dsh-worktrees/types';
+import { Config, apply, GitOperations as RootGitOperations, WorktreeError, ProjectController as RootProjectController, type WorktreeConfig as RootConfig, type CommandEnvelope, type ProjectRecord as RootProjectRecord } from '@1yefuwang1/dsh-worktrees';
+import { ProjectController, parseProjectRequest, projectParameterSchema, resolveMainFolder, type ProjectRequest, type ProjectThreadBinding, type ProjectSnapshot, type ProjectStartResult, type ProjectRemoveResult } from '@1yefuwang1/dsh-worktrees/projects';
+import { GitOperations } from '@1yefuwang1/dsh-worktrees/git';
+import { NAMING_DEFAULTS, namingConfig, safeSlug } from '@1yefuwang1/dsh-worktrees/naming';
+import type { WorktreeConfig, GitExecutor, GitRunSpec, GitRunResult, RepositoryInfo, RemoteBranches, CheckoutState, CreateCheckoutInput, CreatedCheckout, SnapshotInput, WorktreePreview, WorktreeRecord, SessionSettings, SessionResult, WorktreeRequest, WorktreeAction, OperationRecord, OperationPhase } from '@1yefuwang1/dsh-worktrees/types';
 import type { Context } from '@deepseek-ai/cordis';
 
 // Compile-only consumer of the exported declarations, never executed against Git.

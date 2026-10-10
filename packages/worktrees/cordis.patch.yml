@@ -1,6 +1,6 @@
 - insert:
     - id: git-worktrees
-      name: dsh-worktrees
+      name: '@1yefuwang1/dsh-worktrees'
       config:
         defaultRemote: origin
         defaultBranch: main

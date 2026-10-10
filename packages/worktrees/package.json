@@ -1,5 +1,5 @@
 {
-  "name": "dsh-worktrees",
+  "name": "@1yefuwang1/dsh-worktrees",
   "version": "0.2.13",
   "description": "Multi-folder projects with Local and isolated Git worktree threads, freshly fetched remote branches and guarded local handoff.",
   "type": "module",
@@ -28,6 +28,7 @@
     "check:secrets": "node ../../scripts/check-secrets.mjs"
   },
   "license": "MIT",
+  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/1yefuwang1/dsh-copilot-catalog.git",

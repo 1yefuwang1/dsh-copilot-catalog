@@ -10,7 +10,12 @@ each package's source and bundle patch before installation.
   public pi-ai APIs. Normal OAuth refresh may persist an existing grant through
   DSH's serialized cross-process lock. Search cannot create/delete records or
   replace API keys; it does not introduce another sign-in flow.
-- Both refuse credential redirects and untrusted direct Copilot origins. Neither
+- **Worktrees:** project changes edit only logical metadata. Git worktree setup and
+  handoff retain actual-caller permissions and cancellation guards; handoff requires
+  idle sessions and stopped external writers. Project removal never deletes source
+  directories, sessions or managed checkouts. The Web composer adapter is pinned to
+  the supported runtime and fails closed when its private interface changes.
+- Both Copilot plugins refuse credential redirects and untrusted direct Copilot origins. Neither
   modifies signed app files or an active profile during automated development.
 - Search results and source metadata are external, untrusted content. No generated
   prose URL is accepted as evidence that native search ran.
@@ -47,7 +52,7 @@ GitHub's applicable account/usage policies; auxiliary searches may consume usage
 Copilot session tokens, JWTs, private keys, credential-bearing URLs,
 hard-coded credential-like literals and
 sensitive filenames. `node scripts/check-secrets.mjs --staged` checks the actual
-index. Only specifically reviewed synthetic literals in the two known package test
+index. Only specifically reviewed synthetic literals in the known package test
 trees are allowed; suspected values are never printed. This is defense in depth,
 not a proof that arbitrary secrets are absent. Review source and each tarball.
 

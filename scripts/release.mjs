@@ -8,7 +8,7 @@ export function releaseIdentity(tag, repository, candidates) {
   }
   const selected = releasePackage(tag, candidates);
   const { manifest, path } = selected;
-  if (!['dsh-copilot-catalog', 'dsh-copilot-search', 'dsh-worktrees'].includes(manifest.name) ||
+  if (!['dsh-copilot-catalog', 'dsh-copilot-search', '@1yefuwang1/dsh-worktrees'].includes(manifest.name) ||
       !/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/u.test(manifest.version)) {
     throw new Error('Invalid release package identity');
   }

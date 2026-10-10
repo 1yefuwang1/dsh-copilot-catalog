@@ -2,14 +2,15 @@
 
 A **pnpm monorepo with three independently installable DeepSeek Harness plugins**.
 Host halves use strict TypeScript/ESM with declarations; the worktree package also
-contains a persistent plain-JS Web Client. `dsh-worktrees` is an unreleased `0.2.13`
-package, not a promised npm installation target.
+contains a persistent plain-JS Web Client. The worktree plugin is packaged as
+`@1yefuwang1/dsh-worktrees@0.2.13`; npm availability follows maintainer approval
+of the staged release.
 
 | Package | Purpose | DSH behavior |
 | --- | --- | --- |
 | [dsh-copilot-catalog](packages/catalog/README.md) | Account-aware Copilot model discovery | Wraps/replaces the standard pi-ai adapter; preserves its public configuration and credential key |
 | [dsh-copilot-search](<packages/search/README.md>) | Copilot native Responses web search | Registers `github-copilot-search`; does not replace an LLM adapter |
-| [dsh-worktrees](<packages/worktrees/README.md>) | Multi-folder projects with Local/worktree threads | Adds project grouping with metadata-only removal, main-folder defaults and agent folder reminders, worktree indicators, native first-Send lazy setup with visible progress and fast branch naming, manager/reminders and guarded Local handoff; no core or LLM adapter changes |
+| [@1yefuwang1/dsh-worktrees](<packages/worktrees/README.md>) | Multi-folder projects with Local/worktree threads | Adds project grouping with metadata-only removal, main-folder defaults and agent folder reminders, worktree indicators, native first-Send lazy setup with visible progress and fast branch naming, manager/reminders and guarded Local handoff; no core or LLM adapter changes |
 
 The repository root is **private development tooling**, not a DSH plugin. Install
 or link a leaf package, not the root Git URL. The existing catalog npm name and
@@ -84,8 +85,8 @@ Target one package:
 pnpm --filter dsh-copilot-catalog run test
 pnpm --filter dsh-copilot-search run test
 pnpm --filter dsh-copilot-search run test:integration
-pnpm --filter dsh-worktrees run test
-pnpm --filter dsh-worktrees run test:integration
+pnpm --filter @1yefuwang1/dsh-worktrees run test
+pnpm --filter @1yefuwang1/dsh-worktrees run test:integration
 ```
 
 Local linking, **only if you choose to alter a DSH profile**:
@@ -139,7 +140,7 @@ auxiliary Copilot usage; a returned-source cap does not cap backend searches/cos
 packages/
   catalog/          dsh-copilot-catalog: source, tests, bundle and package docs
   search/           dsh-copilot-search: source, tests, bundle and package docs
-  worktrees/        dsh-worktrees: Host, Client, Git, tests and package docs
+  worktrees/        @1yefuwang1/dsh-worktrees: Host, Client, Git, tests and docs
 scripts/            validation, credential audit and release targeting
 pnpm-workspace.yaml the three plugin workspaces
 pnpm-lock.yaml      reproducible root and leaf dependency graph
@@ -155,12 +156,12 @@ A release selects **one package**, never the root or multiple packages at once:
 
 - `dsh-copilot-catalog-vX.Y.Z`
 - `dsh-copilot-search-vX.Y.Z`
-- `dsh-worktrees-vX.Y.Z`
+- `@1yefuwang1/dsh-worktrees-vX.Y.Z`
 
 The tag must match its leaf version and repository identity. Catalog is currently
 `0.2.2`, adding GHE Cloud endpoint support; published versions cannot be republished. Search is currently
 `0.1.2`, adding GHE Cloud endpoint support alongside the Copilot stream-ID compatibility fix.
-Worktrees is `0.2.9`, unreleased and not published by this implementation; it adds persistent multi-folder projects, project-bound Local/worktree threads and visible backing indicators, alongside native first-Send lazy creation, staged progress and configurable foreground branch naming and exact authenticated UI RPC routes that coexist with the native gateway.
+Worktrees is `@1yefuwang1/dsh-worktrees@0.2.13`, prepared for its first scoped npm release. It adds persistent multi-folder projects, metadata-only project removal, native-aligned project browsing and activity indicators, alongside first-Send lazy worktree creation, staged progress and guarded Local handoff. The unrelated unscoped npm name is not an alias for this plugin.
 
 The [release workflow](.github/workflows/publish.yml) installs/verifies with pnpm,
 then uses native `pnpm stage publish` to stage **only the selected leaf** through

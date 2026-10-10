@@ -3,7 +3,7 @@
  * extensions remain installed, with owned aliases and a Folder view fallback.
  */
 window.__ModuleLoader__.load({
-  id: 'dsh-worktrees',
+  id: '@1yefuwang1/dsh-worktrees',
   factory(require) {
     const React = require('react');
     const h = React.createElement;
@@ -1388,7 +1388,7 @@ window.__ModuleLoader__.load({
         seat('sidebar.footer.action', { name: 'sidebar.footer.action', id: PANEL + '-projects-view', order: 450 }, SidebarToggle);
         seat('conversation.input.left', { name: 'conversation.input.left', id: PANEL, order: 15 }, NewWorktreeControls);
         seat('conversation.input.dock', { name: 'conversation.input.dock', id: PANEL + '-setup', order: 5 }, SetupProgress);
-        seat('plugins.row.config', { name: 'plugins.row.config', key: 'dsh-worktrees#git-worktrees' }, RootFolderSettings);
+        seat('plugins.row.config', { name: 'plugins.row.config', key: '@1yefuwang1/dsh-worktrees#git-worktrees' }, RootFolderSettings);
         seat('conversation.session.header.actions', { name: 'conversation.session.header.actions', id: PANEL, order: 250 }, Header);
         ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: PANEL, order: 450, label: () => ctx.locale.bind(NS)('title') }, Icon));
         seat('main', { name: 'main', key: PANEL }, Manager);
