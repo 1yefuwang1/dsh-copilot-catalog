@@ -11,6 +11,9 @@ window.__ModuleLoader__.load({
     const PANEL = 'dsh-worktrees';
     const en = {
       projects: 'Projects', folderView: 'Folder view', newProject: 'New project', editProject: 'Manage project', projectName: 'Project name', project: 'Project', folders: 'Folders', folder: 'Folder', addFolder: 'Add folder', chooseDirectory: 'Choose directory', browse: 'Browse folders', absolutePath: 'Absolute Host directory path', save: 'Save', newThread: 'New thread', threadMode: 'Thread mode', threadActions: 'Thread actions', threadDetails: 'Thread details', unassigned: 'Other threads', showMore: 'Show more', showLess: 'Show less', filterThreads: 'Search threads or projects', allThreads: 'All threads', archivedOnly: 'Archived only', hideArchived: 'Hide archived', untitled: 'Untitled', blankThread: 'New thread', collapse: 'Collapse project', expand: 'Expand project', waiting: 'Waiting for interaction', done: 'Finished, not yet viewed', localThread: 'Local thread', worktreeThread: 'Worktree thread', draftWarning: 'This draft contains text or attachments. Keep it in this thread before choosing another project or folder.', chooseFolder: 'Choose a folder', createFolder: 'Create folder', folderName: 'Folder name', chooseThisFolder: 'Use this folder', noProjects: 'Add a project to organize your threads.',
+      repoUnavailable: 'Worktree mode is unavailable or unverified for this folder. Choose Local to continue.',
+      mainFolder: 'Main folder', main: 'Main', chooseMainFolder: 'Select the main folder', mainFolderRequired: 'Choose a main folder from the project source folders.', mainFolderHelp: 'Default for new conversations. You can choose another folder before sending.', conversationFolder: 'Conversation folder',
+      createProject: 'Create project', sourceFolders: 'Source folders', localFolders: 'Add a folder on this computer', enterFolderPath: 'Enter a folder path', add: 'Add', cancel: 'Cancel', selectedFolders: 'Selected folders', selectFolder: 'Select folder', folderLimit: 'A project can contain at most 32 folders.', invalidFolder: 'Enter a valid absolute Host folder path.', alreadyAdded: 'Already added', multiFolderHelp: 'Select multiple folders using the checkboxes. Selections are kept as you browse.', hostFolderHelp: 'Folders are on the Host computer; adding them does not move files.', noSubfolders: 'No subfolders.', directoryTruncated: 'This listing is truncated. Enter a path to browse other folders.',
       rootFolder: 'Worktree root folder', rootSummary: 'Choose where new worktrees are created.', rootHelp: 'Absolute folder path on the Host, outside your source repositories. Changes apply to new worktrees only; existing directories and in-flight creates are not moved.', rootReset: 'Reset to inherited default', rootSaved: 'Saved. New worktrees will use this location.', rootUnavailable: 'Host-backed settings are unavailable for this entry.', rootInvalid: 'Enter a valid absolute Host folder path.', rootConflict: 'The setting changed or the Host refused the write. Your draft is preserved; reopen this page to read the latest value.',
       pinned: 'Pinned', title: 'Worktrees', local: 'Local', new: 'New worktree', remote: 'Remote', branch: 'Remote base branch',
       setupProgress: 'Preparing worktree', preparingMessage: 'Preparing your first message…', fetchingLatest: 'Fetching latest remote branch…', creatingWorktree: 'Creating worktree…', namingBranch: 'Generating and applying branch name…', openingConversation: 'Opening worktree conversation…', setupReady: 'Worktree ready', stagingAttachments: 'Preparing attachments for this worktree…', startingConversation: 'Starting normal conversation…', setupFailed: 'Worktree preparation failed', cancelSetup: 'Cancel setup', unsupported: 'This native composer version is not supported by the guarded adapter.', filesLost: 'A draft attachment is no longer available.', upload: 'Attachment upload failed', uncertain: 'Prompt admission is uncertain. Open the created conversation before trying again.',
@@ -38,6 +41,9 @@ window.__ModuleLoader__.load({
     };
     const zh = { ...en,
       projects: '项目', folderView: '文件夹视图', newProject: '新建项目', editProject: '管理项目', projectName: '项目名称', project: '项目', folders: '文件夹', folder: '文件夹', addFolder: '添加文件夹', chooseDirectory: '选择目录', browse: '浏览文件夹', absolutePath: '主机绝对目录路径', save: '保存', newThread: '新建对话', threadMode: '对话模式', threadActions: '对话操作', threadDetails: '对话详情', unassigned: '其他对话', showMore: '显示更多', showLess: '收起', filterThreads: '搜索对话或项目', allThreads: '所有对话', archivedOnly: '仅已归档', hideArchived: '隐藏已归档', untitled: '未命名', blankThread: '新对话', collapse: '收起项目', expand: '展开项目', waiting: '等待交互', done: '已完成，尚未查看', localThread: '本地对话', worktreeThread: '工作树对话', draftWarning: '此草稿包含文字或附件。请先保留当前对话，再选择其他项目或文件夹。', chooseFolder: '选择文件夹', createFolder: '创建文件夹', folderName: '文件夹名称', chooseThisFolder: '使用此文件夹', noProjects: '添加项目以组织您的对话。',
+      repoUnavailable: '此文件夹的工作树模式不可用或尚未验证，请选择本地模式继续。',
+      mainFolder: '主文件夹', main: '主目录', chooseMainFolder: '选择主文件夹', mainFolderRequired: '请从项目源文件夹中选择一个主文件夹。', mainFolderHelp: '新对话默认使用此文件夹，发送前仍可选择其他文件夹。', conversationFolder: '对话文件夹',
+      createProject: '创建项目', sourceFolders: '源文件夹', localFolders: '添加此计算机上的文件夹', enterFolderPath: '输入文件夹路径', add: '添加', cancel: '取消', selectedFolders: '已选文件夹', selectFolder: '选择文件夹', folderLimit: '一个项目最多可包含 32 个文件夹。', invalidFolder: '请输入有效的主机绝对文件夹路径。', alreadyAdded: '已添加', multiFolderHelp: '使用复选框选择多个文件夹，浏览其他目录时会保留已选项。', hostFolderHelp: '文件夹位于主机计算机上；添加不会移动文件。', noSubfolders: '没有子文件夹。', directoryTruncated: '目录列表已截断，请输入路径浏览其他文件夹。',
       rootFolder: '工作树根目录', rootSummary: '选择新工作树的创建位置。', rootHelp: '主机上的绝对目录路径，需位于源仓库之外。仅影响新工作树，已有目录和进行中的创建不会移动。', rootReset: '恢复继承的默认值', rootSaved: '已保存，新工作树将使用此位置。', rootUnavailable: '此条目的主机设置不可用。', rootInvalid: '请输入有效的主机绝对目录路径。', rootConflict: '设置已更改或主机拒绝了保存，草稿已保留。请重新打开页面读取最新值。',
       pinned: '已固定', title: '工作树', local: '本地', new: '新工作树', remote: '远程', branch: '远程基础分支', search: '搜索远程分支',
       setupProgress: '正在准备工作树', preparingMessage: '正在准备第一条消息…', fetchingLatest: '正在获取最新远程分支…', creatingWorktree: '正在创建工作树…', namingBranch: '正在生成并应用分支名称…', openingConversation: '正在打开工作树对话…', setupReady: '工作树已就绪', stagingAttachments: '正在为工作树准备附件…', startingConversation: '正在开始正常对话…', setupFailed: '工作树准备失败', cancelSetup: '取消准备', unsupported: '该输入区版本不受受保护适配器支持。', filesLost: '草稿附件已不可用。', upload: '附件上传失败', uncertain: '消息发送结果不确定，请先打开创建的对话检查。',
@@ -75,6 +81,15 @@ window.__ModuleLoader__.load({
 .dsh-wt-muted{color:var(--dsw-alias-label-secondary);font-size:12px}.dsh-wt-error{color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere}
 .dsh-wt code,.dsh-wt pre{overflow-wrap:anywhere;white-space:pre-wrap}.dsh-wt h2,.dsh-wt h3,.dsh-wt p{margin:8px 0}
 .dsh-wt-dialog{width:min(720px,calc(100% - 48px));max-height:calc(100% - 48px);overflow:auto;padding:20px;border:1px solid var(--dsw-alias-border-l3);border-radius:12px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
+.dsh-wt-project-dialog{width:min(516px,calc(100vw - 32px));padding:20px;border-radius:16px;border-color:var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1)}
+.dsh-wt-project-dialog .dsh-wt-dialog-heading{margin:0 0 16px}.dsh-wt-project-dialog h2{margin:0;font-size:20px;line-height:1.3;font-weight:600}.dsh-wt-project-dialog .dsh-wt-dialog-close{display:inline-flex;align-items:center;justify-content:center;width:28px;min-height:28px;padding:0;border:0;color:var(--dsw-alias-label-secondary)}
+.dsh-wt-project-name{display:flex;align-items:center;gap:10px!important;padding:0 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;color:var(--dsw-alias-label-secondary)}.dsh-wt-project-name:focus-within{border-color:var(--dsw-alias-brand-primary)}.dsh-wt-project-dialog .dsh-wt-project-name input{flex:1;min-width:0;max-width:none;min-height:38px;padding:8px 0;border:0;border-radius:0;background:transparent;outline:none;color:var(--dsw-alias-label-primary)}
+.dsh-wt-source-heading{display:flex;align-items:center;justify-content:space-between;margin:12px 0 8px;font-size:13px;font-weight:600}.dsh-wt-source-count{font-weight:400;color:var(--dsw-alias-label-secondary);font-size:12px}.dsh-wt-source-card{border:1px solid var(--dsw-alias-border-l1);border-radius:12px;overflow:hidden}.dsh-wt-source-add{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:100px;padding:12px;box-sizing:border-box}.dsh-wt-source-card[data-filled=true] .dsh-wt-source-add{min-height:76px;border-top:1px solid var(--dsw-alias-border-l1)}
+.dsh-wt-project-dialog .dsh-wt-source-select{border:0;background:transparent;max-width:100%;font-size:13px;text-align:center;color:var(--dsw-alias-label-secondary);padding:0 6px}.dsh-wt-project-dialog .dsh-wt-add-pill{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:2px 10px;min-height:26px;border:0;border-radius:999px;background:var(--dsw-alias-bg-layer-2);font-size:13px}.dsh-wt-project-dialog .dsh-wt-add-pill:hover:not(:disabled){background:var(--dsw-alias-bg-overlay)}
+.dsh-wt-source-list{list-style:none;padding:0!important;margin:0!important;max-height:208px;overflow:auto}.dsh-wt-source-list li{display:flex;align-items:center;gap:10px;padding:10px 12px}.dsh-wt-source-list li+li{border-top:1px solid var(--dsw-alias-border-l1)}.dsh-wt-source-list svg{flex-shrink:0;color:var(--dsw-alias-label-secondary)}.dsh-wt-source-info{display:flex;flex-direction:column;flex:1;min-width:0}.dsh-wt-source-info>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dsh-wt-source-path{color:var(--dsw-alias-label-secondary);font-size:12px}.dsh-wt-project-dialog .dsh-wt-source-remove{border:0;padding:0;width:28px;min-height:28px;color:var(--dsw-alias-label-secondary);flex-shrink:0}
+.dsh-wt-project-path{width:100%;display:flex;gap:8px!important;flex-wrap:nowrap!important}.dsh-wt-project-path input{flex:1;min-width:0}.dsh-wt-project-footer{display:flex;justify-content:flex-end;align-items:center;gap:12px;margin-top:32px}.dsh-wt-project-dialog .dsh-wt-cancel{border:0;color:var(--dsw-alias-label-secondary)}.dsh-wt-project-dialog .dsh-wt-confirm{border:0;border-radius:10px;padding:6px 18px;min-height:32px;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-1);font-size:13px}.dsh-wt-project-dialog .dsh-wt-confirm:hover:not(:disabled){background:var(--dsw-alias-label-secondary)}
+.dsh-wt-project-dialog .dsh-wt-main-folder{display:flex;flex-direction:column;align-items:stretch;gap:6px;margin-top:12px;font-size:13px}.dsh-wt-main-folder select{width:100%;min-width:0;border-color:var(--dsw-alias-border-l2)}.dsh-wt-main-folder small{color:var(--dsw-alias-label-secondary);font-size:12px}.dsh-wt-create-controls .dsh-wt-conversation-folder{max-width:180px}
+.dsh-wt-folder-picker{width:min(640px,calc(100vw - 32px))}.dsh-wt-picker-path{display:flex;gap:8px;align-items:flex-end}.dsh-wt-picker-path label{flex:1;min-width:0}.dsh-wt-picker-crumbs{margin:12px 0;gap:4px}.dsh-wt-picker-entries{list-style:none;padding:0;margin:8px 0;max-height:240px;overflow:auto}.dsh-wt-picker-entries li,.dsh-wt-picker-current{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px}.dsh-wt-picker-entries li:hover{background:var(--dsw-alias-bg-layer-2)}.dsh-wt-picker-check{flex-shrink:0}.dsh-wt-picker-check input{accent-color:var(--dsw-alias-brand-primary)}.dsh-wt-picker-entries .dsh-wt-picker-open{border:0;flex:1;min-width:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dsh-wt-picker-current{border:1px solid var(--dsw-alias-border-l1)}.dsh-wt-picker-selected{margin-top:12px}.dsh-wt-picker-selected .dsh-wt-source-list{max-height:128px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px}.dsh-wt-picker-selected h3{font-size:13px}.dsh-wt-picker-create{margin-top:12px}.dsh-wt-picker-create summary{cursor:pointer;color:var(--dsw-alias-label-secondary);font-size:13px}.dsh-wt-picker-create form{display:flex;align-items:flex-end;gap:8px;margin-top:8px}
 .dsh-wt-progress{padding:10px 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1);font-size:12px}.dsh-wt-progress ol{margin:8px 0;padding-left:18px;display:flex;flex-direction:column;gap:5px}.dsh-wt-progress li{color:var(--dsw-alias-label-secondary)}.dsh-wt-progress li[data-active=true]{font-weight:600;color:var(--dsw-alias-label-primary)}
 .dsh-wt-create-controls{position:relative;font-size:12px}.dsh-wt-create-controls select{max-width:160px;min-height:28px}.dsh-wt-base-options{position:absolute;bottom:calc(100% + 8px);left:0;z-index:20;min-width:240px;max-width:360px;padding:12px;display:flex;flex-direction:column;gap:8px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-overlay)}.dsh-wt-create-error{max-width:360px;font-size:12px;color:var(--dsw-alias-state-error-primary)}
 .dsh-wt-projects{min-height:0;display:flex;flex-direction:column;gap:6px;padding:8px;width:100%;box-sizing:border-box;font-size:13px}.dsh-wt-projects-header{display:flex;align-items:center;justify-content:space-between;padding:4px}.dsh-wt-project-list{min-height:0;overflow:auto}.dsh-wt-project-head{display:flex;align-items:center;gap:4px;margin-top:8px}.dsh-wt-project-head>button:first-child{flex:1;min-width:0;text-align:left;display:flex;align-items:center;gap:7px}.dsh-wt-projects button{border:0;padding:4px 6px}.dsh-wt-project-title,.dsh-wt-thread-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.dsh-wt-project-title{font-weight:600}.dsh-wt-thread{border-radius:7px;position:relative}.dsh-wt-thread[aria-selected=true]{background:var(--dsw-alias-interactive-bg-hover)}.dsh-wt-thread-main{display:flex;align-items:center;gap:5px;min-height:32px;padding-left:12px}.dsh-wt-thread-main>button:first-child{display:flex;align-items:center;gap:6px;flex:1;min-width:0;text-align:left}.dsh-wt-thread-title{flex:1}.dsh-wt-thread-main:hover .dsh-wt-thread-title{overflow:auto;text-overflow:clip}.dsh-wt-thread-actions{display:flex;align-items:center;opacity:0}.dsh-wt-thread:is(:hover,:focus-within) .dsh-wt-thread-actions{opacity:1}.dsh-wt-thread-actions button{min-width:24px}.dsh-wt-thread-leading{width:16px;display:inline-flex;flex-shrink:0}.dsh-wt-thread-status{font-size:11px;color:var(--dsw-alias-state-business-primary)}.dsh-wt-thread-pending{color:var(--dsw-alias-state-warning-primary)}.dsh-wt-thread-archived{opacity:.65}.dsh-wt-branch-chip{display:inline-flex;align-items:center;justify-content:center;width:16px;flex-shrink:0;color:var(--dsw-alias-label-secondary)}.dsh-wt-thread-hover{padding:8px;border:1px solid var(--dsw-alias-border-l3);border-radius:6px;background:var(--dsw-alias-bg-layer-2)}.dsh-wt-project-menu{display:flex;flex-direction:column;align-items:stretch}.dsh-wt-project-menu button{text-align:left}.dsh-wt-project-picker{display:flex;align-items:center;gap:4px;max-width:100%}.dsh-wt-project-picker select{max-width:190px}.dsh-wt-folder-list{padding:0;list-style:none}.dsh-wt-folder-list li{display:flex;align-items:center;gap:8px;padding:4px 0;overflow-wrap:anywhere}.dsh-wt-folder-list code{flex:1}.dsh-wt-folder-browser{max-height:45vh;overflow:auto}.dsh-wt-folder-browser button{display:block;width:100%;text-align:left}.dsh-wt-dialog::backdrop{background:var(--dsw-alias-bg-mask-1)}.dsh-wt-details{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px}.dsh-wt-details dd{margin:0;overflow-wrap:anywhere}
@@ -173,28 +188,90 @@ window.__ModuleLoader__.load({
     }
     const absolutePath = path => typeof path === 'string' && !path.includes('\0') && (/^\//.test(path) || /^[A-Za-z]:[\\/]/.test(path) || /^\\\\[^\\]+\\[^\\]+/.test(path));
     const uuid = id => typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+    function appendProjectFolders(previous, additions) {
+      if (!Array.isArray(additions) || additions.some(path => !absolutePath(path) || path.length > 4096 || /[\u0000-\u001f\u007f]/u.test(path))) throw new WorktreeError('invalidFolder', 'invalid-project-folder');
+      // Exact-string deduplication is only UX; realpath/ownership checks stay on the Host.
+      const next = [...new Set([...previous, ...additions])];
+      if (next.length > 32) throw new WorktreeError('folderLimit', 'project-folder-limit');
+      return next;
+    }
+    function toggleProjectFolder(previous, path, capacity = 32) {
+      if (previous.includes(path)) return previous.filter(value => value !== path);
+      const next = appendProjectFolders(previous, [path]);
+      if (next.length > capacity) throw new WorktreeError('folderLimit', 'project-folder-limit');
+      return next;
+    }
+    function projectFolderName(path) {
+      const separator = /^[A-Za-z]:[\\/]|^\\\\/.test(path) ? /[\\/]/ : /\//;
+      return path.split(separator).filter(Boolean).at(-1) || path;
+    }
+    function createFolderScanner(uiWorkspace, publish) {
+      let active, generation = 0, disposed = false;
+      return {
+        async scan(path) {
+          if (disposed) return;
+          active?.abort(); const controller = new AbortController(); active = controller; const seq = ++generation;
+          publish({ busy: true, error: null });
+          try { const listing = await uiWorkspace.listDirectory(path, controller.signal); if (!disposed && !controller.signal.aborted && seq === generation) publish({ listing }); }
+          catch (error) { if (!disposed && !controller.signal.aborted && seq === generation) publish({ error }); }
+          finally { if (!disposed && !controller.signal.aborted && seq === generation) publish({ busy: false }); }
+        },
+        dispose() { disposed = true; ++generation; active?.abort(); },
+      };
+    }
+    function projectMainFolder(project) {
+      return project?.mainFolderId === undefined ? project?.folders[0] : project.folders.find(folder => folder.id === project.mainFolderId);
+    }
+    function draftMainFolder(folders, selected) { return folders.length === 1 ? folders[0] : folders.includes(selected) ? selected : ''; }
+    function chooseConversationFolder(ctx, projects, flow, sessionId, folderId) {
+      const binding = ctx.sessions.binding(sessionId), context = projects.context(sessionId), state = flow.store.getSnapshot();
+      if (!binding || projectActor(ctx.sessions.list.getSnapshot()) !== sessionId || !sourceEligible(binding.session.getSnapshot()) || !inputEmpty(ctx.get('conversation').input.for(binding.ctx).state.getSnapshot()) || (state.sessionId === sessionId && state.busy)) throw new WorktreeError('draftWarning', 'folder-change-blocked');
+      const folder = context?.project.folders.find(item => item.id === folderId);
+      if (!folder) throw new WorktreeError('decode', 'invalid-project-folder');
+      if (folder.id === context.folder.id && context.binding.mode === 'local') return false;
+      ctx.uiWorkspace.startSession(folder.id); return true;
+    }
+    function createProjectSubmitter(projects, projectId, id) {
+      let pending;
+      return {
+        get pending() { return !!pending; },
+        submit(title, folders, selectedMain) {
+          if (pending) return pending;
+          const savedFolders = appendProjectFolders([], folders), mainFolder = draftMainFolder(savedFolders, selectedMain);
+          if (savedFolders.length && !mainFolder) throw new WorktreeError('mainFolderRequired', 'main-folder-required');
+          const request = projectRequest({ ...(projectId ? { action: 'update', projectId } : { action: 'create', id }), title: title.trim(), folders: savedFolders, ...(mainFolder ? { mainFolder } : {}) });
+          Object.freeze(request.folders); Object.freeze(request);
+          const task = Promise.resolve().then(() => projects.mutate(request)); pending = task;
+          const clear = () => { if (pending === task) pending = undefined; }; void task.then(clear, clear);
+          return task;
+        },
+      };
+    }
     function projectRequest(request) {
-      const keys = { list: ['action', 'projectId'], create: ['action', 'id', 'title', 'folders'], update: ['action', 'projectId', 'title', 'folders'], bind: ['action', 'projectId', 'folderId', 'sessionId'], start: ['action', 'operationId', 'projectId', 'folderId'] }[request?.action];
+      const keys = { list: ['action', 'projectId'], create: ['action', 'id', 'title', 'folders', 'mainFolder'], update: ['action', 'projectId', 'title', 'folders', 'mainFolder'], bind: ['action', 'projectId', 'folderId', 'sessionId'], start: ['action', 'operationId', 'projectId', 'folderId'] }[request?.action];
       const title = value => typeof value === 'string' && value.trim().length > 0 && value.length <= 120;
       const folders = value => Array.isArray(value) && value.length > 0 && value.length <= 32 && value.every(absolutePath);
+      const main = value => value === undefined || (absolutePath(value) && value.length <= 4096 && !/[\u0000-\u001f\u007f]/u.test(value));
+      const folderId = value => typeof value === 'string' && value.length > 0;
       let valid = keys && Object.keys(request).every(key => keys.includes(key));
       if (request?.action === 'list') valid = valid && (request.projectId === undefined || uuid(request.projectId));
-      if (request?.action === 'create') valid = valid && uuid(request.id) && title(request.title) && folders(request.folders);
-      if (request?.action === 'update') valid = valid && uuid(request.projectId) && (request.title !== undefined || request.folders !== undefined) && (request.title === undefined || title(request.title)) && (request.folders === undefined || folders(request.folders));
-      if (request?.action === 'bind' || request?.action === 'start') valid = valid && uuid(request.projectId) && typeof request.folderId === 'string' && !!request.folderId && (request.action === 'bind' ? typeof request.sessionId === 'string' && !!request.sessionId : uuid(request.operationId));
+      if (request?.action === 'create') valid = valid && uuid(request.id) && title(request.title) && folders(request.folders) && main(request.mainFolder);
+      if (request?.action === 'update') valid = valid && uuid(request.projectId) && (request.title !== undefined || request.folders !== undefined || request.mainFolder !== undefined) && (request.title === undefined || title(request.title)) && (request.folders === undefined || folders(request.folders)) && main(request.mainFolder);
+      if (request?.action === 'bind') valid = valid && uuid(request.projectId) && folderId(request.folderId) && typeof request.sessionId === 'string' && !!request.sessionId;
+      if (request?.action === 'start') valid = valid && uuid(request.projectId) && uuid(request.operationId) && (request.folderId === undefined || folderId(request.folderId));
       if (!valid) throw new WorktreeError('decode', 'invalid-project-request');
       return request;
     }
     function projectData(request, data) {
       const string = value => typeof value === 'string' && value.length > 0;
-      const project = value => value && uuid(value.id) && string(value.title) && value.title.length <= 120 && Array.isArray(value.folders) && value.folders.length > 0 && value.folders.length <= 32 && value.folders.every(folder => string(folder?.id) && absolutePath(folder.path) && typeof folder.title === 'string') && Number.isSafeInteger(value.createdAt) && value.createdAt >= 0 && !Object.is(value.createdAt, -0) && Number.isSafeInteger(value.updatedAt) && value.updatedAt >= 0 && !Object.is(value.updatedAt, -0) && (value.imported === undefined || typeof value.imported === 'boolean');
+      const project = value => value && uuid(value.id) && string(value.title) && value.title.length <= 120 && Array.isArray(value.folders) && value.folders.length > 0 && value.folders.length <= 32 && value.folders.every(folder => string(folder?.id) && absolutePath(folder.path) && typeof folder.title === 'string') && Number.isSafeInteger(value.createdAt) && value.createdAt >= 0 && !Object.is(value.createdAt, -0) && Number.isSafeInteger(value.updatedAt) && value.updatedAt >= 0 && !Object.is(value.updatedAt, -0) && (value.imported === undefined || typeof value.imported === 'boolean') && (value.mainFolderId === undefined || (string(value.mainFolderId) && value.folders.some(folder => folder.id === value.mainFolderId)));
       const binding = value => value && string(value.sessionId) && uuid(value.projectId) && string(value.folderId) && ['local', 'worktree'].includes(value.mode) && absolutePath(value.effectiveCwd) && (value.mode === 'worktree' ? uuid(value.worktreeId) : value.worktreeId === undefined);
       let valid;
       if (request.action === 'list') {
         valid = data && Array.isArray(data.projects) && data.projects.every(project) && Array.isArray(data.bindings) && data.bindings.every(binding);
         if (valid && data.records !== undefined) validateData({ action: 'list' }, { items: data.records });
       }
-      else if (request.action === 'start') valid = data && string(data.sessionId) && data.workspaceId === request.folderId && binding(data.binding) && data.binding.sessionId === data.sessionId && data.binding.projectId === request.projectId && data.binding.folderId === request.folderId && data.binding.mode === 'local';
+      else if (request.action === 'start') valid = data && string(data.sessionId) && binding(data.binding) && data.workspaceId === data.binding.folderId && data.binding.sessionId === data.sessionId && data.binding.projectId === request.projectId && (request.folderId === undefined || data.binding.folderId === request.folderId) && data.binding.mode === 'local';
       else if (request.action === 'bind') valid = data && binding(data.binding) && data.binding.sessionId === request.sessionId && data.binding.projectId === request.projectId && data.binding.folderId === request.folderId;
       else valid = data && project(data.project) && data.project.id === (request.id || request.projectId);
       if (!valid) throw new WorktreeError('decode', 'invalid-project-' + request.action + '-data');
@@ -463,13 +540,68 @@ window.__ModuleLoader__.load({
         unsubscribe = conversation.fileUploads.subscribe(check); signal.addEventListener('abort', abort, { once: true }); if (signal.aborted) abort(); else check();
       });
     }
-    function createWorktreeFlow(ctx, t, projects) {
+    function createRepositoryAvailability(ctx, projects) {
+      const listeners = new Set(); let disposed = false, started = false, observedSession, active, version = 0, stopBinding = () => {}, queued = false, connectionId = ctx.connection.generation.getSnapshot()?.id;
+      let state = { target: null, phase: 'idle', available: false };
+      const publish = patch => { if (disposed) return; state = { ...state, ...patch }; for (const listener of [...listeners]) listener(); };
+      const store = { getSnapshot: () => state, subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener); } };
+      function target(sessionId) {
+        if (!sessionId || projectActor(ctx.sessions.list.getSnapshot()) !== sessionId) return null;
+        const binding = ctx.sessions.binding(sessionId), connection = ctx.connection.generation.getSnapshot();
+        if (!binding || !connection || !sourceEligible(binding.session.getSnapshot())) return null;
+        const project = captureProject(projects.context(sessionId));
+        return { sessionId, binding, connection: connection.id, project, path: project?.path };
+      }
+      const same = (left, right) => !!left && !!right && left.sessionId === right.sessionId && left.binding === right.binding && left.connection === right.connection && sameProject(left.project, right.project);
+      function reset() { active?.controller.abort(); active = undefined; ++version; stopBinding(); stopBinding = () => {}; publish({ target: null, phase: 'idle', available: false }); }
+      function schedule() { if (!started || queued || disposed) return; queued = true; void Promise.resolve().then(() => { queued = false; if (!disposed) void ensure(projectActor(ctx.sessions.list.getSnapshot())); }); }
+      function changed() { const current = target(projectActor(ctx.sessions.list.getSnapshot())); if (state.target && !same(current, state.target)) reset(); if (current && !state.target) schedule(); }
+      function ensure(sessionId) {
+        if (disposed) return Promise.resolve(); started = true; observedSession = sessionId;
+        const next = target(sessionId);
+        if (!next) { if (state.target) reset(); return Promise.resolve(); }
+        if (same(next, state.target) && state.phase !== 'idle') return active?.task || Promise.resolve();
+        reset(); const controller = new AbortController(), seq = ++version;
+        const operation = { controller, task: null }; active = operation;
+        stopBinding = next.binding.session.subscribe(changed);
+        operation.task = Promise.resolve().then(async () => {
+          if (disposed || controller.signal.aborted || seq !== version || !same(target(sessionId), next)) return;
+          try {
+            // Read-only local discovery through the existing caller-authorized status operation.
+            const data = await requestHost(ctx, sessionId, { action: 'status', ...(next.path ? { repoPath: next.path } : {}) }, controller.signal);
+            if (next.path && data.projectPath !== next.path) throw new WorktreeError('decode', 'repository-target-mismatch');
+            if (!disposed && !controller.signal.aborted && seq === version && same(target(sessionId), next)) publish({ phase: data.remotes.length ? 'ready' : 'unavailable', available: data.remotes.length > 0 });
+          } catch { if (!disposed && !controller.signal.aborted && seq === version && same(target(sessionId), next)) publish({ phase: 'unavailable', available: false }); }
+          finally { if (active === operation) active = undefined; }
+        });
+        publish({ target: next, phase: 'checking', available: false });
+        return operation.task;
+      }
+      const subscriptions = [ctx.sessions.list.subscribe(changed), projects.store.subscribe(changed), ctx.connection.generation.subscribe(() => { const next = ctx.connection.generation.getSnapshot()?.id; if (next === connectionId) return; connectionId = next; reset(); schedule(); })];
+      return { store, ensure,
+        withdraw(sessionId) { if (observedSession === sessionId) { started = false; observedSession = undefined; reset(); } },
+        unavailable(sessionId, binding, project) { const current = target(sessionId); if (disposed || !same(current, state.target) || current.binding !== binding || !sameProject(current.project, project)) return; active?.controller.abort(); active = undefined; ++version; publish({ phase: 'unavailable', available: false }); },
+        enabled(sessionId) { return !disposed && state.phase === 'ready' && state.available && same(target(sessionId), state.target); },
+        dispose() { if (disposed) return; active?.controller.abort(); ++version; stopBinding(); subscriptions.forEach(stop => stop()); disposed = true; listeners.clear(); },
+      };
+    }
+    function createWorktreeFlow(ctx, t, projects, repositories) {
       const conversation = ctx.get('conversation'), listeners = new Set(), leases = new Map(), operations = new Set(), restaged = new Set();
       let state = { sessionId: undefined, mode: 'local', busy: false, loading: false, error: '', status: null, remote: '', branch: '', branches: null, query: '', steps: [], phase: '', op: null };
       let query, generation = 0, disposed = false;
       const publish = patch => { if (disposed) return; state = { ...state, ...patch }; for (const listener of [...listeners]) listener(); };
       const store = { getSnapshot: () => state, subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener); } };
       const pending = id => ctx.uiSession.sessionStatus.getSnapshot().get(id)?.pendingInteraction !== undefined;
+      const repositoryAllowed = id => repositories?.enabled(id) === true;
+      function requireRepository(sessionId) { if (!repositoryAllowed(sessionId)) throw new WorktreeError('repoUnavailable', 'repository-not-verified'); }
+      async function repositoryStatus(sessionId, binding, project, signal) {
+        try {
+          const data = await requestHost(ctx, sessionId, { action: 'status', ...(project ? { repoPath: project.path } : {}) }, signal);
+          if (project && data.projectPath !== project.path) throw new WorktreeError('decode', 'repository-target-mismatch');
+          if (!data.remotes.length) throw new WorktreeError('noRemote', 'no-remote');
+          return data;
+        } catch (error) { if (!signal.aborted) repositories?.unavailable(sessionId, binding, project); throw error; }
+      }
       function source(sessionId) {
         const binding = ctx.sessions.binding(sessionId), input = binding && conversation.input.for(binding.ctx);
         if (!binding || projectActor(ctx.sessions.list.getSnapshot()) !== sessionId || !sourceEligible(binding.session.getSnapshot()) || pending(sessionId)) throw new WorktreeError('changed', 'source-not-blank-idle');
@@ -477,13 +609,14 @@ window.__ModuleLoader__.load({
       }
       function check(op) {
         if (disposed || op.signal.aborted || op.navigation.aborted) throw new WorktreeError('cancelled', 'cancelled');
-        const current = source(op.sessionId);
+        const current = source(op.sessionId); requireRepository(op.sessionId);
         if (current.binding !== op.binding || !sameProject(current.project, op.project)) throw new WorktreeError('changed', 'source-changed');
         if (op.block.store.getSnapshot() !== op.block.owned) throw new WorktreeError('ownership', 'block-lost');
       }
       function capture(sessionId, binding, signal, controller) {
         if (state.sessionId !== sessionId || state.mode !== 'new') return { mode: 'local' };
         if (state.busy) throw new WorktreeError('busy', 'first-message-already-preparing');
+        requireRepository(sessionId);
         const captured = source(sessionId); if (captured.binding !== binding) throw new WorktreeError('changed', 'binding-changed');
         const old = state.op;
         if (old && !old.retryable) throw new WorktreeError('recovery', 'check-created-conversation-before-retry');
@@ -514,7 +647,7 @@ window.__ModuleLoader__.load({
           if (!text.trim() && !ids.length) { publish({ busy: false, phase: '', op: null }); return { kind: 'success' }; }
           publish({ phase: 'fetching' });
           if (!op.result) {
-            const status = await requestHost(ctx, op.sessionId, { action: 'status', ...(op.project ? { repoPath: op.project.path } : {}) }, signal); check(op);
+            const status = await repositoryStatus(op.sessionId, op.binding, op.project, signal); check(op);
             const remote = op.intent.remote || (status.remotes.some(item => item.name === status.defaults?.remote) ? status.defaults.remote : status.remotes[0]?.name || '');
             if (!remote) throw new WorktreeError('noRemote', 'no-remote');
             const identity = status.remotes.find(item => item.name === remote)?.identity;
@@ -564,19 +697,20 @@ window.__ModuleLoader__.load({
       }
       function select(sessionId, mode) {
         if (disposed || !['local', 'new'].includes(mode)) return;
+        const latchedNew = state.sessionId === sessionId && state.mode === 'new';
         try {
-          const current = source(sessionId); observe(sessionId);
+          const current = source(sessionId); if (mode === 'new') requireRepository(sessionId); observe(sessionId);
           if (mode === 'local' && projects.context(sessionId)?.binding.mode === 'worktree') {
             if (!inputEmpty(current.input.state.getSnapshot())) throw new WorktreeError('draftWarning', 'keep-existing-draft');
             for (const lease of leases.values()) lease.cancelNew(); ctx.uiWorkspace.startSession(current.project.folderId); return;
           }
           if (mode === 'local') { for (const lease of leases.values()) lease.cancelNew(); }
           publish({ sessionId, mode, error: '', ...(state.sessionId === sessionId ? {} : { status: null, branches: null, branch: '', remote: '', op: null, steps: [], phase: '' }) });
-        } catch (error) { publish({ sessionId, mode: 'local', error: report(t, error) }); }
+        } catch (error) { publish({ sessionId, mode: latchedNew ? 'new' : 'local', error: report(t, error) }); }
       }
       async function loadBranches(sessionId, text = '', more = false) {
         if (disposed || state.busy || state.sessionId !== sessionId || !state.status || !state.remote || (more && !state.branches?.nextCursor)) return;
-        try { source(sessionId); } catch (error) { publish({ error: report(t, error) }); return; }
+        try { source(sessionId); requireRepository(sessionId); } catch (error) { publish({ error: report(t, error) }); return; }
         query?.abort(); query = new AbortController(); const controller = query, seq = ++generation, before = state.branches, remote = state.remote, project = captureProject(projects.context(sessionId));
         publish({ loading: true, query: text, ...(more ? {} : { branches: null, branch: '' }) });
         try {
@@ -588,11 +722,12 @@ window.__ModuleLoader__.load({
       }
       async function configure(sessionId) {
         if (disposed || state.busy) return;
-        try { source(sessionId); } catch (error) { publish({ error: report(t, error) }); return; }
-        query?.abort(); query = new AbortController(); const controller = query, seq = ++generation, project = captureProject(projects.context(sessionId));
+        let current;
+        try { current = source(sessionId); requireRepository(sessionId); } catch (error) { publish({ error: report(t, error) }); return; }
+        query?.abort(); query = new AbortController(); const controller = query, seq = ++generation, project = current.project;
         publish({ sessionId, loading: true, status: null, branches: null, branch: '', remote: '', error: '' });
         try {
-          const status = await requestHost(ctx, sessionId, { action: 'status', ...(project ? { repoPath: project.path } : {}) }, controller.signal);
+          const status = await repositoryStatus(sessionId, current.binding, project, controller.signal);
           if (disposed || controller.signal.aborted || seq !== generation) return;
           const remote = status.remotes.some(item => item.name === status.defaults?.remote) ? status.defaults.remote : status.remotes[0]?.name || '';
           publish({ status, remote, loading: false }); if (remote) await loadBranches(sessionId);
@@ -607,14 +742,20 @@ window.__ModuleLoader__.load({
           publish({ error: data.operation.error?.message || t('retained') });
         } catch (error) { publish({ error: report(t, error), ...(error?.kind === 'host' && error.code === 'NOT_FOUND' ? { op: null } : {}) }); }
       }
+      const repositoryChanged = repositories?.store.subscribe(() => {
+        if (!state.sessionId || repositoryAllowed(state.sessionId)) return;
+        query?.abort(); ++generation;
+        if (state.mode === 'new') for (const lease of leases.values()) lease.cancelNew();
+        publish({ loading: false, status: null, branches: null, remote: '', branch: '', ...(state.mode === 'new' ? { error: t('repoUnavailable') } : {}) });
+      });
       const unselect = ctx.sessions.list.subscribe(() => { for (const op of operations) if (!op.committing && projectActor(ctx.sessions.list.getSnapshot()) !== op.sessionId) op.controller.abort(); });
       const reconnect = ctx.connection.generation.subscribe(() => { query?.abort(); ++generation; for (const lease of leases.values()) lease.cancelNew(); publish({ loading: false, status: null, branches: null, branch: '', remote: '' }); });
       return { store, observe, select, configure, loadBranches, reconcile,
         cancel() { for (const lease of leases.values()) lease.cancelNew(); },
-        setRemote(sessionId, remote) { if (!state.busy && state.sessionId === sessionId && state.status?.remotes.some(item => item.name === remote)) { publish({ remote, query: '' }); void loadBranches(sessionId); } },
-        setBranch(branch) { if (!state.busy && state.branches?.items.some(item => item.name === branch)) publish({ branch }); },
+        setRemote(sessionId, remote) { if (!state.busy && state.sessionId === sessionId && repositoryAllowed(sessionId) && state.status?.remotes.some(item => item.name === remote)) { publish({ remote, query: '' }); void loadBranches(sessionId); } },
+        setBranch(branch) { if (!state.busy && repositoryAllowed(state.sessionId) && state.branches?.items.some(item => item.name === branch)) publish({ branch }); },
         openTarget(sessionId) { const op = state.sessionId === sessionId && state.op; if (op?.result?.sessionId) ctx.uiWorkspace.openSession(op.result.sessionId); },
-        async dispose() { disposed = true; query?.abort(); ++generation; unselect(); reconnect(); for (const op of operations) op.controller.abort(); await Promise.allSettled([...leases.values()].map(lease => lease.close())); for (const lease of leases.values()) lease.stopScope?.(); leases.clear(); },
+        async dispose() { disposed = true; query?.abort(); ++generation; repositoryChanged?.(); unselect(); reconnect(); for (const op of operations) op.controller.abort(); await Promise.allSettled([...leases.values()].map(lease => lease.close())); for (const lease of leases.values()) lease.stopScope?.(); leases.clear(); },
       };
     }
     const projectSlotName = key => PANEL + '.projects.' + key;
@@ -659,59 +800,105 @@ window.__ModuleLoader__.load({
     }
     const Styles = () => h('style', null, css);
     const Button = ({ children, ...props }) => h('button', { type: 'button', ...props }, children);
-    function Dialog({ title, close, t, children }) {
-      const ref = React.useRef(null);
-      const heading = React.useId();
+    function FolderIcon({ plus = false, size = 16 }) {
+      return h('svg', { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
+        h('path', { d: 'M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7h18' }), plus && h('path', { d: 'M12 11v6m-3-3h6' }));
+    }
+    function Dialog({ title, close, t, children, className = '', compact = false, dismissible = true, initialFocus }) {
+      const ref = React.useRef(null), heading = React.useId();
       React.useEffect(() => {
-        const dialog = ref.current;
-        dialog.showModal();
+        const dialog = ref.current; dialog.showModal(); initialFocus?.current?.focus();
         return () => { if (dialog.open) dialog.close(); };
       }, []);
-      return h('dialog', { ref, className: 'dsh-wt dsh-wt-dialog', 'aria-labelledby': heading, onCancel: event => { event.preventDefault(); close(); } },
-        h(Styles), h('div', { className: 'dsh-wt-row dsh-wt-between' }, h('h2', { id: heading }, title), h(Button, { onClick: close, autoFocus: true }, t('close'))), children);
+      return h('dialog', { ref, className: 'dsh-wt dsh-wt-dialog ' + className, 'aria-labelledby': heading, onCancel: event => { event.preventDefault(); event.stopPropagation(); if (dismissible) close(); } },
+        h(Styles), h('div', { className: 'dsh-wt-row dsh-wt-between dsh-wt-dialog-heading' }, h('h2', { id: heading }, title), h(Button, { className: compact ? 'dsh-wt-dialog-close' : undefined, onClick: close, disabled: !dismissible, autoFocus: !compact, 'aria-label': t('close') }, compact ? '×' : t('close'))), children);
     }
-    function FolderBrowser({ runtime: ctx, t, picked, close }) {
-      const [listing, setListing] = React.useState(null), [path, setPath] = React.useState(''), [name, setName] = React.useState(''), [error, setError] = React.useState(''), [busy, setBusy] = React.useState(false);
-      const active = React.useRef(null), generation = React.useRef(0);
-      React.useEffect(() => { void scan(); return () => { active.current?.abort(); ++generation.current; }; }, []);
-      async function scan(next) {
-        active.current?.abort(); const controller = new AbortController(); active.current = controller; const seq = ++generation.current;
-        setBusy(true); setError('');
-        try { const data = await ctx.uiWorkspace.listDirectory(next, controller.signal); if (!controller.signal.aborted && seq === generation.current) { setListing(data); setPath(data.path); } }
-        catch (failure) { if (!controller.signal.aborted && seq === generation.current) setError(report(t, failure)); }
-        finally { if (!controller.signal.aborted && seq === generation.current) setBusy(false); }
+    function FolderRows({ folders, remove, disabled, t }) {
+      return h('ul', { className: 'dsh-wt-source-list', 'aria-label': t('selectedFolders') }, ...folders.map(folder => h('li', { key: folder }, h(FolderIcon),
+        h('span', { className: 'dsh-wt-source-info' }, h('span', { title: folder }, projectFolderName(folder)), h('span', { className: 'dsh-wt-source-path', title: folder }, folder)),
+        h(Button, { className: 'dsh-wt-source-remove', disabled, onClick: () => remove(folder), 'aria-label': t('remove') + ' ' + folder }, '×'))));
+    }
+    function FolderBrowser({ runtime: ctx, t, existing = [], picked, close }) {
+      const [state, setState] = React.useState({ listing: null, busy: false, error: null });
+      const [path, setPath] = React.useState(''), [name, setName] = React.useState(''), [selected, setSelected] = React.useState([]), [error, setError] = React.useState(''), [creating, setCreating] = React.useState(false);
+      const scanner = React.useRef(null), alive = React.useRef(true), creation = React.useRef(false), selection = React.useRef([]), pathInput = React.useRef(null);
+      React.useEffect(() => {
+        alive.current = true;
+        const owned = createFolderScanner(ctx.uiWorkspace, patch => { setState(previous => ({ ...previous, ...patch })); if (patch.listing) setPath(patch.listing.path); }); scanner.current = owned; void owned.scan();
+        return () => { alive.current = false; owned.dispose(); if (scanner.current === owned) scanner.current = null; };
+      }, [ctx]);
+      const { listing, busy } = state, added = new Set(existing), capacity = 32 - existing.length;
+      const dismiss = () => { if (!creation.current) close(); };
+      function toggle(path) {
+        try { const next = toggleProjectFolder(selection.current, path, capacity); selection.current = next; setSelected(next); setError(''); }
+        catch (failure) { setError(report(t, failure)); }
       }
-      return h(Dialog, { title: t('chooseFolder'), close, t },
-        h('form', { onSubmit: event => { event.preventDefault(); void scan(path); } }, h('label', { className: 'dsh-wt-field' }, t('absolutePath'), h('input', { value: path, onChange: event => setPath(event.target.value) })), h('button', { type: 'submit', disabled: busy || !absolutePath(path) }, t('browse'))),
-        listing && h(React.Fragment, null, h('div', { className: 'dsh-wt-row' }, ...listing.crumbs.map(crumb => h(Button, { key: crumb.path, disabled: busy, onClick: () => { void scan(crumb.path); } }, crumb.name))),
-          h('div', { className: 'dsh-wt-folder-browser' }, ...listing.entries.map(entry => h(Button, { key: entry.path, disabled: busy, onClick: () => { void scan(entry.path); } }, '▱ ' + entry.name))),
-          h(Button, { disabled: busy, onClick: () => picked(listing.path) }, t('chooseThisFolder')),
-          h('form', { onSubmit: async event => { event.preventDefault(); const seq = generation.current; setBusy(true); setError(''); try { const created = await ctx.uiWorkspace.createDirectory(listing.path, name.trim()); if (seq === generation.current) { setName(''); await scan(created); } } catch (failure) { if (seq === generation.current) { setError(report(t, failure)); setBusy(false); } } } },
-            h('label', null, t('folderName'), h('input', { value: name, onChange: event => setName(event.target.value) })), h('button', { type: 'submit', disabled: busy || !name.trim() }, t('createFolder')))),
-        busy && h('p', { role: 'status' }, t('loading')), error && h('p', { role: 'alert', className: 'dsh-wt-error' }, error));
+      function checkbox(path) {
+        const present = added.has(path), checked = present || selected.includes(path);
+        return h('label', { className: 'dsh-wt-picker-check', title: present ? t('alreadyAdded') : t('selectFolder') + ' ' + path }, h('input', { type: 'checkbox', checked, disabled: busy || creating || present || (!checked && selected.length >= capacity), 'aria-label': t('selectFolder') + ' ' + path, onChange: () => toggle(path) }));
+      }
+      async function create(event) {
+        event.preventDefault(); if (creation.current || busy || !listing || !name.trim()) return;
+        creation.current = true; setCreating(true); setError(''); const owned = scanner.current;
+        try { const created = await ctx.uiWorkspace.createDirectory(listing.path, name.trim()); if (alive.current && scanner.current === owned) { setName(''); await owned.scan(created); } }
+        catch (failure) { if (alive.current && scanner.current === owned) setError(report(t, failure)); }
+        finally { creation.current = false; if (alive.current) setCreating(false); }
+      }
+      return h(Dialog, { title: t('sourceFolders'), close: dismiss, t, className: 'dsh-wt-project-dialog dsh-wt-folder-picker', compact: true, dismissible: !creating, initialFocus: pathInput },
+        h('p', { className: 'dsh-wt-muted' }, t('multiFolderHelp')), h('p', { className: 'dsh-wt-muted' }, t('hostFolderHelp')),
+        h('form', { className: 'dsh-wt-picker-path', onSubmit: event => { event.preventDefault(); if (!creating) { setError(''); void scanner.current?.scan(path); } } }, h('label', { className: 'dsh-wt-field' }, t('absolutePath'), h('input', { value: path, ref: pathInput, disabled: creating, onChange: event => setPath(event.target.value) })), h('button', { type: 'submit', disabled: busy || creating || !absolutePath(path) }, t('browse'))),
+        listing && h(React.Fragment, null, h('nav', { className: 'dsh-wt-row dsh-wt-picker-crumbs', 'aria-label': t('browse') }, ...listing.crumbs.map(crumb => h(Button, { key: crumb.path, disabled: busy || creating, title: crumb.path, onClick: () => { void scanner.current?.scan(crumb.path); } }, crumb.name))),
+          h('div', { className: 'dsh-wt-picker-current' }, checkbox(listing.path), h(FolderIcon), h('span', { className: 'dsh-wt-source-info' }, h('span', null, t('chooseThisFolder')), h('span', { className: 'dsh-wt-source-path', title: listing.path }, listing.path))),
+          h('ul', { className: 'dsh-wt-picker-entries', 'aria-label': t('folders') }, ...listing.entries.map(entry => h('li', { key: entry.path }, checkbox(entry.path), h(FolderIcon), h(Button, { className: 'dsh-wt-picker-open', disabled: busy || creating, title: entry.path, onClick: () => { void scanner.current?.scan(entry.path); } }, entry.name), added.has(entry.path) && h('span', { className: 'dsh-wt-muted' }, t('alreadyAdded'))))),
+          !listing.entries.length && !busy && h('p', { className: 'dsh-wt-muted' }, t('noSubfolders')), listing.truncated && h('p', { role: 'status', className: 'dsh-wt-muted' }, t('directoryTruncated')),
+          h('details', { className: 'dsh-wt-picker-create' }, h('summary', null, t('createFolder')), h('form', { onSubmit: create }, h('label', { className: 'dsh-wt-field' }, t('folderName'), h('input', { value: name, disabled: busy || creating, onChange: event => setName(event.target.value) })), h('button', { type: 'submit', disabled: busy || creating || !name.trim() }, t('createFolder'))))),
+        selected.length > 0 && h('section', { className: 'dsh-wt-picker-selected' }, h('h3', { 'aria-live': 'polite' }, t('selectedFolders') + ' · ' + selected.length), h(FolderRows, { folders: selected, remove: toggle, disabled: creating, t })),
+        (busy || creating) && h('p', { role: 'status' }, t('loading')), (error || state.error) && h('p', { role: 'alert', className: 'dsh-wt-error' }, error || report(t, state.error)),
+        h('div', { className: 'dsh-wt-project-footer' }, h(Button, { className: 'dsh-wt-cancel', disabled: creating, onClick: dismiss }, t('cancel')), h(Button, { className: 'dsh-wt-confirm', disabled: busy || creating || !selected.length, onClick: () => picked([...selection.current]) }, t('add') + (selected.length ? ' · ' + selected.length : ''))));
     }
-    function ProjectEditor({ project, runtime: ctx, projects, renderSlot, t, close }) {
-      const [title, setTitle] = React.useState(project?.title || ''), [folders, setFolders] = React.useState(project?.folders.map(folder => folder.path) || []), [path, setPath] = React.useState('');
-      const [busy, setBusy] = React.useState(false), [error, setError] = React.useState(''), [browser, setBrowser] = React.useState(false), [flow, setFlow] = React.useState(false);
-      const lifetime = React.useRef(true), id = React.useRef(project?.id || crypto.randomUUID());
-      React.useEffect(() => () => { lifetime.current = false; }, []);
-      function add(path) { if (!absolutePath(path)) { setError(t('absolutePath')); return; } setFolders(previous => [...new Set([...previous, path])]); setPath(''); setBrowser(false); setFlow(false); setError(''); }
+    function ProjectEditor({ project, runtime: ctx, projects, t, close }) {
+      const [title, setTitle] = React.useState(project?.title || ''), [folders, setFolders] = React.useState(project?.folders.map(folder => folder.path) || []), [path, setPath] = React.useState(''), [mainFolder, setMainFolder] = React.useState(projectMainFolder(project)?.path || '');
+      const [busy, setBusy] = React.useState(false), [error, setError] = React.useState(''), [browser, setBrowser] = React.useState(false), [addMode, setAddMode] = React.useState('browse');
+      const lifetime = React.useRef(true), currentFolders = React.useRef(folders), picker = React.useRef(false), submitter = React.useRef(null), heading = React.useId(), nameInput = React.useRef(null);
+      if (!submitter.current) submitter.current = createProjectSubmitter(projects, project?.id, project?.id || crypto.randomUUID());
+      React.useEffect(() => { lifetime.current = true; return () => { lifetime.current = false; }; }, []);
+      const dismiss = () => { if (!submitter.current.pending && !picker.current) close(); };
+      const primary = draftMainFolder(folders, mainFolder);
+      function add(paths) {
+        if (!lifetime.current || submitter.current.pending) return;
+        try { const next = appendProjectFolders(currentFolders.current, paths); currentFolders.current = next; setFolders(next); setPath(''); setBrowser(false); setError(''); }
+        catch (failure) { setError(report(t, failure)); }
+      }
+      function remove(path) { if (submitter.current.pending || picker.current) return; currentFolders.current = currentFolders.current.filter(value => value !== path); setFolders(currentFolders.current); if (mainFolder === path) setMainFolder(''); setError(''); }
+      async function choose() {
+        if (submitter.current.pending || picker.current || currentFolders.current.length >= 32) return;
+        setError('');
+        if (addMode === 'path') { add([path.trim()]); return; }
+        if (addMode === 'browse') { setBrowser(true); return; }
+        // The optional native chooser returns one folder or null, never a batch.
+        picker.current = true; setBusy(true);
+        try { const selected = await ctx.uiWorkspace.pickDirectory(); if (lifetime.current && selected) add([selected]); }
+        catch (failure) { if (lifetime.current) setError(report(t, failure)); }
+        finally { picker.current = false; if (lifetime.current) setBusy(false); }
+      }
       async function save(event) {
-        event.preventDefault(); setBusy(true); setError('');
-        try { await projects.mutate(project ? { action: 'update', projectId: project.id, title: title.trim(), folders } : { action: 'create', id: id.current, title: title.trim(), folders }); if (lifetime.current) close(); }
+        event.preventDefault(); if (submitter.current.pending || picker.current || browser || !title.trim() || !currentFolders.current.length) return;
+        if (!draftMainFolder(currentFolders.current, mainFolder)) { setError(t('mainFolderRequired')); return; }
+        setBusy(true); setError('');
+        try { await submitter.current.submit(title, currentFolders.current, mainFolder); if (lifetime.current) close(); }
         catch (failure) { if (lifetime.current) setError(report(t, failure)); }
         finally { if (lifetime.current) setBusy(false); }
       }
-      return h(Dialog, { title: t(project ? 'editProject' : 'newProject'), close, t },
-        h('form', { onSubmit: save }, h('label', { className: 'dsh-wt-field' }, t('projectName'), h('input', { required: true, maxLength: 120, value: title, disabled: busy, onChange: event => setTitle(event.target.value) })),
-          h('h3', null, t('folders')), h('ul', { className: 'dsh-wt-folder-list' }, ...folders.map(folder => h('li', { key: folder }, h('code', null, folder), h(Button, { disabled: busy, onClick: () => setFolders(previous => previous.filter(path => path !== folder)), 'aria-label': t('remove') + ' ' + folder }, '×')))),
-          h('label', { className: 'dsh-wt-field' }, t('absolutePath'), h('input', { value: path, disabled: busy, onChange: event => setPath(event.target.value) })),
-          h('div', { className: 'dsh-wt-row' }, h(Button, { disabled: busy || !absolutePath(path) || folders.length >= 32, onClick: () => add(path.trim()) }, t('addFolder')),
-            h(Button, { disabled: busy || folders.length >= 32, onClick: async () => { setError(''); try { const selected = await ctx.uiWorkspace.pickDirectory(); if (lifetime.current && selected) add(selected); } catch (failure) { if (lifetime.current) { setError(report(t, failure)); setBrowser(true); } } } }, t('chooseDirectory')),
-            h(Button, { disabled: busy || folders.length >= 32, onClick: () => setBrowser(true) }, t('browse'))),
-          error && h('p', { role: 'alert', className: 'dsh-wt-error' }, error), h('button', { type: 'submit', disabled: busy || !title.trim() || !folders.length || folders.length > 32 }, t(busy ? 'loading' : 'save'))),
-        renderSlot(projectSlotName('sidebar.workspaces.directoryFlow'), { open: flow, busy, onPicked: add, onCancel: () => setFlow(false), onError: message => { setError(message); setFlow(false); } }),
-        browser && h(FolderBrowser, { runtime: ctx, t, picked: add, close: () => setBrowser(false) }));
+      return h(Dialog, { title: t(project ? 'editProject' : 'createProject'), close: dismiss, t, className: 'dsh-wt-project-dialog', compact: true, dismissible: !busy, initialFocus: nameInput },
+        h('form', { onSubmit: save, 'aria-busy': busy }, h('label', { className: 'dsh-wt-project-name' }, h(FolderIcon), h('input', { required: true, ref: nameInput, maxLength: 120, placeholder: t('projectName'), 'aria-label': t('projectName'), value: title, disabled: busy, onChange: event => setTitle(event.target.value) })),
+          h('div', { className: 'dsh-wt-source-heading' }, h('span', { id: heading }, t('sourceFolders')), folders.length > 0 && h('span', { className: 'dsh-wt-source-count', 'aria-live': 'polite' }, folders.length + ' / 32')),
+          h('section', { className: 'dsh-wt-source-card', 'aria-labelledby': heading, 'data-filled': !!folders.length }, folders.length > 0 && h(FolderRows, { folders, remove, disabled: busy, t }),
+            h('div', { className: 'dsh-wt-source-add' }, h('select', { className: 'dsh-wt-source-select', 'aria-label': t('addFolder'), value: addMode, disabled: busy || folders.length >= 32, onChange: event => { setAddMode(event.target.value); setError(''); } }, h('option', { value: 'browse' }, t('localFolders')), h('option', { value: 'native' }, t('chooseDirectory')), h('option', { value: 'path' }, t('enterFolderPath'))),
+              addMode === 'path' && h('label', { className: 'dsh-wt-project-path' }, h('input', { value: path, autoFocus: true, placeholder: t('absolutePath'), 'aria-label': t('absolutePath'), disabled: busy || folders.length >= 32, onChange: event => setPath(event.target.value), onKeyDown: event => { if (event.key === 'Enter' && !event.nativeEvent?.isComposing) { event.preventDefault(); void choose(); } } })),
+              h(Button, { className: 'dsh-wt-add-pill', disabled: busy || folders.length >= 32 || (addMode === 'path' && !absolutePath(path.trim())), onClick: () => { void choose(); } }, h(FolderIcon, { plus: true }), t('add')))),
+          folders.length > 1 && h('label', { className: 'dsh-wt-main-folder' }, t('mainFolder'), h('select', { required: true, value: primary, disabled: busy, title: primary, onChange: event => { setMainFolder(event.target.value); setError(''); } }, h('option', { value: '', disabled: true }, t('chooseMainFolder')), ...folders.map(folder => h('option', { key: folder, value: folder }, projectFolderName(folder) + ' · ' + folder))), h('small', null, t('mainFolderHelp'))),
+          error && h('p', { role: 'alert', className: 'dsh-wt-error' }, error), h('div', { className: 'dsh-wt-project-footer' }, h(Button, { className: 'dsh-wt-cancel', disabled: busy, onClick: dismiss }, t('cancel')), h('button', { className: 'dsh-wt-confirm', type: 'submit', disabled: busy || !title.trim() || !folders.length || !primary }, t(busy ? 'loading' : project ? 'save' : 'createProject')))),
+        browser && h(FolderBrowser, { runtime: ctx, t, existing: folders, picked: add, close: () => setBrowser(false) }));
     }
     function ThreadRow({ row, selected, runtime: ctx, metadata, renderSlot, t }) {
       const [menu, setMenu] = React.useState(false), [hover, setHover] = React.useState(false);
@@ -734,11 +921,11 @@ window.__ModuleLoader__.load({
     }
     function ProjectGroup({ group, selectedId, runtime, metadata, projects, renderSlot, t, searching }) {
       const [collapsed, setCollapsed] = React.useState(false), [limit, setLimit] = React.useState(5), [choosingFolder, setChoosingFolder] = React.useState(false), [editing, setEditing] = React.useState(false);
-      const rows = searching ? group.rows : visibleProjectRows(group.rows, limit, selectedId);
+      const rows = searching ? group.rows : visibleProjectRows(group.rows, limit, selectedId), main = projectMainFolder(group.project);
       function start(folderId) { setChoosingFolder(false); runtime.uiWorkspace.startSession(folderId); }
       return h('section', null, h('div', { className: 'dsh-wt-project-head' }, h(Button, { title: group.project?.folders.map(folder => folder.path).join('\n'), 'aria-expanded': searching || !collapsed, onClick: () => { setCollapsed(value => !value); setLimit(5); }, 'aria-label': t(collapsed ? 'expand' : 'collapse') + ' ' + (group.project?.title || t('unassigned')) }, h('span', { 'aria-hidden': true }, collapsed && !searching ? '▸' : '▾'), h('span', { 'aria-hidden': true }, '▱'), h('span', { className: 'dsh-wt-project-title' }, group.project?.title || t('unassigned'))),
-        group.project && h(React.Fragment, null, h(Button, { 'aria-label': t('newThread') + ' ' + group.project.title, title: t('newThread'), onClick: () => group.project.folders.length === 1 ? start(group.project.folders[0].id) : setChoosingFolder(value => !value) }, '+'), h(Button, { 'aria-label': t('editProject') + ' ' + group.project.title, title: t('editProject'), onClick: () => setEditing(true) }, '…'))),
-        choosingFolder && h('div', { className: 'dsh-wt-row', 'aria-label': t('chooseFolder') }, ...group.project.folders.map(folder => h(Button, { key: folder.id, title: folder.path, onClick: () => start(folder.id) }, folder.title))),
+        group.project && h(React.Fragment, null, h(Button, { 'aria-label': t('newThread') + ' ' + group.project.title, title: t('newThread') + (main ? ' · ' + main.path : ''), disabled: !main, onClick: () => main && start(main.id) }, '+'), group.project.folders.length > 1 && h(Button, { 'aria-label': t('chooseFolder') + ' ' + group.project.title, title: t('chooseFolder'), 'aria-expanded': choosingFolder, onClick: () => setChoosingFolder(value => !value) }, '▾'), h(Button, { 'aria-label': t('editProject') + ' ' + group.project.title, title: t('editProject'), onClick: () => setEditing(true) }, '…'))),
+        choosingFolder && group.project && h('div', { className: 'dsh-wt-row', 'aria-label': t('chooseFolder') }, ...group.project.folders.map(folder => h(Button, { key: folder.id, title: folder.path, onClick: () => start(folder.id) }, folder.title + (folder.id === main?.id ? ' · ' + t('main') : '')))),
         (searching || !collapsed) && h('div', { role: 'group' }, ...rows.map(row => h(ThreadRow, { key: row.id, row, selected: row.id === selectedId, runtime, metadata, renderSlot, t })), !searching && group.rows.length > rows.length && h(Button, { onClick: () => setLimit(value => value + 5) }, t('showMore')), !searching && limit > 5 && group.rows.length <= rows.length && h(Button, { onClick: () => setLimit(5) }, t('showLess'))),
         editing && h(ProjectEditor, { project: group.project, runtime, projects, renderSlot, t, close: () => setEditing(false) }));
     }
@@ -760,24 +947,28 @@ window.__ModuleLoader__.load({
         h('div', { className: 'dsh-wt-project-list', role: 'tree', 'aria-label': t('projects') }, ...groups.map(group => h(ProjectGroup, { key: group.project?.id || 'unassigned', group, selectedId, runtime: ctx, metadata, projects, renderSlot, t, searching: !!query.trim() }))),
         !metadata.projects.length && !metadata.loading && h('p', { className: 'dsh-wt-muted' }, t('noProjects')), creating && h(ProjectEditor, { projects, runtime: ctx, renderSlot, t, close: () => setCreating(false) }));
     }
-    function NewWorktreeControls({ sessionId, flow, projects, t, useSession, useInput }) {
-      const snapshot = useSession(value => value), empty = useInput(inputEmpty);
+    function NewWorktreeControls({ sessionId, flow, projects, repositories, runtime: ctx, t, useSession, useInput, usePanelInfo }) {
+      const snapshot = useSession(value => value), empty = useInput(inputEmpty), ready = sourceEligible(snapshot), panel = usePanelInfo(value => value.activePanelId);
       const state = React.useSyncExternalStore(flow.store.subscribe, flow.store.getSnapshot);
+      React.useSyncExternalStore(repositories.store.subscribe, repositories.store.getSnapshot);
       const metadata = React.useSyncExternalStore(projects.store.subscribe, projects.store.getSnapshot), context = projects.context(sessionId);
-      const [options, setOptions] = React.useState(false);
-      React.useEffect(() => { if (!snapshot.blank || snapshot.subagent !== null) return; try { flow.observe(sessionId); } catch { /* New mode reports the guarded ABI refusal. */ } }, [flow, sessionId, snapshot.blank, snapshot.subagent]);
-      if (!snapshot.blank || snapshot.subagent !== null) return null;
+      const [options, setOptions] = React.useState(false), [folderError, setFolderError] = React.useState('');
+      React.useEffect(() => { setOptions(false); if (panel || !snapshot.blank || snapshot.subagent !== null) return; try { flow.observe(sessionId); } catch { /* New mode reports the guarded ABI refusal. */ } void repositories.ensure(sessionId); return () => repositories.withdraw(sessionId); }, [flow, repositories, sessionId, ready, panel, snapshot.blank, snapshot.subagent, snapshot.openState, snapshot.removed, context?.project.id, context?.folder.id, context?.folder.path]);
+      if (panel || !snapshot.blank || snapshot.subagent !== null) return null;
       const worktree = context?.binding.mode === 'worktree', record = metadata.records.find(item => item.id === context?.binding.worktreeId);
-      const selected = state.sessionId === sessionId, busy = selected && state.busy;
+      const selected = state.sessionId === sessionId, busy = selected && state.busy, main = projectMainFolder(context?.project), canWorktree = repositories.enabled(sessionId), blockedNew = selected && state.mode === 'new' && !canWorktree;
       return h('div', { className: 'dsh-wt dsh-wt-row dsh-wt-create-controls' }, h(Styles),
-        h('select', { 'aria-label': t('threadMode'), value: selected && state.mode === 'new' ? 'new' : worktree ? 'worktree' : 'local', disabled: busy || !sourceEligible(snapshot),
+        context?.project.folders.length > 1 && h('select', { className: 'dsh-wt-conversation-folder', 'aria-label': t('conversationFolder'), value: context.folder.id, disabled: busy || !empty || !sourceEligible(snapshot), title: !empty ? t('draftWarning') : context.folder.path,
+          onChange: event => { setFolderError(''); try { chooseConversationFolder(ctx, projects, flow, sessionId, event.target.value); } catch (failure) { setFolderError(report(t, failure)); } } }, ...context.project.folders.map(folder => h('option', { key: folder.id, value: folder.id, title: folder.path }, folder.title + (folder.id === main?.id ? ' · ' + t('main') : '')))),
+        folderError && h('span', { className: 'dsh-wt-create-error', role: 'alert' }, folderError),
+        !blockedNew && (canWorktree || worktree) ? h('select', { 'aria-label': t('threadMode'), value: canWorktree && selected && state.mode === 'new' ? 'new' : worktree ? 'worktree' : 'local', disabled: busy || !sourceEligible(snapshot),
           onChange: event => { setOptions(false); flow.select(sessionId, event.target.value); } },
           h('option', { value: 'local', disabled: worktree && !context?.folder }, t('local')),
           worktree && h('option', { value: 'worktree' }, t('worktreeThread')),
-          h('option', { value: 'new' }, t('new'))),
+          canWorktree && h('option', { value: 'new' }, t('new'))) : h(Button, { 'aria-label': t('local'), 'aria-pressed': !selected || state.mode === 'local', disabled: busy || !sourceEligible(snapshot), onClick: () => flow.select(sessionId, 'local') }, t('local')),
         worktree && h('span', { className: 'dsh-wt-muted', title: context.binding.effectiveCwd }, record?.branch || t('worktreeThread')),
-        !worktree && h(Button, { disabled: busy || !sourceEligible(snapshot), 'aria-expanded': options, 'aria-label': t('branch'), onClick: () => { setOptions(value => !value); if (!options) void flow.configure(sessionId); } }, selected && state.branch ? state.remote + '/' + state.branch : t('select')),
-        options && h('fieldset', { className: 'dsh-wt-base-options', onKeyDown: event => { if (event.key === 'Escape') { event.stopPropagation(); setOptions(false); } } }, h('legend', null, t('branch')),
+        canWorktree && !worktree && h(Button, { disabled: busy || !sourceEligible(snapshot), 'aria-expanded': options, 'aria-label': t('branch'), onClick: () => { setOptions(value => !value); if (!options) void flow.configure(sessionId); } }, selected && state.branch ? state.remote + '/' + state.branch : t('select')),
+        canWorktree && !worktree && options && h('fieldset', { className: 'dsh-wt-base-options', onKeyDown: event => { if (event.key === 'Escape') { event.stopPropagation(); setOptions(false); } } }, h('legend', null, t('branch')),
           selected && state.status?.remotes.length > 1 && h('select', { 'aria-label': t('remote'), disabled: busy || state.loading, value: state.remote, onChange: event => flow.setRemote(sessionId, event.target.value) }, ...state.status.remotes.map(item => h('option', { key: item.name, value: item.name }, item.name))),
           h('select', { 'aria-label': t('branch'), value: selected ? state.branch : '', disabled: !selected || state.loading || busy, onChange: event => flow.setBranch(event.target.value) }, h('option', { value: '' }, t(state.loading ? 'loading' : 'select')), ...(selected && state.branches?.items || []).map(item => h('option', { key: item.name, value: item.name }, item.name))),
           h('input', { type: 'search', 'aria-label': t('search'), value: selected ? state.query : '', disabled: !selected || busy || !state.remote, onChange: event => { void flow.loadBranches(sessionId, event.target.value); } }),
@@ -1022,15 +1213,17 @@ window.__ModuleLoader__.load({
     return {
       inject: ['slots', 'locale', 'conversation', 'sessions', 'uiSession', 'uiWorkspace', 'layout', 'connection', 'workspaces', 'shortcuts'],
       // Export pure protocol/guard functions for Node tests, not a second renderer or service.
-      protocol: Object.freeze({ rootFolderValue, writeRootFolder, decodeReply, validateData, currentActor, sourceEligible, inputEmpty, captureDraft, draftUnchanged, advertisedDefault, acquireBlock, NATIVE_SUBMIT_ABI, interrupted, leaseNativeSink, setupProgress, prepareWorktree, waitForDraftFiles, createWorktreeFlow, requestHost, absolutePath, projectRequest, projectData, requestProjects, workspaceStructure, projectContext, captureProject, sameProject, projectPath, projectRows, visibleProjectRows, projectActor, projectReady, createProjectStore, projectSlotName, projectChildren, mirrorProjectSlot, createSidebarMode }),
+      protocol: Object.freeze({ createRepositoryAvailability, projectMainFolder, draftMainFolder, chooseConversationFolder, rootFolderValue, writeRootFolder, decodeReply, validateData, currentActor, sourceEligible, inputEmpty, captureDraft, draftUnchanged, advertisedDefault, acquireBlock, NATIVE_SUBMIT_ABI, interrupted, leaseNativeSink, setupProgress, prepareWorktree, waitForDraftFiles, createWorktreeFlow, requestHost, absolutePath, projectRequest, projectData, requestProjects, workspaceStructure, projectContext, captureProject, sameProject, projectPath, projectRows, visibleProjectRows, projectActor, projectReady, createProjectStore, projectSlotName, projectChildren, mirrorProjectSlot, createSidebarMode }),
       apply(ctx) {
         ctx.effect(() => ctx.locale.register(NS, { en, zh }));
         const projects = createProjectStore(ctx, ctx.locale.bind(NS));
         ctx.effect(() => () => projects.dispose());
-        const flow = createWorktreeFlow(ctx, ctx.locale.bind(NS), projects);
+        const repositories = createRepositoryAvailability(ctx, projects);
+        ctx.effect(() => () => repositories.dispose());
+        const flow = createWorktreeFlow(ctx, ctx.locale.bind(NS), projects, repositories);
         ctx.effect(() => () => flow.dispose());
         let sidebarMode;
-        const seat = (owner, options, component) => ctx.slots.inject(owner, () => ctx.slots.register({ ...options, locale: NS, inject: () => ({ runtime: ctx, flow, projects, sidebarMode }) }, component));
+        const seat = (owner, options, component) => ctx.slots.inject(owner, () => ctx.slots.register({ ...options, locale: NS, inject: () => ({ runtime: ctx, flow, projects, repositories, sidebarMode }) }, component));
         sidebarMode = createSidebarMode(() => seat('sidebar.workspaces', { name: 'sidebar.workspaces', priority: -50, children: projectChildren(ctx) }, ProjectsSidebar));
         ctx.effect(() => () => sidebarMode.dispose());
         for (const source of projectSlots) mirrorProjectSlot(ctx, source);

@@ -270,13 +270,15 @@ test('actual Host project DTOs decode in actual Client protocol and share quiet 
   const before = f.events.length, projectId = randomUUID();
   const created = await rpc({ action: 'create', id: projectId, title: 'Two folders', folders: [f.root, folder2] });
   assert.equal(typeof created.project.createdAt, 'number'); assert.equal(created.project.folders.length, 2); assert.equal(resolutions, 0);
+  assert.equal(created.project.mainFolderId, created.project.folders[0].id);
   const native = f.registry.list().find(value => value.path === f.root); await native.attachSession(source.id);
   const request = { action: 'list', projectId };
   const ui = await rpc(request); assert.equal(ui.projects.length, 1); assert.equal(ui.bindings[0].mode, 'local'); assert.equal(resolutions, 0);
   const tool = await f.host.tools.execute({ name: 'workspace_project', callId: 'project-sdk-list', arguments: request, agent: source, signal });
   assert.equal(tool.isError, false); assert.deepEqual(ui, tool.value.data);
   assert.equal(f.events.length, before, 'metadata RPC and direct shared tool pipeline do not insert chat command rows');
-  const changed = await rpc({ action: 'update', projectId, title: 'Renamed project' }, source.id); assert.equal(changed.project.title, 'Renamed project');
+  const changed = await rpc({ action: 'update', projectId, title: 'Renamed project', mainFolder: folder2 }, source.id); assert.equal(changed.project.title, 'Renamed project');
+  assert.equal(changed.project.mainFolderId, created.project.folders[1].id);
   const bound = await rpc({ action: 'bind', projectId, folderId: native.id, sessionId: source.id }, source.id); assert.equal(bound.binding.mode, 'local');
   assert.equal(f.events.length, before);
   const command = await f.host.commands.execute(source, `/project ${JSON.stringify(request)}`, [], signal);
@@ -285,24 +287,147 @@ test('actual Host project DTOs decode in actual Client protocol and share quiet 
   const assembly = await f.host.systemPrompt.assemble({ scope: source });
   const text = assembly.contexts.find(value => value.name === 'dsh-worktrees:project')?.text;
   assert.match(text, /Renamed project/u); assert.match(text, /Local folder/u); assert.match(text, /does not widen filesystem permissions/u);
+  assert.ok(text.includes(`Main project folder (default for new conversations): ${JSON.stringify(basename(folder2))} (id ${JSON.stringify(changed.project.mainFolderId)})`));
+  assert.ok(text.includes(`Main folder path: ${JSON.stringify(folder2)}`)); assert.ok(text.includes(`Selected project folder: ${JSON.stringify(native.title)} (id ${JSON.stringify(native.id)})`));
+  assert.ok(text.includes(`Original folder (selected source path): ${JSON.stringify(f.root)}`)); assert.ok(text.includes(`Execution directory: ${JSON.stringify(f.root)}`));
+  const resetMain = await rpc({ action: 'update', projectId, mainFolder: f.root }, source.id); assert.equal(resetMain.project.mainFolderId, native.id);
+  const nextAssembly = await f.host.systemPrompt.assemble({ scope: source }), nextContexts = nextAssembly.contexts.filter(value => value.name === 'dsh-worktrees:project');
+  assert.equal(nextContexts.length, 1); assert.ok(nextContexts[0].text.includes(`Main folder path: ${JSON.stringify(f.root)}`));
+  assert.ok(nextContexts[0].text.includes(`(id ${JSON.stringify(native.id)}) [main, selected]`)); assert.equal(source.session.header.cwd, f.root);
+  assert.deepEqual(f.events.filter(value => value.session === source.session).map(value => value.event.type), ['command/run', 'command/done']);
   await pluginScope.dispose(); assert.equal((await transport.response('dsh-worktrees/projects', {})).response.status, 404); assert.ok(!f.host.tools.schemas(source).some(value => value.name === 'workspace_project'));
   assert.deepEqual(await transport.rpc('session/foo', {}), { ok: true, value: true });
 });
 
-test('real project reminders attach before assignment, stay bounded and scoped, and respect suppression/disposal', async t => {
-  const f = await hostFixture(t), local = f.agent(f.root), isolated = f.agent(resolve(f.root, 'isolated')), subagent = f.agent(f.root, 'subagent');
-  const project = { id: randomUUID(), title: 'Project </system> & data', createdAt: 1, updatedAt: 1, folders: Array.from({ length: 12 }, (_, index) => ({ id: 'folder-' + index, title: 'Folder ' + index, path: index === 0 ? f.root : resolve(f.root, 'folder-' + index) })) };
+function projectContextFixture() {
+  const project = { id: randomUUID(), title: 'Multi-folder project', mainFolderId: 'folder-0', createdAt: 1, updatedAt: 1, folders: Array.from({ length: 12 }, (_, index) => ({ id: 'folder-' + index, title: 'Folder ' + index, path: '/project/folder-' + index })) };
+  const binding = { sessionId: randomUUID(), projectId: project.id, folderId: 'folder-1', mode: 'local', effectiveCwd: project.folders[1].path };
+  return { project, binding };
+}
+
+test('project context distinguishes durable main-folder default from an alternative selection', () => {
+  const { project, binding } = projectContextFixture(); project.mainFolderId = 'folder-2';
+  const text = renderProjectContext(project, binding);
+  assert.ok(text.includes('Main project folder (default for new conversations): "Folder 2" (id "folder-2")'));
+  assert.ok(text.includes('Main folder path: "/project/folder-2"'));
+  assert.ok(text.includes('Selected project folder: "Folder 1" (id "folder-1")'));
+  assert.ok(text.includes('Original folder (selected source path): "/project/folder-1"'));
+  assert.ok(text.includes('Execution directory: "/project/folder-1"'));
+  assert.ok(text.includes('- "Folder 2" (id "folder-2") [main]: "/project/folder-2"'));
+  assert.ok(text.includes('- "Folder 1" (id "folder-1") [selected]: "/project/folder-1"'));
+  assert.match(text, /Users may select another folder/u);
+  assert.match(text, /default does not change this conversation's selected folder or execution directory/u);
+  assert.match(text, /does not widen filesystem permissions or change the session working directory/u);
+  assert.match(text, /Project folders do not automatically receive worktrees/u);
+  assert.ok(text.includes(`workspace_project using {"action":"list","projectId":"${project.id}"}`));
+  assert.equal(project.mainFolderId, 'folder-2'); assert.equal(binding.folderId, 'folder-1');
+});
+
+test('project context uses deterministic first-folder fallback only for missing legacy main id', () => {
+  const { project, binding } = projectContextFixture(); delete project.mainFolderId;
+  const text = renderProjectContext(project, { ...binding, folderId: 'folder-0', effectiveCwd: project.folders[0].path });
+  assert.ok(text.includes('Main project folder (default for new conversations): "Folder 0" (id "folder-0")'));
+  assert.ok(text.includes('- "Folder 0" (id "folder-0") [main, selected]: "/project/folder-0"'));
+  assert.equal(renderProjectContext({ ...project, mainFolderId: 'removed-folder' }, binding), '');
+  assert.equal(renderProjectContext({ ...project, mainFolderId: '' }, binding), '');
+  assert.equal(renderProjectContext({ ...project, folders: [] }, binding), '');
+  assert.equal(renderProjectContext(project, { ...binding, folderId: 'removed-folder' }), '');
+  assert.equal(renderProjectContext(project, { ...binding, projectId: randomUUID() }), '');
+});
+
+test('project context keeps main and selected folders beyond the first eight in a bounded list', () => {
+  const { project, binding } = projectContextFixture(); project.mainFolderId = 'folder-10'; binding.folderId = 'folder-11'; binding.effectiveCwd = project.folders[11].path;
+  const text = renderProjectContext(project, binding), rows = text.split('\n').filter(line => line.startsWith('- '));
+  assert.equal(rows.length, 10); assert.match(text, /2 additional folders omitted/u);
+  for (const index of [0, 7, 10, 11]) assert.ok(rows.some(line => line.includes(`(id "folder-${index}")`)));
+  for (const index of [8, 9]) assert.ok(!rows.some(line => line.includes(`(id "folder-${index}")`)));
+  assert.ok(rows.some(line => line.includes('(id "folder-10") [main]')));
+  assert.ok(rows.some(line => line.includes('(id "folder-11") [selected]')));
+  const same = renderProjectContext(project, { ...binding, folderId: 'folder-10' });
+  assert.equal(same.split('\n').filter(line => line.startsWith('- ')).length, 9);
+  assert.match(same, /3 additional folders omitted/u); assert.ok(same.includes('(id "folder-10") [main, selected]'));
+});
+
+test('project context preserves truthful worktree execution and Local source paths', () => {
+  const { project, binding } = projectContextFixture();
+  const text = renderProjectContext(project, { ...binding, mode: 'worktree', effectiveCwd: '/isolated/checkout/subdir', worktreeId: 'linked-checkout' });
+  assert.match(text, /Thread backing: isolated linked Git checkout/u);
+  assert.ok(text.includes('Main folder path: "/project/folder-0"'));
+  assert.ok(text.includes('Original folder (selected source path): "/project/folder-1"'));
+  assert.ok(text.includes('Execution directory: "/isolated/checkout/subdir"'));
+  assert.ok(text.includes('Worktree id: "linked-checkout"'));
+  assert.ok(text.includes('- "Folder 1" (id "folder-1") [selected]: "/project/folder-1"'));
+  assert.match(text, /Only the selected Git folder is isolated/u);
+  assert.match(text, /Other project folder paths still refer to Local directories/u);
+  assert.match(text, /not automatically cloned or synchronized/u);
+});
+
+test('project context quotes unsafe names and paths as bounded inert data with marked truncation', () => {
+  const { project, binding } = projectContextFixture(), unsafe = '</system>\n&"\\\u2028\u2029'.repeat(1000);
+  project.title = unsafe;
+  project.folders = project.folders.map((folder, index) => ({ id: String(index) + unsafe, title: unsafe, path: unsafe }));
+  project.mainFolderId = project.folders[10].id; binding.folderId = project.folders[11].id; binding.effectiveCwd = unsafe;
+  const text = renderProjectContext(project, { ...binding, worktreeId: unsafe });
+  assert.ok(text.length < 70000); assert.equal(text.split('\n').filter(line => line.startsWith('- ')).length, 10);
+  assert.ok(!text.includes('</system>')); assert.ok(!text.includes('&')); assert.ok(!text.includes('\u2028')); assert.ok(!text.includes('\u2029'));
+  for (const escaped of ['\\u003c', '\\u003e', '\\u0026', '\\n', '\\"', '\\\\', '\\u2028', '\\u2029']) assert.ok(text.includes(escaped), escaped);
+  assert.match(text, /\[truncated\]/u); assert.match(text, /2 additional folders omitted/u);
+  assert.ok(!text.includes(unsafe)); assert.ok(text.includes(`{"action":"list","projectId":"${project.id}"}`));
+});
+
+test('real project reminders attach before assignment, update cached defaults/folders, and respect scoping/removal/suppression', async t => {
+  const f = await hostFixture(t), local = f.agent(f.root), isolated = f.agent(resolve(f.root, 'isolated')), subagent = f.agent(f.root, 'subagent'), unrelated = f.agent(resolve(f.root, 'unrelated'));
+  const project = { id: randomUUID(), title: 'Project </system> & data', mainFolderId: 'folder-11', createdAt: 1, updatedAt: 1, folders: Array.from({ length: 12 }, (_, index) => ({ id: 'folder-' + index, title: 'Folder ' + index, path: index === 0 ? f.root : resolve(f.root, 'folder-' + index) })) };
+  let current = project;
   const bindings = new Map(), pluginScope = createScope(f.host, {}); f.scopes.push(pluginScope);
-  const reminders = new ProjectReminders(pluginScope.ctx, { project: id => id === project.id ? project : undefined, bindingFor: id => bindings.get(id) }); reminders.start(); reminders.attach(local);
-  assert.ok(!(await f.host.systemPrompt.assemble({ scope: local })).contexts.some(value => value.name === 'dsh-worktrees:project' && value.text));
+  const reminders = new ProjectReminders(pluginScope.ctx, { project: id => id === project.id ? current : undefined, bindingFor: id => bindings.get(id) }); reminders.start(); reminders.attach(local); reminders.attach(local);
+  const contexts = async agent => (await f.host.systemPrompt.assemble({ scope: agent })).contexts.filter(value => value.name === 'dsh-worktrees:project' && value.text);
+  assert.equal((await contexts(local)).length, 0);
   const localBinding = { sessionId: local.id, projectId: project.id, folderId: project.folders[0].id, mode: 'local', effectiveCwd: f.root };
   const worktreeBinding = { ...localBinding, sessionId: isolated.id, mode: 'worktree', worktreeId: randomUUID(), effectiveCwd: isolated.session.header.cwd };
   bindings.set(local.id, localBinding); bindings.set(isolated.id, worktreeBinding); bindings.set(subagent.id, localBinding);
-  const first = await f.host.systemPrompt.assemble({ scope: local }), second = await f.host.systemPrompt.assemble({ scope: local }); assert.deepEqual(first.contexts, second.contexts);
-  const context = first.contexts.find(value => value.name === 'dsh-worktrees:project'); assert.ok(context); assert.ok(context.text.length < 8192);
-  assert.match(context.text, /4 additional folders omitted/u); assert.match(context.text, /"action":"list"/u); assert.ok(!context.text.includes('</system>')); assert.ok(context.text.includes('\\u003c'));
-  assert.match(renderProjectContext(project, worktreeBinding), /Only the selected Git folder is isolated/u);
-  assert.ok(!(await f.host.systemPrompt.assemble({ scope: subagent })).contexts.some(value => value.name === 'dsh-worktrees:project'));
-  const suppress = local.ctx.get('systemPrompt').suppressRuntimeContext(); assert.ok(!(await f.host.systemPrompt.assemble({ scope: local })).contexts.some(value => value.name === 'dsh-worktrees:project')); suppress();
-  await pluginScope.dispose(); assert.ok(!(await f.host.systemPrompt.assemble({ scope: isolated })).contexts.some(value => value.name === 'dsh-worktrees:project')); reminders.close(); reminders.close();
+  const first = await contexts(local), second = await contexts(local); assert.deepEqual(first, second); assert.equal(first.length, 1);
+  const text = first[0].text; assert.ok(text.length < 8192);
+  assert.match(text, /3 additional folders omitted/u); assert.match(text, /"action":"list"/u); assert.ok(!text.includes('</system>')); assert.ok(text.includes('\\u003c'));
+  assert.ok(text.includes('Main project folder (default for new conversations): "Folder 11" (id "folder-11")'));
+  const worktreeText = (await contexts(isolated))[0].text;
+  assert.match(worktreeText, /Only the selected Git folder is isolated/u); assert.ok(worktreeText.includes(`Execution directory: ${JSON.stringify(isolated.session.header.cwd)}`));
+  assert.ok(worktreeText.includes(`Original folder (selected source path): ${JSON.stringify(f.root)}`));
+  assert.equal((await contexts(subagent)).length, 0); assert.equal((await contexts(unrelated)).length, 0);
+  current = { ...project, title: 'Updated project', mainFolderId: 'folder-10', folders: project.folders.map(folder => folder.id === 'folder-10' ? { ...folder, title: 'New main', path: resolve(f.root, 'renamed-main') } : folder.id === 'folder-0' ? { ...folder, title: 'Selected renamed' } : folder) };
+  const updated = await contexts(local); assert.equal(updated.length, 1); assert.match(updated[0].text, /Updated project/u);
+  assert.ok(updated[0].text.includes('Main project folder (default for new conversations): "New main" (id "folder-10")'));
+  assert.ok(updated[0].text.includes(`Main folder path: ${JSON.stringify(resolve(f.root, 'renamed-main'))}`));
+  assert.ok(updated[0].text.includes('Selected project folder: "Selected renamed" (id "folder-0")'));
+  assert.ok(updated[0].text.includes(`Execution directory: ${JSON.stringify(f.root)}`)); assert.equal(local.session.header.cwd, f.root);
+  const valid = current;
+  current = { ...valid, mainFolderId: 'removed-main' }; assert.equal((await contexts(local)).length, 0);
+  current = { ...valid, folders: valid.folders.filter(folder => folder.id !== localBinding.folderId) }; assert.equal((await contexts(local)).length, 0);
+  current = undefined; assert.equal((await contexts(local)).length, 0);
+  current = valid; bindings.delete(local.id); assert.equal((await contexts(local)).length, 0);
+  bindings.set(local.id, localBinding); reminders.attach(local); assert.equal((await contexts(local)).length, 1);
+  const suppress = local.ctx.get('systemPrompt').suppressRuntimeContext(), suppressAgain = local.ctx.get('systemPrompt').suppressRuntimeContext();
+  assert.equal((await contexts(local)).length, 0); assert.equal((await contexts(isolated)).length, 1);
+  suppress(); assert.equal((await contexts(local)).length, 0); suppressAgain(); assert.equal((await contexts(local)).length, 1);
+  assert.equal(f.events.length, 0, 'native dynamic context never injects user messages or session events');
+  await pluginScope.dispose(); assert.equal((await contexts(local)).length, 0); assert.equal((await contexts(isolated)).length, 0); assert.equal(f.agents.get(local.id), local); reminders.close(); reminders.close();
+});
+
+test('real project reminder lifecycle attaches during serial creation and unwinds exact agent ownership', async t => {
+  const f = await hostFixture(t);
+  const { project } = projectContextFixture(); project.folders[0].path = f.root;
+  const bindings = new Map(); let reminders;
+  const pluginScope = f.host.plugin({ name: 'project-reminder-lifecycle', apply(ctx) { reminders = new ProjectReminders(ctx, { project: id => id === project.id ? project : undefined, bindingFor: id => bindings.get(id) }); reminders.start(); } }); f.scopes.push(pluginScope); await pluginScope;
+  const agent = f.agent(f.root), other = f.agent(f.root);
+  for (const value of [agent, other]) bindings.set(value.id, { sessionId: value.id, projectId: project.id, folderId: project.folders[0].id, mode: 'local', effectiveCwd: f.root });
+  const contexts = async value => (await f.host.systemPrompt.assemble({ scope: value })).contexts.filter(context => context.name === 'dsh-worktrees:project');
+  let sawInitialized = false;
+  pluginScope.ctx.on('agent/created', async ({ agent: created }) => { assert.equal((await contexts(created)).length, 1); sawInitialized = true; return undefined; });
+  await f.host.serial(scopeTarget(agent, agent), 'agent/created', { agent, source: 'startup' }); assert.equal(sawInitialized, true);
+  await f.host.serial(scopeTarget(other, other), 'agent/created', { agent: other, source: 'startup' });
+  reminders.attach(agent); assert.equal((await contexts(agent)).length, 1);
+  f.host.emit(scopeTarget(agent, agent), 'agent/disposed', { agent }); assert.equal((await contexts(agent)).length, 0); assert.equal((await contexts(other)).length, 1); assert.equal(f.agents.get(agent.id), agent);
+  await other.scope.dispose(); assert.equal((await contexts(other)).length, 0); assert.equal(f.agents.get(other.id), other);
+  f.host.emit(scopeTarget(other, other), 'agent/disposed', { agent: other }); reminders.close(); reminders.close();
+  assert.equal(f.events.length, 0);
 });

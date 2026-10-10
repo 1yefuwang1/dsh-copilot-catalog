@@ -1,7 +1,7 @@
 # dsh-worktrees
 
 Multi-folder projects with Local and isolated Git worktree threads for DeepSeek
-Harness. This experimental Host + Web Client package is **`0.2.6`, not yet
+Harness. This experimental Host + Web Client package is **`0.2.9`, not yet
 published**. It does not require Copilot, the catalog plugin, or the search plugin.
 
 ## Projects and threads
@@ -22,11 +22,31 @@ native Workspace membership, a working-directory change or a permission grant.
   checkout workspaces are grouped under their source project, not promoted into
   separate projects. **Edit project** can combine imported folders into an
   explicitly named multi-folder project without moving files, sessions or logs.
-- **New Thread** uses the normal new-conversation flow in the chosen project
-  folder. Multi-folder projects offer an inline folder choice, not another
-  first-message dialog. The native workspace picker and composer stay installed.
-  Choose **New worktree** in that blank conversation before the first Send;
-  selection only changes intent and leaves any native draft/chips/files intact.
+- **Create project** uses a compact project-name field and **Source folders** card.
+  Click **Add** to browse Host folders, check several folders (including folders
+  from different directories), then add the batch. Selections survive directory
+  navigation. Repeat Add to extend the list; each selected folder shows its name,
+  full path and a remove action. A project supports **1–32 folders**; duplicate
+  picks are ignored and over-limit batches are refused without dropping entries.
+  The source dropdown also offers manual absolute paths and the optional native
+  system chooser (one folder per pick). Use **Cancel** to discard unsaved edits;
+  saving/native picking blocks dismissal until it settles, and Host refusals preserve the
+  draft. The same folder-list design is used by **Manage project**. Removal edits
+  membership only, never deletes files; ownership/use restrictions remain Host-
+  authoritative. Canonical aliases are checked by the Host, not guessed in the UI.
+- **Main folder** is required when creating a new multi-folder project in the GUI.
+  Choose it in Create/Manage project; a one-folder project uses its only folder.
+  The choice is saved by stable folder ID, so reordering folders does not change
+  it. Existing projects without a choice adopt their first folder on upgrade.
+  Changing main never moves or rebinds existing conversations or worktrees.
+- The project's **+ / New Thread** uses the normal new-conversation flow in its
+  main folder. Use the adjacent folder arrow to start in another project folder,
+  or change **Conversation folder** in an empty blank composer before typing or
+  attaching files. An override is per conversation and never changes main. Drafts,
+  attachments, queued work and active setup block folder switching. The native
+  workspace picker/editor stay installed; there is no first-message dialog.
+  Choose **New worktree** before the first Send; mode selection only changes
+  intent and leaves the native draft/chips/files intact.
 - Search, pinned order, running/pending indicators, archived-thread access and
   native row actions remain available. Installed row extensions are mirrored into
   plugin-owned aliases through public slot APIs; native entries and declarations
@@ -38,19 +58,38 @@ native Workspace membership, a working-directory change or a permission grant.
 
 For a multi-folder project, only the **selected Git folder** is isolated in a new
 worktree. Other folders still refer to Local directories; the plugin does not
-clone/synchronize every repository or loosen filesystem policy. Bounded agent
-runtime context states the project, selected folder and truthful thread backing;
-`workspace_project` can retrieve remaining metadata.
+clone/synchronize every repository or loosen filesystem policy. The agent's
+native **system reminder** states the project, main/default folder, actual selected
+source folder, execution directory and truthful thread backing. Its bounded
+folder list includes IDs and Local paths (first eight plus main/selected when
+needed, at most ten); omitted folders/truncated values are marked, and an exact
+`workspace_project` list request retrieves full metadata. Main/folder edits appear
+on the next prompt assembly from cached metadata, without scanning repositories
+or injecting user messages. Membership and defaults do not grant permissions.
 
 All these changes are plugin-only. Native Workspace records retain their exact
 canonical execution paths; DSH core and the application shell are not modified.
 
 ## New Conversation: Local or New worktree
 
-Start a new conversation through the default UI. Its **normal composer** has
-one additional **Local / New worktree** choice. The workspace picker, rich editor,
-attachments, slash-command handling, Enter/Send behavior and native editor
-rollback stay installed; there is no separate first-message dialog.
+Start a new conversation through the default UI. Its **normal composer** offers
+**New worktree** only after its actual selected folder passes local Git validation
+and has a configured remote. Ordinary non-Git folders, unverified/unsupported
+sources and failed checks show **Local** only, with no remote-branch controls.
+Git repository subfolders remain eligible; no `.git`-directory heuristic is used.
+The workspace picker, rich editor, attachments, native Enter/Send and rollback
+stay installed; there is no separate first-message dialog.
+
+A ready blank target performs one coalesced authenticated read-only status request
+(several bounded local Git commands), not fetch/remote advertising, naming,
+checkout or session creation. Observations are cached for the exact actor binding,
+selected folder and connection generation. Target/view/panel changes, reconnect
+and disposal abort stale reads. Main/title/token changes do not poll Git; failed
+checks leave Local usable. Fresh configure/Send discovery remains authoritative
+and can revoke an earlier positive. If New was already selected, revocation
+preserves that intent and refuses Send safely until you explicitly choose Local.
+A positive observation is not a permission grant or guarantee of remote/fetched-
+tree support; normal creation checks still apply.
 
 1. Choose **New worktree**. This only selects the mode: no Git work, checkout,
    branch, setup request or naming inference is performed on selection. Existing
@@ -142,8 +181,10 @@ current/last-known branch and dirty state, conversations, protection, archive
 state and errors. The started-conversation header reads cached project/backing
 metadata only; there is no Worktrees button beside the project name in the chat
 header. Open the manager from its sidebar entry, with no background Git query.
-Local setup does not query Git. Project metadata refreshes on connection generation,
-explicit edits and structural native Workspace changes, not per render/token or timer.
+A ready blank conversation checks only its actual target's local Git availability;
+Local mode sends no setup/fetch and remains usable if discovery fails. There is no
+sidebar-wide or per-token Git polling. Project metadata refreshes on connection
+generation, explicit edits and structural native Workspace changes, not per render/token or timer.
 UI requests use the existing authenticated Connection RPC transport, not the
 slash-command registry. The plugin owns exact POST routes
 `/api/dsh-worktrees/projects`, `/api/dsh-worktrees/execute`,
@@ -353,12 +394,18 @@ Explicit commands remain normally logged.
 
 `/project` (one JSON action object) and `workspace_project` share the project
 controller: `list` (optional `projectId` filter), `create`, `update`, `bind`, and
-`start`. `create` takes a fresh UUID `id`, title and absolute existing `folders`;
-`update.folders` replaces the complete list. `bind` validates actual ordinary
-session cwd/backing; it cannot move a session. `start` takes a unique
-`operationId`, `projectId` and native `folderId`, returns an exact blank session,
-and never sends a prompt. Ready same-request starts return their original identity;
-ambiguous partial starts refuse duplication. `git_worktree create` accepts paired
+`start`. `create` takes a fresh UUID `id`, title and absolute existing `folders`.
+Optional `mainFolder` is an absolute path matching a resulting source folder
+canonically; omitted create uses first for API compatibility. `update.folders`
+replaces the complete list; `update.mainFolder` can change only the default.
+Omitted update preserves main across reordering; removing it with multiple folders
+remaining requires a replacement (a sole remaining folder becomes main).
+Snapshots expose `mainFolderId`. `bind` validates actual ordinary cwd/backing;
+it cannot move a session. `start` takes a unique `operationId`, `projectId` and
+optional native `folderId`: omitted uses main, explicit selects another folder.
+It returns an exact blank session and never sends a prompt. Ready replay uses
+its original receipt folder/session even after main changes; ambiguous partial
+starts refuse duplication. `git_worktree create` accepts paired
 `projectId`/`folderId`; the selected original folder must match its creation path.
 Project metadata never grants Full access; cross-root thread starts retain caller
 checks and tool mutations respect active/pending plan mode.

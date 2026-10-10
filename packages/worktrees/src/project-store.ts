@@ -8,9 +8,9 @@ const text = z.string().min(1).max(4096);
 const path = text.refine(value => isAbsolute(value) && !/[\u0000-\u001f\u007f]/u.test(value));
 export const projectFolderSchema = z.object({ id: text, path, title: z.string().max(4096) }).strict();
 export const projectRecordSchema = z.object({
-  id: z.string().uuid(), title: z.string().min(1).max(120), folders: z.array(projectFolderSchema).min(1).max(32),
+  id: z.string().uuid(), title: z.string().min(1).max(120), folders: z.array(projectFolderSchema).min(1).max(32), mainFolderId: text.optional(),
   createdAt: z.number().int().nonnegative(), updatedAt: z.number().int().nonnegative(), imported: z.boolean().optional(),
-}).strict();
+}).strict().refine(value => value.mainFolderId === undefined || value.folders.some(folder => folder.id === value.mainFolderId), { path: ['mainFolderId'], message: 'The main folder must be a member of the project.' });
 export const projectBindingSchema = z.object({
   sessionId: z.string().min(1).max(256), projectId: z.string().uuid(), folderId: text,
   mode: z.enum(['local', 'worktree']), effectiveCwd: path, worktreeId: z.string().uuid().optional(),

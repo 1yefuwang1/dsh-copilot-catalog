@@ -15,6 +15,8 @@ const helpers = vm.runInNewContext(`(() => { const NS = 'worktrees.ui', PANEL = 
   projectContext, captureProject, sameProject, projectPath, projectActor, projectRows,
   visibleProjectRows, createProjectStore, projectSlotName, projectChildren,
   projectSlots, mirrorProjectSlot, createSidebarMode,
+  appendProjectFolders, toggleProjectFolder, projectFolderName, createFolderScanner, createProjectSubmitter,
+  projectMainFolder, draftMainFolder, chooseConversationFolder,
 }; })()`, { AbortController, crypto: webcrypto });
 const success = data => ({ ok: true, value: { v: 1, ok: true, data } });
 const projectId = '12345678-1234-4234-8234-123456789abc';
@@ -33,6 +35,153 @@ function observable(initial) {
 }
 async function settle() { for (let i = 0; i < 20; ++i) await Promise.resolve(); }
 function invalid(fn) { assert.throws(fn, error => error.kind === 'decode'); }
+
+test('main-folder DTO validation and legacy fallback keep current conversation ownership separate', () => {
+  const selected = { ...project, mainFolderId: 'folder-b' }, data = { ...metadata, projects: [selected] };
+  assert.equal(helpers.projectData({ action: 'list' }, data), data);
+  assert.equal(helpers.projectMainFolder(selected).id, 'folder-b'); assert.equal(helpers.projectMainFolder(project).id, 'folder-a');
+  assert.equal(helpers.projectMainFolder({ ...selected, folders: [...selected.folders].reverse() }).id, 'folder-b');
+  assert.equal(helpers.projectContext(data, workspaces, 'local').folder.id, 'folder-a');
+  assert.equal(helpers.sameProject(helpers.captureProject(helpers.projectContext(metadata, workspaces, 'local')), helpers.captureProject(helpers.projectContext(data, workspaces, 'local'))), true, 'changing defaults does not retarget a frozen worktree source');
+  for (const mainFolderId of [null, '', 'outside', 1, []]) invalid(() => helpers.projectData({ action: 'list' }, { ...data, projects: [{ ...selected, mainFolderId }] }));
+  assert.equal(helpers.projectMainFolder({ ...selected, mainFolderId: 'outside' }), undefined);
+});
+
+test('new multi-folder drafts require an explicit main choice; sole folders automatically supply it', async () => {
+  const calls = [], submitter = helpers.createProjectSubmitter({ async mutate(request) { calls.push(request); return { project }; } }, undefined, operationId);
+  assert.equal(helpers.draftMainFolder([], ''), ''); assert.equal(helpers.draftMainFolder(['/repo/a'], ''), '/repo/a');
+  assert.equal(helpers.draftMainFolder(['/repo/a', '/repo/b'], ''), '');
+  assert.equal(helpers.draftMainFolder(['/repo/a', '/repo/b'], '/repo/b'), '/repo/b');
+  assert.equal(helpers.draftMainFolder(['/repo/a', '/repo/c'], '/repo/b'), '', 'removing the main requires a replacement when multiple folders remain');
+  for (const main of [undefined, '', '/outside']) assert.throws(() => submitter.submit('Example', ['/repo/a', '/repo/b'], main), error => error.kind === 'mainFolderRequired');
+  assert.equal(submitter.pending, false); assert.equal(calls.length, 0);
+  await submitter.submit('Example', ['/repo/a', '/repo/b'], '/repo/b'); assert.equal(calls[0].mainFolder, '/repo/b');
+  await submitter.submit('Example', ['/repo/sole']); assert.equal(calls[1].mainFolder, '/repo/sole');
+});
+
+test('project protocol supports main-only updates and default starts without accepting dangling or malformed main paths', () => {
+  for (const request of [{ action: 'create', id: projectId, title: 'Example', folders: ['/repo/a', '/repo/b'], mainFolder: '/repo/b' }, { action: 'update', projectId, mainFolder: '/repo/b' }, { action: 'start', projectId, operationId }]) assert.equal(helpers.projectRequest(request), request);
+  for (const mainFolder of [null, '', 'relative', '/repo\0bad', '/repo\ninvalid', '/' + 'x'.repeat(4096)]) invalid(() => helpers.projectRequest({ action: 'update', projectId, mainFolder }));
+  const request = { action: 'start', projectId, operationId }, data = { sessionId: 'fresh', workspaceId: 'folder-b', binding: { ...local, sessionId: 'fresh', folderId: 'folder-b', effectiveCwd: '/repo/web' } };
+  assert.equal(helpers.projectData(request, data), data);
+  invalid(() => helpers.projectData(request, { ...data, workspaceId: 'folder-a' }));
+  invalid(() => helpers.projectData({ ...request, folderId: 'folder-a' }, data));
+});
+
+test('main-folder metadata edits refresh defaults without rebinding existing local/worktree conversations', async () => {
+  const run = projectRuntime(); await run.ready();
+  const before = run.store.context('local');
+  await run.store.mutate({ action: 'update', projectId, mainFolder: '/repo/web' });
+  assert.equal(helpers.projectMainFolder(run.store.store.getSnapshot().projects.find(value => value.id === projectId)).id, 'folder-b');
+  assert.deepEqual(copy(run.store.context('local').binding), copy(before.binding));
+  assert.equal(run.store.context('tree').binding.effectiveCwd, tree.effectiveCwd);
+  assert.equal(run.selected.length, 0); assert.equal(run.opened.length, 0); run.dispose();
+});
+
+test('empty new-conversation folder overrides use the native flow and do not change the project main', async () => {
+  const run = projectRuntime(); await run.ready(); const flow = { store: observable({ sessionId: 'local', busy: false }) };
+  assert.equal(helpers.chooseConversationFolder(run.ctx, run.store, flow, 'local', 'folder-a'), false);
+  assert.equal(helpers.chooseConversationFolder(run.ctx, run.store, flow, 'local', 'folder-b'), true);
+  assert.deepEqual(run.selected, ['folder-b']); assert.equal(helpers.projectMainFolder(run.store.store.getSnapshot().projects[0]).id, 'folder-a');
+  assert.equal(run.srcInput.getSnapshot().draft, ''); assert.deepEqual(run.srcInput.getSnapshot().attachmentIds, []);
+  assert.equal(run.calls.filter(call => call.request.action !== 'list').length, 0, 'selecting a folder sends no prompt/Git/project mutation');
+  assert.throws(() => helpers.chooseConversationFolder(run.ctx, run.store, flow, 'local', 'alien-folder'), error => error.kind === 'decode'); run.dispose();
+});
+
+test('folder overrides fail closed for text, chips, queued work, nonblank/retired/foreign sources and active worktree setup', async () => {
+  const run = projectRuntime(); await run.ready(); const flow = { store: observable({ sessionId: 'local', busy: false }) };
+  const refused = () => assert.throws(() => helpers.chooseConversationFolder(run.ctx, run.store, flow, 'local', 'folder-b'), error => error.kind === 'draftWarning');
+  for (const input of [{ ...empty, draft: 'keep me' }, { ...empty, attachmentIds: ['file'] }, { ...empty, queue: [{}] }, { ...empty, phase: 'confirm' }]) { run.srcInput.publish(input); refused(); assert.equal(run.srcInput.getSnapshot(), input); }
+  run.srcInput.publish(copy(empty));
+  const source = run.ctx.sessions.binding('local').session;
+  for (const snapshot of [{ ...blank, blank: false }, { ...blank, running: true }, { ...blank, openState: 'closed' }, { ...blank, removed: true }]) { source.publish(snapshot); refused(); }
+  source.publish(copy(blank)); flow.store.publish({ sessionId: 'local', busy: true }); refused();
+  flow.store.publish({ sessionId: 'local', busy: false }); run.list.publish({ byId: { other: { retainedBy: { mainView: 1 } } } }); refused();
+  assert.deepEqual(run.selected, []); run.dispose();
+});
+
+test('project folder batches support repeated Add, remove and re-add without replacing existing folders', () => {
+  const original = ['/repo/api'];
+  const first = helpers.appendProjectFolders(original, ['/repo/web', '/repo/api', '/repo/docs']);
+  assert.deepEqual(Array.from(first), ['/repo/api', '/repo/web', '/repo/docs']);
+  assert.deepEqual(original, ['/repo/api'], 'merging never mutates the editor input');
+  const removed = helpers.toggleProjectFolder(first, '/repo/web');
+  assert.deepEqual(Array.from(helpers.appendProjectFolders(removed, ['/repo/web', '/repo/jobs'])), ['/repo/api', '/repo/docs', '/repo/web', '/repo/jobs']);
+  assert.deepEqual(Array.from(first), ['/repo/api', '/repo/web', '/repo/docs']);
+});
+
+test('batch deduplication precedes the 32-folder bound and overflow is atomic, never silently truncated', () => {
+  const full = Array.from({ length: 32 }, (_, i) => '/repo/' + i);
+  assert.deepEqual(Array.from(helpers.appendProjectFolders(full, full)), full);
+  assert.deepEqual(Array.from(helpers.appendProjectFolders(full.slice(0, 31), [full[0], full[31], full[31]])), full);
+  assert.throws(() => helpers.appendProjectFolders(full.slice(0, 31), ['/repo/new-a', '/repo/new-b']), error => error.kind === 'folderLimit');
+  assert.equal(full.length, 32);
+  assert.throws(() => helpers.toggleProjectFolder(['/repo/a'], '/repo/b', 1), error => error.kind === 'folderLimit');
+  assert.deepEqual(Array.from(helpers.toggleProjectFolder(['/repo/a'], '/repo/a', 0)), []);
+  for (const path of ['relative', '/repo\0bad', '/repo\ninvalid', '/repo\tinvalid', '/repo\u007finvalid', '/' + 'x'.repeat(4096)]) assert.throws(() => helpers.appendProjectFolders([], [path]), error => error.kind === 'invalidFolder');
+  assert.deepEqual(Array.from(helpers.appendProjectFolders([], ['/repo', '/repo/../repo', '/link-to-repo'])), ['/repo', '/repo/../repo', '/link-to-repo'], 'canonical aliases are not guessed by the Client; the Host remains authoritative');
+});
+
+test('folder row names handle POSIX, drive and UNC paths while retaining truthful full paths', () => {
+  for (const [path, name] of [['/repo/api/', 'api'], ['/', '/'], ['C:\\repo\\web', 'web'], ['\\\\server\\share\\docs', 'docs'], ['/repo/a\\b', 'a\\b']]) assert.equal(helpers.projectFolderName(path), name);
+});
+
+test('browser selection survives navigation and is only merged on Add; cancelling leaves editor folders unchanged', async () => {
+  const editor = ['/repo/existing']; let selected = [], state = {};
+  const scanner = helpers.createFolderScanner({ async listDirectory(path) { return { path, entries: [] }; } }, patch => { state = { ...state, ...patch }; });
+  await scanner.scan('/repo'); selected = helpers.toggleProjectFolder(selected, '/repo/api', 31);
+  await scanner.scan('/another'); selected = helpers.toggleProjectFolder(selected, '/another/web', 31);
+  assert.equal(state.listing.path, '/another');
+  assert.deepEqual(Array.from(selected), ['/repo/api', '/another/web']);
+  assert.deepEqual(Array.from(helpers.appendProjectFolders(editor, selected)), ['/repo/existing', '/repo/api', '/another/web']);
+  scanner.dispose(); selected = [];
+  assert.deepEqual(editor, ['/repo/existing'], 'discarding browser staging performs no project mutation');
+});
+
+test('folder scans cancel superseded reads and ignore stale settlements and disposed callbacks', async () => {
+  const pending = [], patches = [];
+  const scanner = helpers.createFolderScanner({ listDirectory(path, signal) { return new Promise((resolve, reject) => pending.push({ path, signal, resolve, reject })); } }, patch => patches.push(patch));
+  const old = scanner.scan('/old'), current = scanner.scan('/current');
+  assert.equal(pending[0].signal.aborted, true); assert.equal(pending[1].signal.aborted, false);
+  pending[1].resolve({ path: '/current', entries: [] }); await current;
+  const settled = patches.length;
+  pending[0].resolve({ path: '/old', entries: [] }); await old;
+  assert.equal(patches.length, settled); assert.equal(patches.findLast(patch => patch.listing).listing.path, '/current');
+  const last = scanner.scan('/last'); scanner.dispose(); const disposed = patches.length;
+  assert.equal(pending[2].signal.aborted, true); pending[2].reject(new Error('late failure')); await last;
+  await scanner.scan('/never'); assert.equal(patches.length, disposed); assert.equal(pending.length, 3);
+});
+
+test('folder scan failures finish loading explicitly and permit an owned retry', async () => {
+  const failure = new Error('listing refused'); let attempts = 0, state = {};
+  const scanner = helpers.createFolderScanner({ async listDirectory(path) { if (++attempts === 1) throw failure; return { path, entries: [] }; } }, patch => { state = { ...state, ...patch }; });
+  await scanner.scan('/repo'); assert.equal(state.error, failure); assert.equal(state.busy, false);
+  await scanner.scan('/repo'); assert.equal(state.error, null); assert.equal(state.listing.path, '/repo'); assert.equal(state.busy, false); scanner.dispose();
+});
+
+test('project submission uses a synchronous single flight and freezes the complete multi-folder request', async () => {
+  const calls = []; let finish;
+  const submitter = helpers.createProjectSubmitter({ mutate(request) { calls.push(request); return new Promise(resolve => { finish = resolve; }); } }, undefined, operationId);
+  const folders = ['/repo/api', '/repo/web'];
+  const first = submitter.submit(' Example project ', folders, '/repo/web'), second = submitter.submit('Changed while pending', ['/wrong']);
+  assert.equal(first, second); assert.equal(submitter.pending, true);
+  folders.push('/late-editor-change'); await settle(); assert.equal(calls.length, 1);
+  assert.equal(calls[0].action, 'create'); assert.equal(calls[0].id, operationId); assert.equal(calls[0].title, 'Example project'); assert.equal(calls[0].mainFolder, '/repo/web');
+  assert.deepEqual(Array.from(calls[0].folders), ['/repo/api', '/repo/web']); assert.ok(Object.isFrozen(calls[0]) && Object.isFrozen(calls[0].folders));
+  finish({ project }); await first; assert.equal(submitter.pending, false);
+});
+
+test('failed project submissions preserve their UUID and draft, and editing sends the full replacement folder array', async () => {
+  const calls = [], failure = new Error('Host refused save'); let attempts = 0;
+  const submitter = helpers.createProjectSubmitter({ async mutate(request) { calls.push(request); if (++attempts === 1) throw failure; return { project }; } }, undefined, operationId);
+  const folders = ['/repo/api', '/repo/web'];
+  await assert.rejects(submitter.submit('Example', folders, '/repo/web'), error => error === failure); assert.equal(submitter.pending, false);
+  await submitter.submit('Example', folders, '/repo/web'); assert.equal(calls[0].id, calls[1].id); assert.deepEqual(folders, ['/repo/api', '/repo/web']);
+  const update = helpers.createProjectSubmitter({ async mutate(request) { calls.push(request); return { project }; } }, projectId, projectId);
+  await update.submit('Renamed', folders, '/repo/web'); assert.equal(calls[2].action, 'update'); assert.equal(calls[2].projectId, projectId); assert.ok(!Object.hasOwn(calls[2], 'id'));
+  assert.deepEqual(Array.from(calls[2].folders), folders);
+  invalid(() => update.submit(' ', folders, '/repo/web')); invalid(() => update.submit('Example', [])); assert.equal(calls.length, 3);
+});
 
 test('strict project requests validate ids, absolute folders, bounds and action-specific keys', () => {
   const requests = [{ action: 'list' }, { action: 'list', projectId }, { action: 'create', id: projectId, title: project.title, folders: ['/repo'] }, { action: 'update', projectId, folders: ['/repo', 'C:\\repo'] }, { action: 'update', projectId, title: 'Renamed' }, { action: 'bind', projectId, folderId: 'folder-a', sessionId: 'local' }, { action: 'start', operationId, projectId, folderId: 'folder-a' }];
@@ -139,11 +288,13 @@ function projectRuntime({ delayedStart = false, delayedReady = false, delayedOwn
       if (request.action === 'start') return delayedStart ? new Promise(resolve => { resolveStart = resolve; }) : success(result);
       if (request.action === 'create') {
         const created = { id: request.id, title: request.title, folders: request.folders.map((path, i) => ({ id: 'new-folder-' + i, path, title: 'New folder' })), createdAt: project.createdAt + 1, updatedAt: project.updatedAt + 1 };
+        created.mainFolderId = created.folders.find(folder => folder.path === (request.mainFolder || request.folders[0])).id;
         serverMetadata.projects.push(created); return success({ project: copy(created) });
       }
       if (request.action === 'update') {
         const saved = serverMetadata.projects.find(item => item.id === request.projectId);
         Object.assign(saved, { ...(request.title !== undefined ? { title: request.title } : {}), ...(request.folders ? { folders: request.folders.map(path => saved.folders.find(folder => folder.path === path)) } : {}), updatedAt: saved.updatedAt + 1 });
+        saved.mainFolderId = request.mainFolder ? saved.folders.find(folder => folder.path === request.mainFolder).id : helpers.projectMainFolder(saved).id;
         return success({ project: copy(saved) });
       }
       if (request.action === 'bind') {
@@ -156,7 +307,7 @@ function projectRuntime({ delayedStart = false, delayedReady = false, delayedOwn
       retain(id, options) { assert.equal(options.source, 'controllerOperation'); const ref = { sessionId: id, ready: id === 'local' ? Promise.resolve(srcBinding) : ready, releases: 0, release() { ++ref.releases; } }; references.push(ref); return ref; },
       retainInfo: id => id === 'local' ? { getSnapshot: () => ({ retainedBy: list.getSnapshot().byId.local?.retainedBy || {} }), subscribe: list.subscribe } : ownership },
     layout: { beginNavigation() { navigation?.abort(); navigation = new AbortController(); return navigation.signal; } },
-    uiWorkspace: { openSession(id) { opened.push(id); navigation.abort(); if (!delayedOwnership) { ownership.publish({ retainedBy: { mainView: 1 } }); list.publish({ byId: { [id]: { retainedBy: { mainView: 1 } } } }); } } },
+    uiWorkspace: { startSession(id) { selected.push(id); }, openSession(id) { opened.push(id); navigation.abort(); if (!delayedOwnership) { ownership.publish({ retainedBy: { mainView: 1 } }); list.publish({ byId: { [id]: { retainedBy: { mainView: 1 } } } }); } } },
     effect(factory) { const cleanup = factory(); let live = true; const dispose = () => { if (live) { live = false; cleanups.delete(dispose); cleanup(); } }; cleanups.add(dispose); return dispose; },
   };
   const store = helpers.createProjectStore(ctx, key => key);
@@ -258,7 +409,7 @@ test('UI only replaces the browsing hole and uses accessible permanent worktree 
   assert.match(source, /sidebar\.footer\.action/);
   assert.match(source, /renderSlot\(projectSlotName\('sidebar\.workspaces\.session\.menu\.item'\), owner, \{ hookContext: \[menu, setMenu\] \}\)/);
   assert.match(source, /binding\.mode === 'worktree'/); assert.match(source, /className: 'dsh-wt-branch-chip', title: marker, 'aria-label': marker/);
-  assert.match(source, /dialog\.showModal\(\)/); assert.match(source, /onCancel: event => \{ event\.preventDefault\(\); close\(\); \}/);
+  assert.match(source, /dialog\.showModal\(\)/); assert.match(source, /onCancel: event => \{ event\.preventDefault\(\); event\.stopPropagation\(\); if \(dismissible\) close\(\); \}/);
   assert.doesNotMatch(source, /name: 'sidebar'[, }]|name: 'root'[, }]|document\.body|@deepseek-ai\/dsh-client-ui-primitives/);
   assert.deepEqual([...source.matchAll(/require\('([^']+)'\)/g)].map(match => match[1]), ['react']);
 });
@@ -299,6 +450,51 @@ test('Projects sidebar rows keep only the worktree icon; branch/path appear in h
   assert.match(source, /\.dsh-wt-branch-chip\{[^}]*width:16px;flex-shrink:0/);
 });
 
+
+test('project dialog declares the compact reference layout and a separately staged multi-folder browser', () => {
+  const editor = source.slice(source.indexOf('    function ProjectEditor('), source.indexOf('    function ThreadRow('));
+  const browser = source.slice(source.indexOf('    function FolderBrowser('), source.indexOf('    function ProjectEditor('));
+  const dialog = source.slice(source.indexOf('    function Dialog('), source.indexOf('    function FolderRows('));
+  assert.match(editor, /className: 'dsh-wt-project-dialog', compact: true/);
+  assert.ok(editor.includes("'createProject'"));
+  for (const key of ['projectName', 'sourceFolders', 'localFolders', 'add', 'cancel']) assert.ok(editor.includes("t('" + key + "')"), key);
+  assert.match(editor, /h\(FolderRows, \{ folders, remove, disabled: busy, t \}\)/);
+  assert.match(editor, /existing: folders, picked: add, close: \(\) => setBrowser\(false\)/);
+  assert.match(editor, /appendProjectFolders\(currentFolders\.current, paths\)/);
+  assert.match(editor, /submitter\.current\.pending \|\| picker\.current \|\| browser/);
+  assert.match(editor, /const dismiss = \(\) => \{ if \(!submitter\.current\.pending && !picker\.current\) close\(\)/);
+  assert.ok(editor.indexOf('picker.current = true;') < editor.indexOf('await ctx.uiWorkspace.pickDirectory()'));
+  assert.match(editor, /if \(lifetime\.current && selected\) add\(\[selected\]\)/);
+  assert.doesNotMatch(editor, /setFlow|setBrowser\(true\)[^\n]*catch|remote\.commands|fetch\(/);
+  assert.match(browser, /type: 'checkbox', checked/); assert.match(browser, /'aria-label': t\('selectFolder'\) \+ ' ' \+ path/);
+  assert.match(browser, /toggleProjectFolder\(selection\.current, path, capacity\)/);
+  assert.match(browser, /picked\(\[\.\.\.selection\.current\]\)/);
+  assert.match(browser, /listing\.truncated/);
+  assert.match(dialog, /dialog\.showModal\(\); initialFocus\?\.current\?\.focus\(\)/);
+  assert.match(editor, /initialFocus: nameInput/); assert.match(editor, /ref: nameInput/);
+  assert.match(browser, /initialFocus: pathInput/); assert.match(browser, /ref: pathInput/);
+  const styling = source.slice(source.indexOf('.dsh-wt-project-dialog{'), source.indexOf('.dsh-wt-progress{'));
+  const allowed = new Set(['border-l1', 'border-l2', 'bg-layer-1', 'bg-layer-2', 'bg-overlay', 'label-primary', 'label-secondary', 'brand-primary']);
+  for (const match of styling.matchAll(/var\(--dsw-alias-([^)]*)\)/g)) assert.ok(allowed.has(match[1]), match[1]);
+  assert.doesNotMatch(styling, /#[0-9a-f]{3,8}\b|rgba?\(/i);
+});
+
+test('project UI requires the main for multi-folder creation and preserves per-conversation folder overrides', () => {
+  const editor = source.slice(source.indexOf('    function ProjectEditor('), source.indexOf('    function ThreadRow('));
+  const group = source.slice(source.indexOf('    function ProjectGroup('), source.indexOf('    function SidebarToggle('));
+  const composer = source.slice(source.indexOf('    function NewWorktreeControls('), source.indexOf('    function SetupProgress('));
+  assert.match(editor, /projectMainFolder\(project\)\?\.path/);
+  assert.match(editor, /folders\.length > 1 && h\('label', \{ className: 'dsh-wt-main-folder' \}/);
+  assert.match(editor, /h\('select', \{ required: true, value: primary, disabled: busy/);
+  assert.match(editor, /disabled: busy \|\| !title\.trim\(\) \|\| !folders\.length \|\| !primary/);
+  assert.match(editor, /submit\(title, currentFolders\.current, mainFolder\)/);
+  assert.match(group, /main = projectMainFolder\(group\.project\)/);
+  assert.match(group, /onClick: \(\) => main && start\(main\.id\)/);
+  assert.match(group, /'aria-expanded': choosingFolder/); assert.match(group, /onClick: \(\) => start\(folder\.id\)/);
+  assert.match(composer, /'aria-label': t\('conversationFolder'\)/);
+  assert.match(composer, /value: context\.folder\.id, disabled: busy \|\| !empty \|\| !sourceEligible\(snapshot\)/);
+  assert.match(composer, /chooseConversationFolder\(ctx, projects, flow, sessionId, event\.target\.value\)/);
+});
 
 test('chat header retains passive project metadata without a Worktrees button; sidebar manager stays available', () => {
   const header = source.slice(source.indexOf('    function Header('), source.indexOf('    function Manager('));

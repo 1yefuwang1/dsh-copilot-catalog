@@ -1,6 +1,48 @@
 # dsh-worktrees changelog
 
-## 0.2.6 — Unreleased
+## 0.2.9 — Unreleased
+
+- Offer New worktree/remote-branch controls only after the actual blank target
+  passes a read-only local Git status check and has a configured remote. Plain
+  folders, unsupported/unverified sources and failed checks retain Local chats.
+- Coalesce/cache exact binding/folder/connection observations; abort stale checks
+  on target changes, panel/unmount, reconnect or disposal without polling rows.
+- Gate New selection, native intent capture and setup checks; revoke stale branch
+  queries and captured New attempts without silently changing them to Local.
+  Unavailable New intent requires explicit Local selection, including worktree-
+  backed sources. Fresh configure/Send status failures revoke older positives.
+- Preserve read-only caller authorization, fresh Send-time validation, native draft
+  restoration and accepted destination navigation. No core or Host API changes.
+
+## 0.2.8 — Main-folder defaults and reminders
+
+- Persist a main folder per project; require an explicit choice for new multi-
+  folder GUI drafts and migrate legacy metadata to its first folder. Main-only
+  edits and folder reorders never change existing conversation cwd or bindings.
+- Default the project's New Thread action to main, with alternate-folder actions
+  and a guarded empty-composer folder selector using the native session flow.
+- Expose canonical `mainFolder` create/update paths and optional start `folderId`;
+  default-start replay retains its original folder/session and caller safeguards.
+- Add main/default, actual selection, execution directory and bounded folder IDs
+  to the native agent system reminder; always include main/selected folders, with
+  full-metadata discovery and explicit permissions/worktree boundaries.
+- Reject invalid defaults and unsafe main removal; retain managed-ancestry folder
+  protection. Keep DSH core, native editor, log/cwd and permissions unchanged.
+
+## 0.2.7 — Multi-folder project dialog
+
+- Redesign Create/Manage project as a compact name field, Source folders card,
+  removable folder rows, Add control and Cancel/Create project footer.
+- Support checkbox-based batch folder selection retained across Host directory
+  navigation, repeated Add, deduplication and an atomic 32-folder limit. Keep
+  manual absolute paths and the optional single-folder native chooser.
+- Guard pending saves/pickers synchronously, keep one create UUID per dialog,
+  freeze full folder replacements, retain refused drafts and block dismissal
+  while non-cancellable operations are pending. Abort superseded browser scans.
+- Preserve shared project tools/RPC, Host ownership/removal/path checks, existing
+  execution directories and permissions. No core or shell changes.
+
+## 0.2.6 — Worktree root settings
 
 - Expose Worktree root folder on the plugin row's native configuration page, with
   persisted Save and field-only reset, validation and revision-conflict handling.

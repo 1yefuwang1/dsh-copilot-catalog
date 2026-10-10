@@ -41,7 +41,7 @@ const payload = request => ({ v: 1, request });
 
 test('quiet authenticated empty-GUI metadata uses exact shared controller without Actor activation or event rows', async t => {
   const f = await fixture(t);
-  const actions = [{ action: 'list' }, { action: 'create', id: randomUUID(), title: 'Project', folders: ['/existing/project'] }, { action: 'update', projectId: randomUUID(), title: 'Rename' }, { action: 'start', operationId: randomUUID(), projectId: randomUUID(), folderId: 'native-folder' }];
+  const actions = [{ action: 'list' }, { action: 'create', id: randomUUID(), title: 'Project', folders: ['/existing/project'], mainFolder: '/existing/project' }, { action: 'update', projectId: randomUUID(), title: 'Rename' }, { action: 'update', projectId: randomUUID(), mainFolder: '/existing/project' }, { action: 'start', operationId: randomUUID(), projectId: randomUUID() }, { action: 'start', operationId: randomUUID(), projectId: randomUUID(), folderId: 'native-folder' }];
   for (const request of actions) assert.deepEqual(await f.connection.dispatch(payload(request)), { ok: true, value: { v: 1, ok: true, data: f.snapshot } });
   assert.equal(f.lookups.length, 0); assert.equal(f.invocations.length, actions.length); assert.ok(f.invocations.every(value => value.invocation.agent === undefined && value.invocation.origin === 'ui'));
   assert.equal(f.rows.length, 0); assert.deepEqual(f.actor.inbox, { nextTurn: [], nextStep: [] });
@@ -68,7 +68,7 @@ test('strict bounded lossless payloads reject accessors, cycles, prototype value
   const accessor = { ...valid }; Object.defineProperty(accessor, 'extra', { enumerable: true, get() { accessed = true; return 'full'; } }); const cycle = { ...valid }; cycle.cycle = cycle;
   const invalid = [null, [], {}, { ...valid, v: 2 }, { ...valid, actorId: '' }, { ...valid, actorId: 'x'.repeat(257) }, { ...valid, actorId: 'line\nfeed' },
     ...['permissions', 'actor', 'origin', 'fullAccess', 'settings'].map(key => ({ ...valid, [key]: true })),
-    ...[{ action: 'list', actorId: f.actor.id }, { action: 'list', folders: [] }, { action: 'create', id: randomUUID(), title: 'X', folders: ['relative'] }, { action: 'update', projectId: randomUUID() }, { action: 'bind', projectId: randomUUID(), folderId: 'folder', sessionId: 'thread', mode: 'worktree' }].map(request => ({ ...valid, request })),
+    ...[{ action: 'list', actorId: f.actor.id }, { action: 'list', folders: [] }, { action: 'create', id: randomUUID(), title: 'X', folders: ['relative'] }, { action: 'create', id: randomUUID(), title: 'X', folders: ['/existing/project'], mainFolder: 'relative' }, { action: 'update', projectId: randomUUID() }, { action: 'update', projectId: randomUUID(), mainFolderId: 'native-folder' }, { action: 'update', projectId: randomUUID(), mainFolder: '/line\nbreak' }, { action: 'start', operationId: randomUUID(), projectId: randomUUID(), folderId: null }, { action: 'bind', projectId: randomUUID(), folderId: 'folder', sessionId: 'thread', mode: 'worktree' }].map(request => ({ ...valid, request })),
     { ...valid, request: undefined }, { ...valid, extra: NaN }, { ...valid, extra: -0 }, { ...valid, extra: 1n }, { ...valid, request: new Date() }, { ...valid, request: Object.create({ action: 'list' }) }, { ...valid, request: { toJSON() { return { action: 'list' }; } } }, { ...valid, request: { action: 'list', text: 'x'.repeat(1048577) } }, accessor, cycle,
   ];
   for (const request of invalid) outer(await f.connection.dispatch(request), 'INVALID_RPC_REQUEST');

@@ -12,15 +12,21 @@ import { projectBindingSchema, projectRecordSchema, type ProjectStartRecord, typ
 import type { WorktreeRecord } from './types.js';
 
 export interface ProjectFolder { id: string; path: string; title: string }
-export interface ProjectRecord { id: string; title: string; folders: ProjectFolder[]; createdAt: number; updatedAt: number; imported?: boolean }
+export interface ProjectRecord { id: string; title: string; folders: ProjectFolder[]; mainFolderId?: string; createdAt: number; updatedAt: number; imported?: boolean }
+/** Legacy records select their first folder; an explicit main ID must name a member. */
+export function resolveMainFolder(project: Pick<ProjectRecord, 'folders' | 'mainFolderId'>): ProjectFolder {
+  const folder = project.mainFolderId === undefined ? project.folders[0] : project.folders.find(value => value.id === project.mainFolderId);
+  if (folder === undefined) throw new WorktreeError('PROJECT_FOLDER_NOT_FOUND', 'The project main folder is not registered.');
+  return folder;
+}
 export interface ProjectThreadBinding { sessionId: string; projectId: string; folderId: string; mode: 'local' | 'worktree'; effectiveCwd: string; worktreeId?: string }
 export interface ProjectSnapshot { projects: ProjectRecord[]; bindings: ProjectThreadBinding[]; records?: WorktreeRecord[] }
 export type ProjectRequest =
   | { action: 'list'; projectId?: string }
-  | { action: 'create'; id: string; title: string; folders: string[] }
-  | { action: 'update'; projectId: string; title?: string; folders?: string[] }
+  | { action: 'create'; id: string; title: string; folders: string[]; mainFolder?: string }
+  | { action: 'update'; projectId: string; title?: string; folders?: string[]; mainFolder?: string }
   | { action: 'bind'; projectId: string; folderId: string; sessionId: string }
-  | { action: 'start'; operationId: string; projectId: string; folderId: string };
+  | { action: 'start'; operationId: string; projectId: string; folderId?: string };
 export interface ProjectInvocation { agent?: Agent; origin: 'ui' | 'tool' | 'command'; signal: AbortSignal }
 export interface ProjectStartResult { sessionId: string; workspaceId: string; binding: ProjectThreadBinding }
 export interface ProjectWorktreeSource { records(): WorktreeRecord[] }
@@ -44,10 +50,10 @@ const titleSchema = z.string().trim().min(1).max(120).regex(/^[^\u0000-\u001f\u0
 const foldersSchema = z.array(pathSchema).min(1).max(32);
 const requestSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('list'), projectId: z.string().uuid().optional() }).strict(),
-  z.object({ action: z.literal('create'), id: z.string().uuid(), title: titleSchema, folders: foldersSchema }).strict(),
-  z.object({ action: z.literal('update'), projectId: z.string().uuid(), title: titleSchema.optional(), folders: foldersSchema.optional() }).strict().refine(value => value.title !== undefined || value.folders !== undefined),
+  z.object({ action: z.literal('create'), id: z.string().uuid(), title: titleSchema, folders: foldersSchema, mainFolder: pathSchema.optional() }).strict(),
+  z.object({ action: z.literal('update'), projectId: z.string().uuid(), title: titleSchema.optional(), folders: foldersSchema.optional(), mainFolder: pathSchema.optional() }).strict().refine(value => value.title !== undefined || value.folders !== undefined || value.mainFolder !== undefined),
   z.object({ action: z.literal('bind'), projectId: z.string().uuid(), folderId: text, sessionId: text }).strict(),
-  z.object({ action: z.literal('start'), operationId: z.string().uuid(), projectId: z.string().uuid(), folderId: text }).strict(),
+  z.object({ action: z.literal('start'), operationId: z.string().uuid(), projectId: z.string().uuid(), folderId: text.optional() }).strict(),
 ]);
 
 /** Lossless, bounded plain JSON validation shared by the tool parser and quiet RPC. */
@@ -85,13 +91,14 @@ const uuidParameter = { type: 'string', format: 'uuid' };
 const idParameter = { type: 'string', minLength: 1, maxLength: 256, pattern: '^[^\\u0000-\\u001f\\u007f]+$' };
 const folderParameter = { type: 'array', minItems: 1, maxItems: 32, items: { type: 'string', minLength: 1, maxLength: 4096, description: 'Absolute path to an existing local directory. Canonical duplicates are rejected.' } };
 const titleParameter = { type: 'string', minLength: 1, maxLength: 120 };
+const mainFolderParameter = { type: 'string', minLength: 1, maxLength: 4096 };
 const variant = (action: string, properties: Record<string, unknown>, requiredFields: string[]) => ({ type: 'object', additionalProperties: false, properties: { action: { const: action, type: 'string' }, ...properties }, required: ['action', ...requiredFields] });
 /** Plain JSON schema, not a Zod object. Folder updates replace the complete folder array. */
 export const parameterSchema: Record<string, unknown> = { type: 'object', oneOf: [
-  variant('list', { projectId: uuidParameter }, []), variant('create', { id: uuidParameter, title: titleParameter, folders: folderParameter }, ['id', 'title', 'folders']),
-  { ...variant('update', { projectId: uuidParameter, title: titleParameter, folders: folderParameter }, ['projectId']), anyOf: [{ required: ['title'] }, { required: ['folders'] }] },
+  variant('list', { projectId: uuidParameter }, []), variant('create', { id: uuidParameter, title: titleParameter, folders: folderParameter, mainFolder: { ...mainFolderParameter, description: 'Absolute existing source directory in folders (canonical match); omitted uses the first folder.' } }, ['id', 'title', 'folders']),
+  { ...variant('update', { projectId: uuidParameter, title: titleParameter, folders: folderParameter, mainFolder: { ...mainFolderParameter, description: 'Absolute existing source directory in resulting folders (canonical match). Omitted retains the main, or uses the sole remaining folder; supply a replacement to remove the main when multiple folders remain.' } }, ['projectId']), anyOf: [{ required: ['title'] }, { required: ['folders'] }, { required: ['mainFolder'] }] },
   variant('bind', { projectId: uuidParameter, folderId: idParameter, sessionId: idParameter }, ['projectId', 'folderId', 'sessionId']),
-  variant('start', { operationId: uuidParameter, projectId: uuidParameter, folderId: idParameter }, ['operationId', 'projectId', 'folderId']),
+  variant('start', { operationId: uuidParameter, projectId: uuidParameter, folderId: { ...idParameter, description: 'Override the main folder for this new start. Omitted uses the main; replay reuses the original receipt folder and session.' } }, ['operationId', 'projectId']),
 ] };
 export const projectParameterSchema = parameterSchema;
 function contained(root: string, path: string): boolean { const part = relative(root, path); return part === '' || (!part.startsWith(`..${sep}`) && part !== '..' && !isAbsolute(part)); }
@@ -112,10 +119,17 @@ export class ProjectController {
     const records = this.worktrees.records(); const record = records.find(value => value.id === worktreeId);
     return record === undefined ? undefined : this.worktreeFolder(record, records);
   }
-  resolveFolder(projectId: string, folderId: string): ProjectFolder {
-    const folder = this.store.projects.get(projectId)?.folders.find(value => value.id === folderId);
+  resolveFolder(projectId: string, folderId?: string): ProjectFolder {
+    const project = this.store.projects.get(projectId);
+    const folder = project === undefined ? undefined : folderId === undefined ? resolveMainFolder(project) : project.folders.find(value => value.id === folderId);
     if (folder === undefined) throw new WorktreeError('PROJECT_FOLDER_NOT_FOUND', 'The selected project folder is not registered.');
     return clone(folder);
+  }
+  private startFolder(request: Extract<ProjectRequest, { action: 'start' }>): ProjectFolder {
+    const receipt = this.store.starts.get(request.operationId);
+    // A default replay is pinned to its receipt, never to a subsequently changed main.
+    const folderId = request.folderId ?? (receipt?.projectId === request.projectId ? receipt.folderId : undefined);
+    return this.resolveFolder(request.projectId, folderId);
   }
   folderForPath(path: string): { projectId: string; folderId: string; path: string } | undefined {
     for (const record of this.records()) { const folder = record.folders.find(value => value.path === path); if (folder !== undefined) return { projectId: record.id, folderId: folder.id, path: folder.path }; }
@@ -133,7 +147,9 @@ export class ProjectController {
     const signal = AbortSignal.any([invocation.signal, this.shutdown.signal, AbortSignal.timeout(this.dependencies.operationTimeoutMs ?? 120000)]);
     const input = { ...invocation, signal };
     return this.serial(async () => {
-      const parsed = parseProjectRequest(request); this.guard(parsed, input); await this.synchronizeNow(signal); this.guard(parsed, input);
+      const parsed = parseProjectRequest(request);
+      const startFolder = this.guard(parsed, input);
+      await this.synchronizeNow(signal); this.guard(parsed, input, startFolder);
       if (parsed.action === 'list') return this.snapshot(parsed.projectId);
       if (parsed.action === 'create' || parsed.action === 'update') return this.changeProject(parsed, input);
       if (parsed.action === 'bind') {
@@ -142,7 +158,7 @@ export class ProjectController {
         if (binding === undefined || binding.projectId !== parsed.projectId || binding.folderId !== folder.id) throw new WorktreeError('PROJECT_BINDING_MISMATCH', 'The ordinary session cwd does not belong to this exact project folder.');
         this.guard(parsed, input); await this.store.bindings.put(binding.sessionId, binding); return { binding: clone(binding) };
       }
-      return this.start(parsed, input);
+      return this.start(parsed, input, startFolder!);
     });
   }
   synchronize(): Promise<void> { return this.serial(() => this.synchronizeNow(this.shutdown.signal)); }
@@ -179,19 +195,21 @@ export class ProjectController {
     const task = this.queue.then(operation); this.queue = task.catch(() => undefined); this.flights.add(task);
     void task.then(() => this.flights.delete(task), () => this.flights.delete(task)); return task;
   }
-  private guard(request: ProjectRequest, invocation: ProjectInvocation): void {
+  private guard(request: ProjectRequest, invocation: ProjectInvocation, startFolder?: ProjectFolder): ProjectFolder | undefined {
     abortIfRequested(invocation.signal);
     const agent = invocation.agent;
     if (agent === undefined) {
       if (invocation.origin !== 'ui' || request.action === 'bind') throw new WorktreeError('NO_CALLER', 'A genuine invoking ordinary session is required.');
-      return;
+      return request.action === 'start' ? startFolder ?? this.startFolder(request) : undefined;
     }
     if (!this.bootstrap.isLive(agent) || this.bootstrap.actor(agent.id) !== agent) throw new WorktreeError('SESSION_CHANGED', 'The invoking session is no longer the exact ordinary live session.');
     if (invocation.origin === 'tool' && request.action !== 'list' && planBlocksMutation(agent)) throw new WorktreeError('PLAN_MODE', 'Project mutations are unavailable while plan mode is active or pending enabled.');
     if (request.action === 'start') {
-      const folder = this.resolveFolder(request.projectId, request.folderId); const policy = policyOf(agent);
+      const folder = startFolder ?? this.startFolder(request); const policy = policyOf(agent);
       if (!isAbsolute(policy.workspaceRoot) || (!contained(policy.workspaceRoot, folder.path) && policy.mode !== 'danger-full-access')) throw new WorktreeError('FULL_ACCESS_REQUIRED', 'Starting a conversation outside the caller workspace requires existing full access; metadata never grants permissions.');
+      return folder;
     }
+    return undefined;
   }
   private infer(sessionId: string, cwd: string): ProjectThreadBinding | undefined {
     const local = this.folderForPath(cwd);
@@ -266,12 +284,17 @@ export class ProjectController {
       const retained = imported.folders.filter(folder => !customs.some(project => project.folders.some(value => value.path === folder.path)));
       if (retained.length === imported.folders.length) continue;
       if (retained.length === 0) await this.store.projects.delete(imported.id);
-      else await this.store.projects.put(imported.id, { ...imported, folders: retained, updatedAt: Date.now() });
+      else await this.store.projects.put(imported.id, { ...imported, folders: retained, mainFolderId: retained.find(folder => folder.id === imported.mainFolderId)?.id ?? retained[0]!.id, updatedAt: Date.now() });
+    }
+    // Additive v1 repair: metadata only, with stable folder ordering and no session changes.
+    for (const project of this.records()) {
+      abortIfRequested(signal);
+      if (project.mainFolderId === undefined) await this.store.projects.put(project.id, { ...project, mainFolderId: resolveMainFolder(project).id });
     }
     for (const workspace of registry.list()) {
       abortIfRequested(signal);
       if (this.folderForPath(workspace.path) !== undefined || worktrees.some(record => contained(record.checkoutRoot, workspace.path))) continue;
-      const now = Date.now(); const project: ProjectRecord = { id: randomUUID(), title: workspace.title.trim().slice(0, 120) || basename(workspace.path) || 'Project', folders: [{ id: workspace.id, path: workspace.path, title: workspace.title }], createdAt: now, updatedAt: now, imported: true };
+      const now = Date.now(); const project: ProjectRecord = { id: randomUUID(), title: workspace.title.trim().slice(0, 120) || basename(workspace.path) || 'Project', folders: [{ id: workspace.id, path: workspace.path, title: workspace.title }], mainFolderId: workspace.id, createdAt: now, updatedAt: now, imported: true };
       await this.store.projects.put(project.id, project);
     }
     const nativePaths = new Map(registry.list().flatMap(workspace => workspace.sessionIds.map(id => [id, workspace.path] as const)));
@@ -313,6 +336,8 @@ export class ProjectController {
     if (request.action === 'create' && existing !== undefined) throw new WorktreeError('PROJECT_EXISTS', 'This project id is already registered.');
     if (request.action === 'update' && existing === undefined) throw new WorktreeError('PROJECT_NOT_FOUND', 'This project is not registered.');
     const paths = request.folders === undefined ? existing!.folders.map(folder => folder.path) : await this.canonicalFolders(request.folders);
+    const explicitMain = request.mainFolder === undefined ? undefined : (await this.canonicalFolders([request.mainFolder]))[0]!;
+    if (explicitMain !== undefined && !paths.includes(explicitMain)) throw new WorktreeError('PROJECT_MAIN_FOLDER_NOT_FOUND', 'The main folder must be a canonical member of the resulting project folders.');
     for (const path of paths) {
       const owner = this.folderForPath(path); const project = owner === undefined ? undefined : this.store.projects.get(owner.projectId);
       if (project !== undefined && project.id !== id && project.imported !== true) throw new WorktreeError('PROJECT_FOLDER_CONFLICT', 'This canonical folder belongs to another explicit project.');
@@ -321,9 +346,13 @@ export class ProjectController {
       if (paths.includes(folder.path)) continue;
       const bound = [...this.store.bindings.entries()].some(([, binding]) => binding.projectId === id && binding.folderId === folder.id);
       const pending = [...this.store.starts.entries()].some(([, start]) => start.projectId === id && start.folderId === folder.id);
-      const managed = this.worktrees.records().some(record => resolve(record.repoRoot, record.projectSubdir) === folder.path);
+      const records = this.worktrees.records();
+      const managed = records.some(record => this.worktreeFolder(record, records)?.folderId === folder.id || resolve(record.repoRoot, record.projectSubdir) === folder.path);
       if (bound || pending || managed) throw new WorktreeError('PROJECT_FOLDER_IN_USE', 'Retain folders with existing threads, managed worktrees or start receipts.');
     }
+    const priorMain = existing === undefined ? undefined : resolveMainFolder(existing).path;
+    const mainPath = explicitMain ?? (priorMain !== undefined && paths.includes(priorMain) ? priorMain : paths.length === 1 || existing === undefined ? paths[0]! : undefined);
+    if (mainPath === undefined) throw new WorktreeError('PROJECT_MAIN_FOLDER_REQUIRED', 'Supply a replacement main folder when removing the prior main from a multi-folder project.');
     const registry = required<Registry>(this.owner, 'workspaceRegistry'); const folders: ProjectFolder[] = [];
     for (const path of paths) {
       this.guard(request, invocation); const workspace = await registry.create(path);
@@ -331,13 +360,16 @@ export class ProjectController {
       folders.push({ id: workspace.id, path: workspace.path, title: workspace.title });
     }
     this.guard(request, invocation); const now = Date.now();
-    const project = projectRecordSchema.parse({ id, title: request.title ?? existing!.title, folders, createdAt: existing?.createdAt ?? now, updatedAt: now });
+    const project = projectRecordSchema.parse({ id, title: request.title ?? existing!.title, folders, mainFolderId: folders.find(folder => folder.path === mainPath)!.id, createdAt: existing?.createdAt ?? now, updatedAt: now });
     // Publish the explicit winner first. If storage fails afterwards, synchronize repairs adoption.
     await this.store.projects.put(id, project);
     await this.synchronizeNow(); return { project: clone(project) };
   }
-  private async start(request: Extract<ProjectRequest, { action: 'start' }>, invocation: ProjectInvocation): Promise<ProjectStartResult> {
-    const folder = this.resolveFolder(request.projectId, request.folderId); const actorId = invocation.agent?.id ?? null;
+  private async start(request: Extract<ProjectRequest, { action: 'start' }>, invocation: ProjectInvocation, folder: ProjectFolder): Promise<ProjectStartResult> {
+    const current = this.resolveFolder(request.projectId, folder.id);
+    if (current.path !== folder.path) throw new WorktreeError('PROJECT_PATH_CHANGED', 'The captured project folder changed during synchronization.');
+    const actorId = invocation.agent?.id ?? null;
+    const guard = () => this.guard(request, invocation, folder);
     const previous = this.store.starts.get(request.operationId);
     if (previous !== undefined) {
       if (previous.projectId !== request.projectId || previous.folderId !== folder.id || previous.actorId !== actorId || previous.effectiveCwd !== folder.path) throw new WorktreeError('OPERATION_REUSED', 'This start operation id belongs to another project folder or caller.');
@@ -351,13 +383,13 @@ export class ProjectController {
     if (canonical[0] !== folder.path) throw new WorktreeError('PROJECT_PATH_CHANGED', 'The selected folder no longer has its registered canonical path.');
     if (invocation.agent !== undefined && await (this.dependencies.localPath ?? localProjectPath)(invocation.agent, folder.path, invocation.signal) !== folder.path) throw new WorktreeError('PROJECT_PATH_CHANGED', 'The caller filesystem does not map to this exact native folder.');
     const settings = invocation.agent === undefined ? undefined : await this.bootstrap.settings(invocation.agent, invocation.signal);
-    this.guard(request, invocation); const now = Date.now();
+    guard(); const now = Date.now();
     let operation: ProjectStartRecord = { id: request.operationId, projectId: request.projectId, folderId: folder.id, actorId, effectiveCwd: folder.path, requestedSessionId: request.operationId, phase: 'planned', sessionId: null, workspaceId: null, createdAt: now, updatedAt: now };
     const receipt = async (phase: ProjectStartRecord['phase'], extra: Partial<ProjectStartRecord> = {}) => { operation = { ...operation, ...extra, phase, updatedAt: Date.now() }; await this.store.starts.put(operation.id, clone(operation)); };
     try {
-      await receipt('planned'); this.guard(request, invocation);
+      await receipt('planned'); guard();
       if (invocation.agent !== undefined && (await this.bootstrap.settings(invocation.agent, invocation.signal)).hash !== settings!.hash) throw new WorktreeError('SETTINGS_CHANGED', 'The invoking settings changed before session creation.');
-      this.guard(request, invocation); await receipt('creating'); this.guard(request, invocation);
+      guard(); await receipt('creating'); guard();
       let result: { sessionId: string; workspaceId: string };
       if (invocation.agent !== undefined) {
         const created = await this.bootstrap.create({ cwd: folder.path, title: folder.title, source: invocation.agent, settings: settings!, mode: 'new', signal: invocation.signal,
@@ -374,7 +406,7 @@ export class ProjectController {
       if (header.origin === 'subagent' || header.cwd !== folder.path) throw new WorktreeError('PROJECT_BINDING_MISMATCH', 'The created ordinary session cwd does not match the selected folder.');
       const binding: ProjectThreadBinding = { sessionId: result.sessionId, projectId: request.projectId, folderId: folder.id, mode: 'local', effectiveCwd: folder.path };
       await this.store.bindings.put(binding.sessionId, binding); await receipt('ready', result);
-      this.guard(request, invocation); return { ...result, binding: clone(binding) };
+      guard(); return { ...result, binding: clone(binding) };
     } catch (error) {
       if (operation.phase !== 'ready') await receipt('recovery-required');
       throw error;

@@ -15,7 +15,7 @@ const policies = {
   },
   'dsh-worktrees': {
     modules: ['index', 'types', 'errors', 'runtime', 'schema', 'store', 'sessions', 'context', 'service', 'git', 'naming', 'rpc', 'projects', 'project-store', 'project-rpc', 'project-context', 'quiet-rpc', 'first-message'],
-    extras: ['client.js', 'locale/en.json', 'icon.svg'], maxBytes: 450_000,
+    extras: ['client.js', 'locale/en.json', 'icon.svg'], maxBytes: 475_000,
   },
 };
 

@@ -4,13 +4,14 @@ import { mkdtemp, mkdir, realpath, readFile, writeFile, rm, symlink } from 'node
 import { dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
-import { ProjectController, parseProjectRequest, parameterSchema } from '../dist/projects.js';
-import { projectDomain } from '../dist/project-store.js';
+import { z } from 'zod';
+import { ProjectController, parseProjectRequest, parameterSchema, resolveMainFolder } from '../dist/projects.js';
+import { projectDomain, projectRecordSchema } from '../dist/project-store.js';
 import { WorktreeError } from '../dist/errors.js';
 
 const errorCode = code => error => error instanceof WorktreeError && error.code === code;
 function table(schema, initial = [], persist = async () => {}) {
-  const map = new Map(initial);
+  const map = new Map(initial.map(([id, value]) => [id, structuredClone(schema.parse(value))]));
   return { map, get: id => map.get(id), entries: () => map.entries(), async put(id, value) { map.set(id, structuredClone(schema.parse(value))); await persist(); }, async delete(id) { const deleted = map.delete(id); await persist(); return deleted; } };
 }
 async function fixture(t, options = {}) {
@@ -76,10 +77,10 @@ function managed(f, extra = {}) {
 test('imports native Local folders durably; create merges multiple imported folders and rebinds without changing cwd', async t => {
   const f = await fixture(t); const a = await f.registry.create(f.paths.a, 'Alpha'); const b = await f.registry.create(f.paths.b, 'Beta');
   const threadA = f.session(f.paths.a); const threadB = f.session(f.paths.b);
-  const imported = await f.invoke({ action: 'list' }); assert.equal(imported.projects.length, 2); assert.ok(imported.projects.every(project => project.imported === true));
+  const imported = await f.invoke({ action: 'list' }); assert.equal(imported.projects.length, 2); assert.ok(imported.projects.every(project => project.imported === true && project.mainFolderId === project.folders[0].id));
   assert.equal(imported.bindings.length, 2); assert.ok(imported.bindings.every(binding => binding.mode === 'local'));
   const id = randomUUID(); const result = await f.invoke({ action: 'create', id, title: 'Combined', folders: [f.paths.a, f.paths.b] });
-  assert.deepEqual(result.project.folders.map(folder => folder.id), [a.id, b.id]); assert.equal(result.project.imported, undefined);
+  assert.deepEqual(result.project.folders.map(folder => folder.id), [a.id, b.id]); assert.equal(result.project.mainFolderId, a.id); assert.equal(result.project.imported, undefined);
   const snapshot = await f.invoke({ action: 'list' }); assert.equal(snapshot.projects.length, 1); assert.equal(snapshot.projects[0].id, id);
   assert.ok(snapshot.bindings.every(binding => binding.projectId === id)); assert.equal(f.headers.get(threadA.id).cwd, f.paths.a); assert.equal(f.headers.get(threadB.id).cwd, f.paths.b);
   result.project.folders.length = 0; assert.equal(f.controller.records()[0].folders.length, 2);
@@ -136,7 +137,10 @@ test('actorless UI starts are blank fixed-identity idempotent; no tool/command a
   const request = { action: 'start', operationId: randomUUID(), projectId: folder.projectId, folderId: folder.folderId };
   const [first, replay] = await Promise.all([f.invoke(request), f.invoke(request)]); assert.deepEqual(replay, first); assert.equal(first.sessionId, request.operationId); assert.equal(first.workspaceId, folder.folderId); assert.equal(first.binding.mode, 'local');
   assert.equal(f.calls.filter(([kind]) => kind === 'native').length, 1); assert.equal(f.calls.filter(([kind]) => kind === 'bootstrap').length, 0); assert.equal(f.store.starts.get(request.operationId).phase, 'ready');
-  for (const origin of ['tool', 'command']) await assert.rejects(f.controller.execute({ action: 'list' }, { ...f.invocation, origin }), errorCode('NO_CALLER'));
+  for (const origin of ['tool', 'command']) {
+    await assert.rejects(f.controller.execute({ action: 'list' }, { ...f.invocation, origin }), errorCode('NO_CALLER'));
+    await assert.rejects(f.controller.execute({ action: 'start', operationId: randomUUID(), projectId: randomUUID() }, { ...f.invocation, origin }), errorCode('NO_CALLER'));
+  }
   await assert.rejects(f.invoke({ ...request, projectId: randomUUID() }), errorCode('PROJECT_FOLDER_NOT_FOUND'));
 });
 
@@ -183,7 +187,7 @@ test('restart reloads validated durable storage and repairs interrupted import a
   await f.controller.close(); const loaded = JSON.parse(await readFile(filename, 'utf8'));
   const store = Object.fromEntries(['projects', 'bindings', 'starts'].map(name => [name, table(projectDomain.tables[name].valueSchema, loaded[name])])); store.close = async () => {};
   const restarted = new ProjectController(f.owner, store, { records: () => f.worktrees }, f.dependencies); t.after(() => restarted.close());
-  await restarted.synchronize(); const snapshot = await restarted.execute({ action: 'list' }, f.invocation); assert.equal(snapshot.projects.length, 1); assert.deepEqual(snapshot.projects[0], explicit); assert.ok(snapshot.bindings.every(binding => binding.projectId === id));
+  await restarted.synchronize(); const snapshot = await restarted.execute({ action: 'list' }, f.invocation); assert.equal(snapshot.projects.length, 1); assert.deepEqual(snapshot.projects[0], { ...explicit, mainFolderId: explicit.folders[0].id }); assert.ok(snapshot.bindings.every(binding => binding.projectId === id));
   assert.equal(projectDomain.name, 'dsh_worktree_projects'); assert.equal(projectDomain.version, 1); assert.deepEqual(Object.keys(projectDomain.tables), ['projects', 'bindings', 'starts']);
 });
 
@@ -259,4 +263,140 @@ test('an identity collision becoming nonblank during public create is journaled,
   options.afterNative = (_input, result) => { f.sessionEvents.set(result.sessionId, [{ type: 'turn/start' }]); };
   await assert.rejects(f.invoke(request), errorCode('SESSION_NOT_BLANK')); assert.equal(f.store.starts.get(request.operationId).phase, 'recovery-required'); assert.equal(f.store.starts.get(request.operationId).sessionId, request.operationId);
   await assert.rejects(f.invoke(request), errorCode('RECOVERY_REQUIRED')); assert.equal(f.calls.filter(([kind]) => kind === 'native').length, 1);
+});
+
+test('main-folder parser and additive v1 schema accept legacy records, reject explicit nonmembers and project cleanly', () => {
+  const id = randomUUID(); const folders = [{ id: 'folder-a', path: '/source/a', title: 'A' }, { id: 'folder-b', path: '/source/b', title: 'B' }];
+  const legacy = { id, title: 'Legacy', folders, createdAt: 1, updatedAt: 2 };
+  assert.deepEqual(projectRecordSchema.parse(legacy), legacy); assert.equal(resolveMainFolder(legacy).id, 'folder-a');
+  const explicit = { ...legacy, mainFolderId: 'folder-b' }; assert.deepEqual(projectRecordSchema.parse(explicit), explicit); assert.equal(resolveMainFolder(explicit).id, 'folder-b');
+  for (const mainFolderId of ['', 'not-a-member', null]) assert.equal(projectRecordSchema.safeParse({ ...legacy, mainFolderId }).success, false);
+  assert.throws(() => resolveMainFolder({ ...legacy, mainFolderId: 'not-a-member' }), errorCode('PROJECT_FOLDER_NOT_FOUND'));
+  const projected = z.toJSONSchema(projectRecordSchema); assert.equal(projected.properties.mainFolderId.type, 'string'); assert.ok(!projected.required.includes('mainFolderId'));
+  for (const request of [{ action: 'create', id, title: 'New', folders: ['/source/a'], mainFolder: '/source/a' }, { action: 'update', projectId: id, mainFolder: '/source/b' }, { action: 'start', projectId: id, operationId: randomUUID() }]) assert.deepEqual(parseProjectRequest(request), request);
+  for (const mainFolder of ['relative', '', '/line\nbreak', null, 1]) assert.throws(() => parseProjectRequest({ action: 'update', projectId: id, mainFolder }), errorCode('INVALID_REQUEST'));
+  assert.throws(() => parseProjectRequest({ action: 'update', projectId: id, mainFolderId: 'folder-a' }), errorCode('INVALID_REQUEST'));
+  const create = parameterSchema.oneOf.find(value => value.properties.action.const === 'create');
+  const update = parameterSchema.oneOf.find(value => value.properties.action.const === 'update');
+  const start = parameterSchema.oneOf.find(value => value.properties.action.const === 'start');
+  assert.equal(create.properties.mainFolder.type, 'string'); assert.ok(!create.required.includes('mainFolder')); assert.ok(update.anyOf.some(value => value.required.includes('mainFolder'))); assert.ok(!start.required.includes('folderId')); assert.match(start.properties.folderId.description, /receipt/u);
+  assert.equal(projectDomain.version, 1);
+});
+
+test('create canonicalizes explicit main membership before registry effects and adopts imports by stable native IDs', async t => {
+  const f = await fixture(t); const alias = resolve(f.directory, 'main-alias'); await symlink(f.paths.b, alias);
+  const base = { action: 'create', id: randomUUID(), title: 'Main B', folders: [f.paths.a, f.paths.b] };
+  for (const [mainFolder, code] of [[f.paths.c, 'PROJECT_MAIN_FOLDER_NOT_FOUND'], [resolve(f.directory, 'missing'), 'INVALID_PROJECT_PATH']]) {
+    const count = f.calls.length; await assert.rejects(f.invoke({ ...base, mainFolder }), errorCode(code)); assert.equal(f.calls.slice(count).filter(([kind]) => kind === 'registry').length, 0); assert.equal(f.store.projects.get(base.id), undefined);
+  }
+  const file = resolve(f.directory, 'main-file'); await writeFile(file, 'ordinary file'); await assert.rejects(f.invoke({ ...base, mainFolder: file }), errorCode('INVALID_PROJECT_PATH'));
+  const b = await f.registry.create(f.paths.b); const imported = (await f.invoke({ action: 'list' })).projects.find(project => project.folders[0].id === b.id);
+  const created = await f.invoke({ ...base, mainFolder: alias }); assert.equal(created.project.mainFolderId, b.id); assert.equal(resolveMainFolder(created.project).path, f.paths.b); assert.equal(f.store.projects.get(imported.id), undefined);
+  const fallback = await f.invoke({ action: 'create', id: randomUUID(), title: 'Default C', folders: [f.paths.c] }); assert.equal(fallback.project.mainFolderId, fallback.project.folders[0].id);
+  const before = structuredClone(f.store.projects.get(base.id)); const count = f.calls.length;
+  await assert.rejects(f.invoke({ action: 'update', projectId: base.id, folders: [f.paths.a, f.paths.b], mainFolder: f.paths.c }), errorCode('PROJECT_MAIN_FOLDER_NOT_FOUND'));
+  assert.deepEqual(f.store.projects.get(base.id), before); assert.equal(f.calls.slice(count).filter(([kind]) => kind === 'registry').length, 0);
+});
+
+test('main-only updates and reorder preserve existing Local/worktree cwd, bindings and managed rows', async t => {
+  const f = await fixture(t); const id = randomUUID(); const created = await f.invoke({ action: 'create', id, title: 'Two', folders: [f.paths.a, f.paths.b], mainFolder: f.paths.b });
+  const localA = f.session(f.paths.a); const localB = f.session(f.paths.b); const isolated = f.session(f.paths.checkout);
+  const row = managed(f, { projectId: id, folderId: created.project.folders[0].id, sessionIds: [isolated.id] }); await f.controller.synchronize();
+  const bindings = [...f.store.bindings.entries()]; const headers = [...f.headers.entries()]; const records = structuredClone(f.worktrees);
+  const reordered = await f.invoke({ action: 'update', projectId: id, folders: [f.paths.b, f.paths.a] }); assert.equal(reordered.project.mainFolderId, created.project.mainFolderId);
+  const updated = await f.invoke({ action: 'update', projectId: id, mainFolder: f.paths.a }); assert.equal(updated.project.title, 'Two'); assert.equal(updated.project.mainFolderId, created.project.folders[0].id);
+  assert.deepEqual([...f.store.bindings.entries()], bindings); assert.deepEqual([...f.headers.entries()], headers); assert.deepEqual(f.worktrees, records);
+  assert.equal(f.controller.bindingFor(localA.id).effectiveCwd, f.paths.a); assert.equal(f.controller.bindingFor(localB.id).effectiveCwd, f.paths.b); assert.equal(f.controller.bindingFor(isolated.id).worktreeId, row.id);
+  const renamed = await f.invoke({ action: 'update', projectId: id, title: 'Renamed' }); assert.equal(renamed.project.mainFolderId, updated.project.mainFolderId);
+});
+
+test('removing unused prior main requires a replacement for multiple remaining folders, but a sole folder becomes main', async t => {
+  const f = await fixture(t); const id = randomUUID(); await f.invoke({ action: 'create', id, title: 'Three', folders: [f.paths.a, f.paths.b, f.paths.c] });
+  const count = f.calls.length; await assert.rejects(f.invoke({ action: 'update', projectId: id, folders: [f.paths.b, f.paths.c] }), errorCode('PROJECT_MAIN_FOLDER_REQUIRED')); assert.equal(f.calls.slice(count).filter(([kind]) => kind === 'registry').length, 0);
+  const replaced = await f.invoke({ action: 'update', projectId: id, folders: [f.paths.b, f.paths.c], mainFolder: f.paths.c }); assert.equal(resolveMainFolder(replaced.project).path, f.paths.c);
+  const single = await f.invoke({ action: 'update', projectId: id, folders: [f.paths.b] }); assert.equal(single.project.mainFolderId, single.project.folders[0].id);
+  // The removed directory remains a native Local workspace, reimported without moving anything.
+  assert.equal(f.controller.folderForPath(f.paths.c).path, f.paths.c);
+});
+
+test('explicit replacement never bypasses used-folder removal guards, including hint-only legacy managed ancestry', async t => {
+  const f = await fixture(t); const id = randomUUID(); const created = await f.invoke({ action: 'create', id, title: 'Two', folders: [f.paths.a, f.paths.b] });
+  const request = { action: 'update', projectId: id, folders: [f.paths.b], mainFolder: f.paths.b };
+  const thread = f.session(f.paths.a); await assert.rejects(f.invoke(request), errorCode('PROJECT_FOLDER_IN_USE')); f.headers.delete(thread.id);
+  const startId = randomUUID(); const now = Date.now(); await f.store.starts.put(startId, { id: startId, projectId: id, folderId: created.project.mainFolderId, actorId: null, effectiveCwd: f.paths.a, requestedSessionId: startId, phase: 'recovery-required', sessionId: null, workspaceId: null, createdAt: now, updatedAt: now });
+  await assert.rejects(f.invoke(request), errorCode('PROJECT_FOLDER_IN_USE')); await f.store.starts.delete(startId);
+  // Only the child's durable ownership hint remains; its managed Git parent is unavailable.
+  const row = managed(f, { repoRoot: resolve(f.directory, 'unavailable-parent'), projectId: id, folderId: created.project.mainFolderId }); assert.notEqual(resolve(row.repoRoot, row.projectSubdir), f.paths.a);
+  await assert.rejects(f.invoke(request), errorCode('PROJECT_FOLDER_IN_USE')); assert.equal(f.store.projects.get(id).mainFolderId, created.project.mainFolderId);
+  delete row.projectId; delete row.folderId; row.repoRoot = resolve(f.directory, 'unknown');
+  const commonDir = resolve(f.directory, 'shared.git'); const parentRoot = resolve(f.directory, 'parent-checkout'); const ancestor = managed(f, { repoRoot: f.directory, projectSubdir: 'a', commonDir, checkoutRoot: parentRoot, effectiveCwd: resolve(parentRoot, 'a') });
+  row.repoRoot = ancestor.checkoutRoot; row.projectSubdir = 'a'; row.commonDir = commonDir;
+  await assert.rejects(f.invoke(request), errorCode('PROJECT_FOLDER_IN_USE'));
+});
+
+test('default starts use current main, explicit overrides stay exact and replay pins receipt across serialized main changes', async t => {
+  const f = await fixture(t); const id = randomUUID(); const created = await f.invoke({ action: 'create', id, title: 'Two', folders: [f.paths.a, f.paths.b] });
+  const request = { action: 'start', operationId: randomUUID(), projectId: id };
+  const [first, updated, replay, second] = await Promise.all([f.invoke(request), f.invoke({ action: 'update', projectId: id, mainFolder: f.paths.b }), f.invoke(request), f.invoke({ ...request, operationId: randomUUID() })]);
+  assert.equal(first.binding.effectiveCwd, f.paths.a); assert.equal(updated.project.mainFolderId, created.project.folders[1].id); assert.deepEqual(replay, first); assert.equal(second.binding.effectiveCwd, f.paths.b);
+  assert.deepEqual(await f.invoke({ ...request, folderId: created.project.folders[0].id }), first);
+  await assert.rejects(f.invoke({ ...request, folderId: created.project.folders[1].id }), errorCode('OPERATION_REUSED'));
+  const overridden = await f.invoke({ ...request, operationId: randomUUID(), folderId: created.project.folders[0].id }); assert.equal(overridden.binding.effectiveCwd, f.paths.a);
+  assert.equal(f.calls.filter(([kind]) => kind === 'native').length, 3); assert.equal(f.store.starts.get(request.operationId).folderId, created.project.folders[0].id);
+  assert.equal(f.headers.get(first.sessionId).cwd, f.paths.a); assert.equal(f.controller.resolveFolder(id).path, f.paths.b);
+});
+
+test('default-start authorization checks receipt/captured folder, not a newly different main, before effects', async t => {
+  const f = await fixture(t); const id = randomUUID(); const created = await f.invoke({ action: 'create', id, title: 'Two', folders: [f.paths.a, f.paths.b] });
+  const actor = f.actor(); const invocation = { ...f.invocation, origin: 'tool', agent: actor }; f.policy.set(actor.id, 'workspace-write');
+  const ownRequest = { action: 'start', operationId: randomUUID(), projectId: id }; const own = await f.controller.execute(ownRequest, invocation);
+  await f.invoke({ action: 'update', projectId: id, mainFolder: f.paths.b }); const count = f.calls.length;
+  assert.deepEqual(await f.controller.execute(ownRequest, invocation), own); assert.equal(f.calls.slice(count).filter(([kind]) => ['bootstrap', 'settings', 'native', 'registry'].includes(kind)).length, 0);
+  const denied = { ...ownRequest, operationId: randomUUID() }; await assert.rejects(f.controller.execute(denied, invocation), errorCode('FULL_ACCESS_REQUIRED')); assert.equal(f.store.starts.get(denied.operationId), undefined);
+  const explicitOwn = await f.controller.execute({ ...denied, folderId: created.project.folders[0].id }, invocation); assert.equal(explicitOwn.binding.effectiveCwd, f.paths.a);
+  f.policy.set(actor.id, 'danger-full-access'); const crossRequest = { ...ownRequest, operationId: randomUUID() }; const cross = await f.controller.execute(crossRequest, invocation); assert.equal(cross.binding.effectiveCwd, f.paths.b);
+  await f.invoke({ action: 'update', projectId: id, mainFolder: f.paths.a }); f.policy.set(actor.id, 'workspace-write'); const receipt = structuredClone(f.store.starts.get(crossRequest.operationId)); const crossCount = f.calls.length;
+  await assert.rejects(f.controller.execute(crossRequest, invocation), errorCode('FULL_ACCESS_REQUIRED')); assert.deepEqual(f.store.starts.get(crossRequest.operationId), receipt); assert.equal(f.calls.slice(crossCount).filter(([kind]) => ['bootstrap', 'settings', 'native', 'registry'].includes(kind)).length, 0);
+  const impostor = { ...actor }; await assert.rejects(f.controller.execute(ownRequest, { ...invocation, agent: impostor }), errorCode('SESSION_CHANGED'));
+  await assert.rejects(f.controller.execute({ ...ownRequest, projectId: randomUUID() }, { ...invocation, agent: impostor }), errorCode('SESSION_CHANGED'));
+  const aborted = new AbortController(); aborted.abort(); await assert.rejects(f.controller.execute({ ...ownRequest, projectId: randomUUID() }, { ...invocation, signal: aborted.signal }), errorCode('CANCELLED'));
+  const other = f.actor(); await assert.rejects(f.controller.execute(ownRequest, { ...invocation, agent: other }), errorCode('OPERATION_REUSED'));
+});
+
+test('default starts recheck authority, settings and cancellation on captured folder before session effects', async t => {
+  const f = await fixture(t); const id = randomUUID(); const created = await f.invoke({ action: 'create', id, title: 'Two', folders: [f.paths.a, f.paths.b], mainFolder: f.paths.b });
+  const actor = f.actor(); const invocation = { ...f.invocation, origin: 'tool', agent: actor }; const settings = f.dependencies.bootstrap.settings;
+  const request = () => ({ action: 'start', operationId: randomUUID(), projectId: id });
+  f.dependencies.bootstrap.settings = async (...args) => { const result = await settings(...args); await f.store.projects.put(id, { ...created.project, mainFolderId: created.project.folders[0].id }); f.policy.set(actor.id, 'workspace-write'); return result; };
+  const denied = request(); await assert.rejects(f.controller.execute(denied, invocation), errorCode('FULL_ACCESS_REQUIRED')); assert.equal(f.store.starts.get(denied.operationId), undefined); assert.equal(f.controller.resolveFolder(id).path, f.paths.a);
+  await f.store.projects.put(id, created.project); f.policy.set(actor.id, 'danger-full-access'); let settingsCalls = 0;
+  f.dependencies.bootstrap.settings = async (...args) => ({ ...await settings(...args), hash: ++settingsCalls === 1 ? 'captured' : 'changed' });
+  const changed = request(); await assert.rejects(f.controller.execute(changed, invocation), errorCode('SETTINGS_CHANGED')); assert.equal(f.store.starts.get(changed.operationId).phase, 'recovery-required'); assert.equal(f.store.starts.get(changed.operationId).folderId, created.project.mainFolderId);
+  f.dependencies.bootstrap.settings = settings; const abort = new AbortController();
+  f.dependencies.bootstrap.settings = async (...args) => { const result = await settings(...args); abort.abort(); return result; };
+  const cancelled = request(); await assert.rejects(f.controller.execute(cancelled, { ...invocation, signal: abort.signal }), errorCode('CANCELLED')); assert.equal(f.store.starts.get(cancelled.operationId), undefined);
+  assert.equal(f.calls.filter(([kind]) => ['native', 'bootstrap'].includes(kind)).length, 0);
+});
+
+test('legacy first-main repair persists across restart without rebinding existing sessions, then edited main and replay survive another restart', async t => {
+  const f = await fixture(t); const a = await f.registry.create(f.paths.a); const b = await f.registry.create(f.paths.b); const id = randomUUID();
+  const legacy = { id, title: 'Legacy', folders: [{ id: b.id, path: b.path, title: b.title }, { id: a.id, path: a.path, title: a.title }], createdAt: 1, updatedAt: 2 }; await f.store.projects.put(id, legacy);
+  const local = f.session(f.paths.a); const binding = { sessionId: local.id, projectId: id, folderId: a.id, mode: 'local', effectiveCwd: f.paths.a }; await f.store.bindings.put(local.id, binding);
+  const filename = resolve(f.directory, 'main-restart.json');
+  const persist = async store => writeFile(filename, JSON.stringify(Object.fromEntries(['projects', 'bindings', 'starts'].map(name => [name, [...store[name].entries()]]))));
+  const load = async () => { const loaded = JSON.parse(await readFile(filename, 'utf8')); const store = Object.fromEntries(['projects', 'bindings', 'starts'].map(name => [name, table(projectDomain.tables[name].valueSchema, loaded[name])])); store.close = async () => {}; return store; };
+  await persist(f.store); await f.controller.close(); const store = await load(); const restarted = new ProjectController(f.owner, store, { records: () => f.worktrees }, f.dependencies); t.after(() => restarted.close());
+  assert.equal(restarted.resolveFolder(id).id, b.id); await restarted.synchronize(); assert.deepEqual(store.projects.get(id), { ...legacy, mainFolderId: b.id }); assert.deepEqual(store.bindings.get(local.id), binding); assert.equal(f.headers.get(local.id).cwd, f.paths.a);
+  const request = { action: 'start', operationId: randomUUID(), projectId: id }; const first = await restarted.execute(request, f.invocation); assert.equal(first.binding.folderId, b.id);
+  await restarted.execute({ action: 'update', projectId: id, mainFolder: f.paths.a }, f.invocation); await persist(store); await restarted.close();
+  const lastStore = await load(); const last = new ProjectController(f.owner, lastStore, { records: () => f.worktrees }, f.dependencies); t.after(() => last.close());
+  assert.equal(last.resolveFolder(id).id, a.id); assert.deepEqual(await last.execute(request, f.invocation), first); assert.equal(lastStore.projects.get(id).mainFolderId, a.id); assert.deepEqual(lastStore.bindings.get(local.id), binding); assert.equal(f.calls.filter(([kind]) => kind === 'native').length, 1);
+});
+
+test('partial imported adoption preserves a retained main or selects the first remaining member when its main was adopted', async t => {
+  const f = await fixture(t); const a = await f.registry.create(f.paths.a); const b = await f.registry.create(f.paths.b); const c = await f.registry.create(f.paths.c);
+  const folder = workspace => ({ id: workspace.id, path: workspace.path, title: workspace.title }); const importedId = randomUUID();
+  await f.store.projects.put(importedId, { id: importedId, title: 'Imported group', imported: true, folders: [folder(a), folder(b), folder(c)], mainFolderId: c.id, createdAt: 1, updatedAt: 2 });
+  await f.invoke({ action: 'create', id: randomUUID(), title: 'Adopt A', folders: [f.paths.a] }); assert.equal(f.store.projects.get(importedId).mainFolderId, c.id); assert.deepEqual(f.store.projects.get(importedId).folders.map(value => value.id), [b.id, c.id]);
+  await f.invoke({ action: 'create', id: randomUUID(), title: 'Adopt C', folders: [f.paths.c] }); assert.equal(f.store.projects.get(importedId).mainFolderId, b.id); assert.deepEqual(f.store.projects.get(importedId).folders.map(value => value.id), [b.id]);
 });

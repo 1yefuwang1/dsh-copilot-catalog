@@ -143,7 +143,7 @@ export async function apply(ctx: Context, config: PluginConfig): Promise<void> {
   });
   reminders.start(); projectReminders.start(); firstMessageNamer.start();
 }
-export { ProjectController } from './projects.js';
+export { ProjectController, resolveMainFolder } from './projects.js';
 export type { ProjectFolder, ProjectRecord, ProjectThreadBinding, ProjectSnapshot, ProjectRequest, ProjectInvocation, ProjectStartResult } from './projects.js';
 export { GitOperations } from './git.js';
 export { WorktreeError } from './errors.js';

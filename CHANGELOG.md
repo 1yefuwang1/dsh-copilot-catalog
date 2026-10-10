@@ -2,8 +2,9 @@
 
 ## Unreleased — Three independent plugin workspaces
 
-- Add the unpublished `dsh-worktrees` `0.2.6` Host/Web Client package: persistent
-  multi-folder projects, project-bound Local/worktree threads, visible backing
+- Add the unpublished `dsh-worktrees` `0.2.9` Host/Web Client package: persistent
+  multi-folder projects with durable main-folder defaults and agent folder reminders,
+  project-bound Local/worktree threads, visible backing
   indicators, native new-conversation worktree choice, lazy first-Send creation
   from a fresh remote base, staged progress and pre-admission fast branch naming, manager/reminders and
   explicitly guarded optimistic Local handoff with retained sources/history.
@@ -11,7 +12,7 @@
   fetch fallback, continuous synchronization or physical-delete operation.
 - Extend release targeting/public declaration checks and exact publication
   allowlists to the third leaf without widening either existing package's files
-  or 150,000-byte size bound; worktrees has a separate 450,000-byte bound.
+  or 150,000-byte size bound; worktrees has a separate 475,000-byte bound (44 files; main-folder metadata and UI added without widening the other leaves).
 - Include local-Git fixtures and static/pure Client protocols; installed browser
   registration/interaction still requires separate live verification.
 
@@ -33,4 +34,4 @@ Package history and versions are independent:
 
 - [Catalog changelog](packages/catalog/CHANGELOG.md) — `0.2.2` GHE Cloud endpoint support; earlier versions previously published.
 - [Search changelog](<packages/search/CHANGELOG.md>) — `0.1.2` GHE Cloud endpoint support; `0.1.1` first public native-search release and streaming compatibility fix.
-- [Worktrees changelog](<packages/worktrees/CHANGELOG.md>) — `0.2.6` unreleased; not published.
+- [Worktrees changelog](<packages/worktrees/CHANGELOG.md>) — `0.2.9` unreleased; not published.

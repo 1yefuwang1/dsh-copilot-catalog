@@ -94,6 +94,19 @@ test('discover, advertised slash branch and fresh atomic fetch leave Source Loca
   assert.equal(await lstat(path.join(f.local, '.git', 'FETCH_HEAD')).then(() => true, () => false), false);
 });
 
+test('read-only Git source discovery rejects ordinary directories, accepts repo subfolders and linked worktrees, and performs no remote/setup work', async t => {
+  const f = await fixture(t); const linked = await f.create('read-only-probe');
+  const plain = path.join(f.root, 'ordinary-folder'); await mkdir(plain);
+  const before = { head: await f.git(f.local, 'rev-parse', 'HEAD'), index: await readFile(path.join(f.local, '.git', 'index')), calls: f.calls.length };
+  await assert.rejects(f.engine.discover(plain), code('GIT_FAILED'));
+  const nested = await f.engine.discover(path.join(f.local, 'project')); assert.equal(nested.root, f.local); assert.equal(nested.projectSubdir, 'project');
+  const worktree = await f.engine.discover(path.join(linked.checkoutRoot, 'project')); assert.equal(worktree.root, linked.checkoutRoot); assert.equal(worktree.projectSubdir, 'project');
+  assert.equal((await f.engine.remotes(nested.root)).length, 1);
+  const probes = f.calls.slice(before.calls); assert.ok(probes.length > 0);
+  assert.equal(probes.some(call => call.args.some(arg => ['fetch', 'ls-remote', 'worktree', 'branch', 'checkout', 'switch', 'reset', 'update-ref'].includes(arg))), false);
+  assert.deepEqual(await f.git(f.local, 'rev-parse', 'HEAD'), before.head); assert.deepEqual(await readFile(path.join(f.local, '.git', 'index')), before.index);
+});
+
 test('checkout observers mark actual fresh fetch and validated worktree add boundaries with no extra fetch', async t => {
   const f = await fixture(t); const progress = [];
   const record = await f.create('staged', f.repository, stage => {
