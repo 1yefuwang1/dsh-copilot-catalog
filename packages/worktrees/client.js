@@ -9,8 +9,10 @@ window.__ModuleLoader__.load({
     const h = React.createElement;
     const NS = 'worktrees.ui';
     const PANEL = 'dsh-worktrees';
+    const VIEW_SWITCH = PANEL + '-projects-view';
     const en = {
       searchProjects: 'Search projects and sessions', closeSearch: 'Close search', viewOptions: 'View options',
+      switchProjectsView: 'Switch to Projects View', switchWorkspaceView: 'Switch to Workspace View',
       'time.now': 'now', 'time.minutes': '{n}min', 'time.hours': '{n}h', 'time.days': '{n}d', 'time.months': '{n}mo', 'time.years': '{n}y', 'date.ymd': '{y}-{m}-{d}', lastActive: 'Last active {time}',
       projects: 'Projects', folderView: 'Folder view', newProject: 'New project', editProject: 'Manage project', projectName: 'Project name', project: 'Project', folders: 'Folders', folder: 'Folder', addFolder: 'Add folder', chooseDirectory: 'Choose directory', browse: 'Browse folders', absolutePath: 'Absolute Host directory path', save: 'Save', newThread: 'New thread', threadMode: 'Thread mode', threadActions: 'Thread actions', threadDetails: 'Thread details', unassigned: 'Other threads', showMore: 'Show {n} more sessions', showLess: 'Show less', filterThreads: 'Search threads or projects', allThreads: 'All threads', archivedOnly: 'Archived only', hideArchived: 'Hide archived', untitled: 'Untitled', blankThread: 'New thread', collapse: 'Collapse project', expand: 'Expand project', waiting: 'Waiting for interaction', done: 'Finished, not yet viewed', localThread: 'Local thread', worktreeThread: 'Worktree thread', draftWarning: 'This draft contains text or attachments. Keep it in this thread before choosing another project or folder.', chooseFolder: 'Choose a folder', createFolder: 'Create folder', folderName: 'Folder name', chooseThisFolder: 'Use this folder', noProjects: 'Add a project to organize your threads.',
       repoUnavailable: 'Worktree mode is unavailable or unverified for this folder. Choose Local to continue.',
@@ -45,6 +47,7 @@ window.__ModuleLoader__.load({
     };
     const zh = { ...en,
       searchProjects: '搜索项目和会话', closeSearch: '关闭搜索', viewOptions: '视图选项',
+      switchProjectsView: '切换到项目视图', switchWorkspaceView: '切换到工作区视图',
       'time.now': '刚刚', 'time.minutes': '{n}分钟', 'time.hours': '{n}小时', 'time.days': '{n}天', 'time.months': '{n}个月', 'time.years': '{n}年', 'date.ymd': '{y}年{m}月{d}日', lastActive: '最后活跃于 {time}',
       projects: '项目', folderView: '文件夹视图', newProject: '新建项目', editProject: '管理项目', projectName: '项目名称', project: '项目', folders: '文件夹', folder: '文件夹', addFolder: '添加文件夹', chooseDirectory: '选择目录', browse: '浏览文件夹', absolutePath: '主机绝对目录路径', save: '保存', newThread: '新建对话', threadMode: '对话模式', threadActions: '对话操作', threadDetails: '对话详情', unassigned: '其他对话', showMore: '展开其余 {n} 个会话', showLess: '收起', filterThreads: '搜索对话或项目', allThreads: '所有对话', archivedOnly: '仅已归档', hideArchived: '隐藏已归档', untitled: '未命名', blankThread: '新对话', collapse: '收起项目', expand: '展开项目', waiting: '等待交互', done: '已完成，尚未查看', localThread: '本地对话', worktreeThread: '工作树对话', draftWarning: '此草稿包含文字或附件。请先保留当前对话，再选择其他项目或文件夹。', chooseFolder: '选择文件夹', createFolder: '创建文件夹', folderName: '文件夹名称', chooseThisFolder: '使用此文件夹', noProjects: '添加项目以组织您的对话。',
       repoUnavailable: '此文件夹的工作树模式不可用或尚未验证，请选择本地模式继续。',
@@ -851,7 +854,7 @@ window.__ModuleLoader__.load({
     // Only plugin-owned aliases are declared/mirrored; unloading never clears or
     // redeclares installed extension seats. Copy their inject/locale/store faces,
     // not DOM or private components from a Harness module import.
-    function mirrorProjectSlot(ctx, source, destination = projectSlotName(source)) {
+    function mirrorProjectSlot(ctx, source, destination = projectSlotName(source), mapKey = projectSlotName) {
       return ctx.slots.inject(destination, () => ctx.slots.inject(source, () => {
         const copies = new Map();
         const clear = () => { for (const dispose of copies.values()) dispose(); copies.clear(); };
@@ -860,10 +863,10 @@ window.__ModuleLoader__.load({
           for (const [entry, dispose] of copies) if (!entries.includes(entry)) { dispose(); copies.delete(entry); }
           for (const entry of entries) {
             if (copies.has(entry)) continue;
-            const children = entry.children && Object.fromEntries(Object.entries(entry.children).map(([key, spec]) => [projectSlotName(key), spec]));
-            const component = children ? props => h(entry.component, { ...props, renderSlot: (key, owner, options) => props.renderSlot(projectSlotName(key), owner, options), ...(props.renderSlotChain ? { renderSlotChain: (key, owner, options) => props.renderSlotChain(projectSlotName(key), owner, options) } : {}) }) : entry.component;
+            const children = entry.children && Object.fromEntries(Object.entries(entry.children).map(([key, spec]) => [mapKey(key), spec]));
+            const component = children ? props => h(entry.component, { ...props, renderSlot: (key, owner, options) => props.renderSlot(mapKey(key), owner, options), ...(props.renderSlotChain ? { renderSlotChain: (key, owner, options) => props.renderSlotChain(mapKey(key), owner, options) } : {}) }) : entry.component;
             const remove = ctx.slots.register({ ...entry.options, name: destination, ...(entry.inject ? { inject: entry.inject } : {}), ...(entry.locale ? { locale: entry.locale } : {}), ...(entry.store ? { store: entry.store } : {}), ...(entry.select ? { select: entry.select } : {}), ...(children ? { children } : {}) }, component);
-            const nested = Object.keys(entry.children || {}).map(key => mirrorProjectSlot(ctx, key));
+            const nested = Object.keys(entry.children || {}).map(key => mirrorProjectSlot(ctx, key, mapKey(key), mapKey));
             copies.set(entry, () => { for (const dispose of nested) dispose(); remove(); });
           }
         };
@@ -875,6 +878,31 @@ window.__ModuleLoader__.load({
       const listeners = new Set(); let native = false, registration = register(), disposed = false;
       const store = { getSnapshot: () => native, subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener); } };
       return { store, toggle() { if (disposed) return; if (native) registration = register(); else { registration(); registration = null; } native = !native; for (const listener of [...listeners]) listener(); }, dispose() { disposed = true; registration?.(); listeners.clear(); } };
+    }
+    const sidebarViewLabel = (sidebarMode, t) => t(sidebarMode.store.getSnapshot() ? 'switchProjectsView' : 'switchWorkspaceView');
+    function registerSidebarViewSwitch(ctx, sidebarMode, component) {
+      const t = ctx.locale.bind(NS);
+      return ctx.slots.inject('sidebar', () => ctx.slots.inject('sidebar.panellist', () => {
+        let removeRow = () => {};
+        const synchronize = () => {
+          removeRow();
+          removeRow = ctx.slots.register({ name: 'sidebar.panellist', id: VIEW_SWITCH, order: 400, label: () => sidebarViewLabel(sidebarMode, t) }, component);
+        };
+        synchronize();
+        const unsubscribe = sidebarMode.store.subscribe(synchronize);
+        // Keep native declarations installed. The renderer authorizes child
+        // dispatch per entry, so bridge the native component through owned aliases.
+        const native = ctx.slots.entriesOfSlot('sidebar')[0], inject = native.inject;
+        const mapKey = key => VIEW_SWITCH + '.' + key;
+        const children = Object.fromEntries(Object.entries(native.children).map(([key, spec]) => [mapKey(key), spec]));
+        const componentWithActions = props => h(native.component, { ...props, renderSlot: (key, owner, options) => props.renderSlot(mapKey(key), owner, options) });
+        const removeSidebar = ctx.slots.register({ name: 'sidebar', priority: -50, locale: native.locale, children, inject: (...args) => {
+          const props = inject(...args);
+          return { ...props, selectPanel(id) { if (id === VIEW_SWITCH) sidebarMode.toggle(); else props.selectPanel(id); } };
+        } }, componentWithActions);
+        const mirrors = Object.keys(native.children).map(key => mirrorProjectSlot(ctx, key, mapKey(key), mapKey));
+        return () => { for (const stop of mirrors) stop(); removeSidebar(); unsubscribe(); removeRow(); };
+      }));
     }
     function syncProjectSpinner(element) {
       if (element === null) return;
@@ -893,8 +921,8 @@ window.__ModuleLoader__.load({
         h('g', { className: 'dsh-wt-state-motion' }, h('circle', { className: 'dsh-wt-state-track', cx: 12, cy: 12, r: 9.5 }), h('circle', { className: 'dsh-wt-state-arc', cx: 12, cy: 12, r: 9.5 })));
     }
     // Native workspace-folder artwork copied locally; React is the only runtime import.
-    function WorkspaceFolderIcon({ expanded = false, className }) {
-      return h('svg', { width: 16, height: 16, className, viewBox: '0 0 16 16', fill: 'none', strokeWidth: 1, 'aria-hidden': true }, expanded ? [
+    function WorkspaceFolderIcon({ expanded = false, className, size = 16 }) {
+      return h('svg', { width: size, height: size, className, viewBox: '0 0 16 16', fill: 'none', strokeWidth: 1, 'aria-hidden': true }, expanded ? [
         h('path', { key: 'tint', d: 'M2.55912 7.93683C2.67584 7.49906 3.0723 7.19446 3.52536 7.19446H13.6491C14.3061 7.19446 14.7846 7.81725 14.6153 8.45209L13.4411 12.856C13.3244 13.2938 12.9279 13.5984 12.4748 13.5984H2.35113C1.69411 13.5984 1.21562 12.9756 1.38489 12.3407L2.55912 7.93683Z', fill: 'currentColor', opacity: 0.16 }),
         h('path', { key: 'front', d: 'M13.6491 6.69446C14.6346 6.69453 15.3522 7.62895 15.0983 8.58118L13.9245 12.9845C13.7494 13.6412 13.1539 14.0988 12.4743 14.0988H2.35126C1.36574 14.0988 0.648153 13.1643 0.902044 12.212L2.07587 7.80774C2.25102 7.15128 2.84567 6.69455 3.52509 6.69446H13.6491ZM3.52509 7.69446C3.29865 7.69455 3.10004 7.84674 3.04169 8.06555L1.86786 12.4698C1.78345 12.7872 2.02285 13.0988 2.35126 13.0988H12.4743C12.7007 13.0988 12.8992 12.9463 12.9577 12.7277L14.1325 8.32336C14.2171 8.00598 13.9776 7.69453 13.6491 7.69446H3.52509Z', fill: 'currentColor' }),
         h('path', { key: 'back', d: 'M4.7666 1.90137C5.13227 1.90144 5.48571 2.03525 5.75977 2.27734L7.27246 3.61328C7.36379 3.69382 7.48174 3.73828 7.60352 3.73828H12.3994C13.2276 3.73841 13.8993 4.41005 13.8994 5.23828V6.7168C13.8183 6.70327 13.735 6.69436 13.6494 6.69434H12.8994V5.23828C12.8993 4.96233 12.6754 4.73841 12.3994 4.73828H7.60352C7.23781 4.73828 6.88446 4.60438 6.61035 4.3623L5.09766 3.02637C5.00636 2.94576 4.88838 2.90144 4.7666 2.90137H2.0498C1.77366 2.90137 1.5498 3.12523 1.5498 3.40137V9.78223L0.902344 12.2119C0.648452 13.1642 1.36604 14.0986 2.35156 14.0986H2.0498C1.2214 14.0986 0.549838 13.427 0.549805 12.5986V3.40137C0.549805 2.57294 1.22138 1.90137 2.0498 1.90137H4.7666Z', fill: 'currentColor' }),
@@ -1064,9 +1092,8 @@ window.__ModuleLoader__.load({
         (searching || !collapsed) && h('div', { role: 'group' }, ...rows.map(row => h(ThreadRow, { key: row.id, row, selected: row.id === selectedId, runtime, metadata, renderSlot, t, now })),
           !searching && hasOverflow && h(Button, { className: 'dsh-wt-session-overflow', 'aria-expanded': remaining === 0, onClick: () => setLimit(value => remaining === 0 ? 5 : remaining <= 5 ? Infinity : value + 5) }, remaining ? t('showMore', { n: remaining }) : t('showLess'))));
     }
-    function SidebarToggle({ sidebarMode, wide, t }) {
-      const native = React.useSyncExternalStore(sidebarMode.store.subscribe, sidebarMode.store.getSnapshot);
-      return h('span', { className: 'dsh-wt' }, h(Styles), h(Button, { title: t(native ? 'projects' : 'folderView'), 'aria-label': t(native ? 'projects' : 'folderView'), 'aria-pressed': !native, onClick: sidebarMode.toggle }, h(WorkspaceFolderIcon), wide && ' ' + t(native ? 'projects' : 'folderView')));
+    function SidebarToggle({ size }) {
+      return h(WorkspaceFolderIcon, { size });
     }
     function ProjectSidebarToolbar({ query, onQuery, archived, onArchived, onCreate, newProjectTrigger, t }) {
       const [searchOpen, setSearchOpen] = React.useState(!!query), [optionsOpen, setOptionsOpen] = React.useState(false);
@@ -1385,7 +1412,7 @@ window.__ModuleLoader__.load({
         sidebarMode = createSidebarMode(() => seat('sidebar.workspaces', { name: 'sidebar.workspaces', priority: -50, children: projectChildren(ctx) }, ProjectsSidebar));
         ctx.effect(() => () => sidebarMode.dispose());
         for (const source of projectSlots) mirrorProjectSlot(ctx, source);
-        seat('sidebar.footer.action', { name: 'sidebar.footer.action', id: PANEL + '-projects-view', order: 450 }, SidebarToggle);
+        registerSidebarViewSwitch(ctx, sidebarMode, SidebarToggle);
         seat('conversation.input.left', { name: 'conversation.input.left', id: PANEL, order: 15 }, NewWorktreeControls);
         seat('conversation.input.dock', { name: 'conversation.input.dock', id: PANEL + '-setup', order: 5 }, SetupProgress);
         seat('plugins.row.config', { name: 'plugins.row.config', key: '@1yefuwang1/dsh-worktrees#git-worktrees' }, RootFolderSettings);

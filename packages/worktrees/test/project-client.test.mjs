@@ -17,11 +17,11 @@ const source = await readFile(new URL('../client.js', import.meta.url), 'utf8');
 // DOM, renderer, app double, or screenshot substitute in these tests.
 const start = source.indexOf('    class WorktreeError extends Error');
 const end = source.indexOf('    function Icon(', start);
-const helpers = vm.runInNewContext(`(() => { const NS = 'worktrees.ui', PANEL = 'dsh-worktrees'; ${source.slice(start, end)}; return {
+const helpers = vm.runInNewContext(`(() => { const NS = 'worktrees.ui', PANEL = 'dsh-worktrees', VIEW_SWITCH = PANEL + '-projects-view'; ${source.slice(start, end)}; return {
   absolutePath, projectRequest, projectData, requestProjects, workspaceStructure,
   projectContext, projectBacking, captureProject, sameProject, projectPath, projectActor, projectRows,
   visibleProjectRows, projectRowState, projectSessionTime, createProjectStore, projectSlotName, projectChildren,
-  projectSlots, mirrorProjectSlot, createSidebarMode,
+  projectSlots, mirrorProjectSlot, createSidebarMode, sidebarViewLabel, registerSidebarViewSwitch,
   appendProjectFolders, toggleProjectFolder, projectFolderName, createFolderScanner, createProjectSubmitter,
   projectMainFolder, draftMainFolder, chooseConversationFolder,
 }; })()`, { AbortController, crypto: webcrypto });
@@ -325,7 +325,7 @@ test('sidebar workspace folder SVGs match the actual native open and closed artw
   const open = nativePrimitives.slice(nativePrimitives.indexOf('const IconFolderOpenArtwork ='), nativePrimitives.indexOf('const IconFolderOpenRegular ='));
   const closed = nativePrimitives.slice(nativePrimitives.indexOf('const FolderCloseArtwork ='), nativePrimitives.indexOf('//#endregion', nativePrimitives.indexOf('const FolderCloseArtwork =')));
   assert.deepEqual([...icon.matchAll(/d: '([^']+)'/g)].map(match => match[1]), [...(open + closed).matchAll(/d: "([^"]+)"/g)].map(match => match[1]));
-  assert.match(icon, /width: 16, height: 16.*viewBox: '0 0 16 16'.*strokeWidth: 1/); assert.match(icon, /opacity: 0.16/);
+  assert.match(icon, /size = 16/); assert.match(icon, /width: size, height: size.*viewBox: '0 0 16 16'.*strokeWidth: 1/); assert.match(icon, /opacity: 0.16/);
   const group = source.slice(source.indexOf('    function ProjectGroup('), source.indexOf('    function SidebarToggle('));
   assert.match(group, /h\(WorkspaceFolderIcon, \{ expanded: searching \|\| !collapsed, className: 'dsh-wt-project-folder' \}\)/); assert.doesNotMatch(group, /'▱'/);
 });
@@ -347,6 +347,50 @@ test('compact project toolbar keeps search and archive choices off the default s
   assert.doesNotMatch(sidebar, /h\('input'|h\('select'|h\('strong'/); assert.doesNotMatch(toolbar, /requestHost|requestProjects|\.mutate\(|uiWorkspace|fetch\(/);
   assert.match(source, /\.dsh-wt-project-toolbar\{position:relative;justify-content:flex-end;gap:4px/);
   assert.match(source, /\.dsh-wt-projects \.dsh-wt-toolbar-icon\{[^}]*width:28px;height:28px/);
+});
+
+test('view switch uses the native navigation row and exact destination labels', () => {
+  const toggle = source.slice(source.indexOf('    function SidebarToggle('), source.indexOf('    function ProjectSidebarToolbar('));
+  assert.match(toggle, /h\(WorkspaceFolderIcon, \{ size \}\)/);
+  assert.doesNotMatch(toggle, /h\(Button|aria-pressed|dsh-wt-sidebar-toggle/);
+  assert.doesNotMatch(source, /sidebar\.footer\.action/);
+  assert.match(source, /registerSidebarViewSwitch\(ctx, sidebarMode, SidebarToggle\)/);
+  assert.match(source, /id: VIEW_SWITCH, order: 400/);
+  assert.match(source, /id: PANEL, order: 450/);
+  const dictionaries = vm.runInNewContext(`(() => { ${source.slice(source.indexOf('    const en ='), source.indexOf('    const css ='))}; return { en, zh }; })()`);
+  const mode = helpers.createSidebarMode(() => () => {});
+  assert.equal(helpers.sidebarViewLabel(mode, key => dictionaries.en[key]), 'Switch to Workspace View');
+  mode.toggle(); assert.equal(helpers.sidebarViewLabel(mode, key => dictionaries.en[key]), 'Switch to Projects View');
+  assert.equal(helpers.sidebarViewLabel(mode, key => dictionaries.zh[key]), '切换到项目视图');
+  mode.toggle(); assert.equal(helpers.sidebarViewLabel(mode, key => dictionaries.zh[key]), '切换到工作区视图');
+  mode.dispose();
+});
+
+test('native navigation adapter preserves sidebar declarations, panel actions and current conversation', async () => {
+  const core = new SlotCore(), ctx = coreContext(core), selected = [], nativeComponent = () => null, icon = () => null;
+  ctx.locale = { bind: () => key => key };
+  const root = core.register({ name: 'root', children: { sidebar: { kind: 'single', scope: 'root' } } }, () => null);
+  const native = core.register({ name: 'sidebar', locale: 'sidebar', inject: () => ({ selectPanel: id => selected.push(id), untouched: true }), children: { 'sidebar.panellist': { kind: 'list', scope: 'root' }, 'sidebar.workspaces': { kind: 'single', scope: 'root' } } }, nativeComponent);
+  const nativeEntry = core.entriesOfSlot('sidebar')[0];
+  const schedule = core.register({ name: 'sidebar.panellist', id: 'schedules', order: 10 }, icon);
+  const worktrees = core.register({ name: 'sidebar.panellist', id: 'dsh-worktrees', order: 450 }, icon);
+  const mode = helpers.createSidebarMode(() => core.register({ name: 'sidebar.workspaces', priority: -50 }, () => null));
+  const stop = helpers.registerSidebarViewSwitch(ctx, mode, icon), entry = core.entriesOfSlot('sidebar')[0];
+  assert.equal(entry.locale, 'sidebar');
+  assert.deepEqual(Object.keys(entry.children), ['dsh-worktrees-projects-view.sidebar.panellist', 'dsh-worktrees-projects-view.sidebar.workspaces']);
+  assert.ok(core.specDynamic('sidebar.panellist')); assert.ok(core.specDynamic('sidebar.workspaces'));
+  assert.ok(core.specDynamic('dsh-worktrees-projects-view.sidebar.panellist')); assert.ok(core.specDynamic('dsh-worktrees-projects-view.sidebar.workspaces'));
+  assert.equal(core.entriesOfSlot('dsh-worktrees-projects-view.sidebar.panellist')[0].component, icon);
+  const rows = () => core.entriesOfSlot('sidebar.panellist');
+  assert.deepEqual(rows().map(row => row.options.id), ['schedules', 'dsh-worktrees-projects-view', 'dsh-worktrees']);
+  assert.equal(rows()[1].options.label(), 'switchWorkspaceView');
+  const props = entry.inject(); assert.equal(props.untouched, true);
+  props.selectPanel('dsh-worktrees-projects-view'); await settle();
+  assert.equal(mode.store.getSnapshot(), true); assert.equal(rows()[1].options.label(), 'switchProjectsView'); assert.deepEqual(selected, []);
+  props.selectPanel('schedules'); props.selectPanel('dsh-worktrees'); assert.deepEqual(selected, ['schedules', 'dsh-worktrees']);
+  props.selectPanel('dsh-worktrees-projects-view'); await settle(); assert.equal(mode.store.getSnapshot(), false);
+  stop(); assert.equal(core.entriesOfSlot('sidebar')[0], nativeEntry); assert.deepEqual(rows().map(row => row.options.id), ['schedules', 'dsh-worktrees']);
+  mode.dispose(); worktrees(); schedule(); native(); root();
 });
 
 test('toolbar Search, View options and Add project icons match the native header artwork', () => {
@@ -624,11 +668,12 @@ test('actual SDK lowest-priority shadow + owned aliases preserve installed entri
 
 test('UI only replaces the browsing hole and uses accessible permanent worktree markers and native Dialog behavior', () => {
   assert.match(source, /name: 'sidebar\.workspaces', priority: -50, children: projectChildren\(ctx\)/);
-  assert.match(source, /sidebar\.footer\.action/);
+  assert.match(source, /registerSidebarViewSwitch\(ctx, sidebarMode, SidebarToggle\)/);
   assert.match(source, /renderSlot\(projectSlotName\('sidebar\.workspaces\.session\.menu\.item'\), owner, \{ hookContext: \[menu, setMenu\] \}\)/);
   assert.match(source, /binding\.mode === 'worktree'/); assert.match(source, /className: 'dsh-wt-branch-chip', title: marker, 'aria-label': marker/);
   assert.match(source, /dialog\.showModal\(\)/); assert.match(source, /onCancel: event => \{ event\.preventDefault\(\); event\.stopPropagation\(\); if \(dismissible\) close\(\); \}/);
-  assert.doesNotMatch(source, /name: 'sidebar'[, }]|name: 'root'[, }]|document\.body|@deepseek-ai\/dsh-client-ui-primitives/);
+  assert.doesNotMatch(source, /name: 'root'[, }]|document\.body|@deepseek-ai\/dsh-client-ui-primitives/);
+  assert.match(source, /name: 'sidebar', priority: -50, locale: native.locale/);
   assert.deepEqual([...source.matchAll(/require\('([^']+)'\)/g)].map(match => match[1]), ['react']);
 });
 
