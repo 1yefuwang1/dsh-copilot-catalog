@@ -29,14 +29,22 @@ const startSchema = z.object({
   sessionId: z.string().min(1).max(256).nullable(), workspaceId: text.nullable(),
   createdAt: z.number().int().nonnegative(), updatedAt: z.number().int().nonnegative(),
 }).strict();
-/** Separate plugin-owned metadata; the existing worktree domain is not migrated or changed. */
+export interface ProjectRemovalRecord { id: string; folders: { id: string; path: string }[]; removedAt: number }
+export const projectRemovalSchema = z.object({
+  id: z.string().uuid(), folders: z.array(projectFolderSchema.omit({ title: true })).min(1).max(32), removedAt: z.number().int().nonnegative(),
+}).strict();
+/** Separate plugin-owned metadata; the existing worktree domain is not migrated or changed.
+ * Additive v1 table: storageDomain and the JSON backend load missing tables as empty;
+ * existing v1 records retain their schemas and version stamps (no migration needed).
+ */
 export const projectDomain = defineDomain({
   name: 'dsh_worktree_projects', version: 1, layout: 'per-record',
-  tables: { projects: domainTable(projectRecordSchema), bindings: domainTable(projectBindingSchema), starts: domainTable(startSchema) },
+  tables: { projects: domainTable(projectRecordSchema), bindings: domainTable(projectBindingSchema), starts: domainTable(startSchema), removals: domainTable(projectRemovalSchema) },
 });
 export interface ProjectStore {
   projects: RecordTable<ProjectRecord>;
   bindings: RecordTable<ProjectThreadBinding>;
   starts: RecordTable<ProjectStartRecord>;
+  removals: RecordTable<ProjectRemovalRecord>;
   close(): Promise<void>;
 }

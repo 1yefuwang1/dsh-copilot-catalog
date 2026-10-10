@@ -3,7 +3,14 @@ import { readFile } from 'node:fs/promises';
 import { webcrypto } from 'node:crypto';
 import test from 'node:test';
 import vm from 'node:vm';
+import { createRequire } from 'node:module';
+import { dirname, resolve } from 'node:path';
 import { SlotCore } from '@deepseek-ai/dsh-client-ui-slots';
+
+const peerRequire = createRequire(import.meta.resolve('@deepseek-ai/dsh-client-ui-workspace'));
+const nativeWorkspace = await readFile(resolve(dirname(peerRequire.resolve('@deepseek-ai/dsh-client-ui-workspace/package.json')), 'lib/client.js'), 'utf8');
+const nativePrimitives = await readFile(resolve(dirname(peerRequire.resolve('@deepseek-ai/dsh-client-ui-primitives/package.json')), 'lib/index.js'), 'utf8');
+const nativeStateCss = await readFile(resolve(dirname(peerRequire.resolve('@deepseek-ai/dsh-client-ui-primitives/package.json')), 'lib/StateDot.module.css'), 'utf8');
 
 const source = await readFile(new URL('../client.js', import.meta.url), 'utf8');
 // Execute real protocol/coordinator helpers only. There is no React stub,
@@ -12,8 +19,8 @@ const start = source.indexOf('    class WorktreeError extends Error');
 const end = source.indexOf('    function Icon(', start);
 const helpers = vm.runInNewContext(`(() => { const NS = 'worktrees.ui', PANEL = 'dsh-worktrees'; ${source.slice(start, end)}; return {
   absolutePath, projectRequest, projectData, requestProjects, workspaceStructure,
-  projectContext, captureProject, sameProject, projectPath, projectActor, projectRows,
-  visibleProjectRows, createProjectStore, projectSlotName, projectChildren,
+  projectContext, projectBacking, captureProject, sameProject, projectPath, projectActor, projectRows,
+  visibleProjectRows, projectRowState, projectSessionTime, createProjectStore, projectSlotName, projectChildren,
   projectSlots, mirrorProjectSlot, createSidebarMode,
   appendProjectFolders, toggleProjectFolder, projectFolderName, createFolderScanner, createProjectSubmitter,
   projectMainFolder, draftMainFolder, chooseConversationFolder,
@@ -24,6 +31,7 @@ const operationId = 'abcdefab-1234-4234-8234-123456789abc';
 const project = { id: projectId, title: 'sreagent-workspace', folders: [{ id: 'folder-a', path: '/repo/services/api', title: 'API' }, { id: 'folder-b', path: '/repo/web', title: 'Web' }], createdAt: Date.UTC(2026, 9, 9), updatedAt: Date.UTC(2026, 9, 9) };
 const local = { sessionId: 'local', projectId, folderId: 'folder-a', mode: 'local', effectiveCwd: '/repo/services/api' };
 const tree = { sessionId: 'tree', projectId, folderId: 'folder-a', mode: 'worktree', effectiveCwd: '/trees/agent-identity/services/api', worktreeId: 'fedcbafe-1234-4234-8234-123456789abc' };
+const retainedRecord = { id: tree.worktreeId, operationId, effectiveCwd: tree.effectiveCwd, remote: 'origin', remoteBranch: 'main', baseOid: 'saved-base', sessionIds: ['tree', 'local', 'fork'], branch: 'worktree/retained', protected: false, archived: false, state: 'ready' };
 const metadata = { projects: [project], bindings: [local, tree] };
 const workspaces = { items: [{ workspaceId: 'folder-a', path: '/repo/services/api', title: 'API', sessionIds: ['local', 'fork', 'fresh'] }, { workspaceId: 'tree-folder', path: tree.effectiveCwd, title: 'agent-identity', sessionIds: ['tree'] }], phase: 'ready', archivedSessionIds: [], pinnedSessionIds: [], state: 'idle' };
 const blank = { blank: true, subagent: null, openState: 'open', removed: false, running: false, promptAttempted: false, awaitingFirstTurn: false, pendingSubmissions: [] };
@@ -183,6 +191,35 @@ test('failed project submissions preserve their UUID and draft, and editing send
   invalid(() => update.submit(' ', folders, '/repo/web')); invalid(() => update.submit('Example', [])); assert.equal(calls.length, 3);
 });
 
+test('Remove uses a strict metadata-only request and exact acknowledged project identity', () => {
+  const request = { action: 'remove', projectId }, data = { removed: true, projectId, scope: 'project-metadata' };
+  assert.equal(helpers.projectRequest(request), request); assert.equal(helpers.projectData(request, data), data);
+  for (const bad of [{ action: 'remove' }, { ...request, projectId: 'wrong' }, { ...request, folders: ['/repo'] }, { ...request, deleteFolders: true }, { ...request, force: true }, { ...request, actorId: 'other' }]) invalid(() => helpers.projectRequest(bad));
+  for (const bad of [null, {}, { ...data, removed: false }, { ...data, removed: 'true' }, { ...data, projectId: operationId }, { ...data, scope: 'files' }, { ...data, project }, { ...data, folders: [] }]) invalid(() => helpers.projectData(request, bad));
+});
+
+test('Save and Remove share one synchronous flight and never join different operations', async () => {
+  const calls = []; let finish;
+  const submitter = helpers.createProjectSubmitter({ mutate(request) { calls.push(request); return new Promise(resolve => { finish = resolve; }); } }, projectId, projectId);
+  const saving = submitter.submit('Edited project', project.folders.map(folder => folder.path), '/repo/web');
+  assert.throws(() => submitter.remove(), error => error.kind === 'busy'); await settle(); assert.equal(calls.length, 1); assert.equal(calls[0].action, 'update');
+  finish({ project }); await saving; assert.equal(submitter.pending, false);
+  const removing = submitter.remove(), duplicate = submitter.remove(); assert.equal(removing, duplicate); assert.equal(submitter.pending, true);
+  assert.throws(() => submitter.submit('Another edit', ['/repo/other']), error => error.kind === 'busy'); await settle(); assert.equal(calls.length, 2);
+  assert.deepEqual(copy(calls[1]), { action: 'remove', projectId }); assert.ok(Object.isFrozen(calls[1]));
+  finish({ removed: true, projectId, scope: 'project-metadata' }); await removing; assert.equal(submitter.pending, false);
+  const fresh = helpers.createProjectSubmitter({ mutate() { assert.fail('an unsaved project cannot be removed'); } }, undefined, operationId);
+  invalid(() => fresh.remove());
+});
+
+test('failed Remove retains its identity and leaves all unsaved project fields untouched for retry', async () => {
+  const draft = { title: '', folders: [], mainFolder: '/edited/main', path: '/typed/unsaved', addMode: 'path' }, before = copy(draft), calls = [];
+  let failed = true;
+  const submitter = helpers.createProjectSubmitter({ async mutate(request) { calls.push(request); if (failed) throw Error('metadata storage refused'); return { removed: true, projectId, scope: 'project-metadata' }; } }, projectId, projectId);
+  await assert.rejects(submitter.remove(), /metadata storage refused/); assert.equal(submitter.pending, false); assert.deepEqual(draft, before);
+  failed = false; await submitter.remove(); assert.deepEqual(copy(calls), [{ action: 'remove', projectId }, { action: 'remove', projectId }]); assert.deepEqual(draft, before);
+});
+
 test('strict project requests validate ids, absolute folders, bounds and action-specific keys', () => {
   const requests = [{ action: 'list' }, { action: 'list', projectId }, { action: 'create', id: projectId, title: project.title, folders: ['/repo'] }, { action: 'update', projectId, folders: ['/repo', 'C:\\repo'] }, { action: 'update', projectId, title: 'Renamed' }, { action: 'bind', projectId, folderId: 'folder-a', sessionId: 'local' }, { action: 'start', operationId, projectId, folderId: 'folder-a' }];
   for (const request of requests) assert.equal(helpers.projectRequest(request), request);
@@ -258,6 +295,117 @@ test('project navigation recognizes ordinary fork ownership without granting sub
   assert.equal(helpers.projectActor({ byId: {} }), undefined);
 });
 
+test('working-session state matches native pending/activity/completion priority and suppresses blank/archive markers', () => {
+  const base = { session: { blank: false }, archived: false, pending: undefined, running: false, done: false };
+  const cases = [[{}, 'idle'], [{ done: true }, 'done'], [{ running: true, done: true }, 'ongoing'], [{ pending: { kind: 'question' }, running: true, done: true }, 'warning'], [{ archived: true, running: true }, 'idle'], [{ session: { blank: true }, pending: {}, running: true }, 'idle']];
+  for (const [patch, expected] of cases) assert.equal(helpers.projectRowState({ ...base, ...patch }), expected);
+  const sessions = { byId: { local: { title: 'Active child', running: false }, child: { origin: 'subagent', running: true } }, projectionsBySession: { local: { values: { subagentCatalog: [{ id: 'child' }] } } } };
+  const rows = helpers.projectRows(metadata, workspaces, sessions, new Map([['local', { running: false }]]));
+  assert.equal(rows[0].rows.length, 1); assert.equal(helpers.projectRowState(rows[0].rows[0]), 'ongoing');
+});
+
+test('Projects working-session indicator uses native 14px ring geometry, neutral color, timing and reduced motion', () => {
+  const indicator = source.slice(source.indexOf('    function ProjectStateDot('), source.indexOf('    function WorkspaceFolderIcon('));
+  const nativeIndicator = nativePrimitives.slice(nativePrimitives.indexOf('function StateDot('), nativePrimitives.indexOf('//#endregion', nativePrimitives.indexOf('function StateDot(')));
+  assert.match(nativeIndicator, /state === "ongoing" \? 14 : 10/); assert.match(nativeIndicator, /viewBox: "0 0 24 24"/); assert.equal([...nativeIndicator.matchAll(/r: "9\.5"/g)].length, 2);
+  assert.match(indicator, /width: 14, height: 14, viewBox: '0 0 24 24'/); assert.equal([...indicator.matchAll(/cx: 12, cy: 12, r: 9\.5/g)].length, 2); assert.match(indicator, /ref: syncProjectSpinner/);
+  assert.match(nativeStateCss, /stroke-width: 2/); assert.match(nativeStateCss, /opacity: 0\.25/); assert.match(nativeStateCss, /1\.5s linear infinite/); assert.match(nativeStateCss, /1\.5s ease-in-out infinite/);
+  assert.match(source, /dsh-wt-state-spinner\{[^}]*--dsw-alias-label-tertiary/); assert.match(source, /stroke-width:2;stroke-linecap:round/); assert.match(source, /dsh-wt-state-track\{opacity:\.25\}/);
+  assert.match(source, /animation:dsh-wt-state-spin 1\.5s linear infinite/); assert.match(source, /animation:dsh-wt-state-dash 1\.5s ease-in-out infinite/); assert.match(source, /50%\{stroke-dasharray:24 150;stroke-dashoffset:-6\}/);
+  assert.match(source, /@media\(prefers-reduced-motion:reduce\).*animation:none.*stroke-dasharray:18 150;stroke-dashoffset:-3/);
+  assert.match(source, /element.getAnimations\?\.\(\{ subtree: true \}\).*animation.startTime = 0/);
+  const row = source.slice(source.indexOf('    function ThreadRow('), source.indexOf('    function ProjectGroup('));
+  assert.match(row, /state = projectRowState\(row\)/); assert.match(row, /state !== 'idle' \? h\(ProjectStateDot, \{ state \}\) : renderSlot\(projectSlotName\('sidebar.session.row.leading'\)/);
+  assert.match(row, /!row.archived && !row.session.blank/); assert.match(row, /role: state !== 'idle' \? 'img'/); assert.match(row, /worktree && h\('span', \{ className: 'dsh-wt-branch-chip'/);
+  assert.doesNotMatch(row, /'◌'|'●'|'✓'/); assert.deepEqual([...source.matchAll(/require\('([^']+)'\)/g)].map(match => match[1]), ['react']);
+});
+
+test('sidebar workspace folder SVGs match the actual native open and closed artwork', () => {
+  const icon = source.slice(source.indexOf('    function WorkspaceFolderIcon('), source.indexOf('    function SidebarToolbarIcon('));
+  const open = nativePrimitives.slice(nativePrimitives.indexOf('const IconFolderOpenArtwork ='), nativePrimitives.indexOf('const IconFolderOpenRegular ='));
+  const closed = nativePrimitives.slice(nativePrimitives.indexOf('const FolderCloseArtwork ='), nativePrimitives.indexOf('//#endregion', nativePrimitives.indexOf('const FolderCloseArtwork =')));
+  assert.deepEqual([...icon.matchAll(/d: '([^']+)'/g)].map(match => match[1]), [...(open + closed).matchAll(/d: "([^"]+)"/g)].map(match => match[1]));
+  assert.match(icon, /width: 16, height: 16.*viewBox: '0 0 16 16'.*strokeWidth: 1/); assert.match(icon, /opacity: 0.16/);
+  const group = source.slice(source.indexOf('    function ProjectGroup('), source.indexOf('    function SidebarToggle('));
+  assert.match(group, /h\(WorkspaceFolderIcon, \{ expanded: searching \|\| !collapsed, className: 'dsh-wt-project-folder' \}\)/); assert.doesNotMatch(group, /'▱'/);
+});
+
+test('compact project toolbar keeps search and archive choices off the default sidebar layout', () => {
+  const toolbar = source.slice(source.indexOf('    function ProjectSidebarToolbar('), source.indexOf('    function ProjectsSidebar('));
+  const sidebar = source.slice(source.indexOf('    function ProjectsSidebar('), source.indexOf('    function NewWorktreeControls('));
+  assert.match(toolbar, /\[searchOpen, setSearchOpen\] = React.useState\(!!query\), \[optionsOpen, setOptionsOpen\] = React.useState\(false\)/);
+  assert.match(toolbar, /!searchOpen && h\('span', \{ className: 'dsh-wt-project-section-label' \}/);
+  assert.match(toolbar, /searchOpen && h\('div', \{ className: 'dsh-wt-project-search' \}/); assert.match(toolbar, /'aria-expanded': searchOpen/);
+  assert.match(toolbar, /if \(searchOpen\) input.current\?\.focus\(\)/); assert.match(toolbar, /function closeSearch\(\) \{ onQuery\(''\); setSearchOpen\(false\); searchTrigger.current\?\.focus\(\)/);
+  assert.match(toolbar, /event.key === 'Escape'.*closeSearch\(\)/); assert.match(toolbar, /'aria-label': t\('closeSearch'\)/);
+  assert.match(toolbar, /optionsOpen && h\('div', \{ id: menuId, role: 'menu'/); assert.match(toolbar, /'aria-haspopup': 'menu'/); assert.match(toolbar, /role: 'menuitemradio', 'aria-checked': archived === value/);
+  assert.match(toolbar, /\['hide', 'hideArchived'\], \['all', 'allThreads'\], \['only', 'archivedOnly'\]/); assert.match(toolbar, /onArchived\(value\); closeOptions\(\)/);
+  assert.match(toolbar, /function closeOptions\(\).*optionsTrigger.current\?\.focus\(\)/); assert.match(toolbar, /event.currentTarget.contains\(event.relatedTarget\)/);
+  assert.match(toolbar, /\['ArrowDown', 'ArrowUp', 'Home', 'End'\]/);
+  for (const kind of ['search', 'options', 'add']) assert.ok(toolbar.includes("kind: '" + kind + "'"));
+  assert.match(sidebar, /h\(ProjectSidebarToolbar, \{ query, onQuery: setQuery, archived, onArchived: setArchived, newProjectTrigger, onCreate: event => openEditor\(null, event.currentTarget\)/);
+  assert.doesNotMatch(sidebar, /h\('input'|h\('select'|h\('strong'/); assert.doesNotMatch(toolbar, /requestHost|requestProjects|\.mutate\(|uiWorkspace|fetch\(/);
+  assert.match(source, /\.dsh-wt-project-toolbar\{position:relative;justify-content:flex-end;gap:4px/);
+  assert.match(source, /\.dsh-wt-projects \.dsh-wt-toolbar-icon\{[^}]*width:28px;height:28px/);
+});
+
+test('toolbar Search, View options and Add project icons match the native header artwork', () => {
+  const icon = source.slice(source.indexOf('    function SidebarToolbarIcon('), source.indexOf('    function FolderIcon('));
+  const artwork = name => nativePrimitives.slice(nativePrimitives.indexOf('const ' + name + 'Artwork ='), nativePrimitives.indexOf('const ' + name + 'Regular ='));
+  const pathList = text => [...text.matchAll(/d: "([^"]+)"/g)].map(match => match[1]);
+  assert.deepEqual([...icon.matchAll(/d: '([^']+)'/g)].map(match => match[1]), [...pathList(artwork('IconSearchOutline')), ...pathList(artwork('IconProjectAddOutline')), ...pathList(artwork('IconSlidersTwoOutline'))]);
+  assert.match(icon, /cx: 9.95, cy: 5, r: 1.45/); assert.match(icon, /cx: 5.75, cy: 11, r: 1.45/); assert.match(icon, /strokeWidth: 1/);
+  assert.deepEqual([...source.matchAll(/require\('([^']+)'\)/g)].map(match => match[1]), ['react']);
+});
+
+test('sidebar title, date, row and counted-expansion metrics match native Folder view', () => {
+  const rowsCss = JSON.parse(nativeWorkspace.match(/const css\$3 = ("[^\n]+");/)[1]);
+  const browserCss = JSON.parse(nativeWorkspace.match(/const css = ("[^\n]+sessionOverflowButton[^\n]+");/)[1]);
+  const nativeRule = (css, name) => css.match(new RegExp('(?:^|\\})\\.[\\w-]+_' + name + '\\{([^}]+)\\}'))?.[1];
+  const ownRule = selector => [...source.matchAll(new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\{([^}]+)\\}', 'g'))].at(-1)?.[1];
+  for (const name of ['projectRow', 'sessionRow', 'title', 'time']) assert.ok(nativeRule(rowsCss, name), name);
+  assert.match(nativeRule(rowsCss, 'title'), /font-size:14px;line-height:20px/); assert.match(ownRule('.dsh-wt-project-title'), /font-size:14px;line-height:20px;font-weight:inherit/);
+  assert.match(ownRule('.dsh-wt-thread-title'), /font-size:14px;line-height:20px/);
+  assert.match(nativeRule(rowsCss, 'time'), /font-size:10px;line-height:16px/); assert.match(ownRule('.dsh-wt-thread-time'), /font-size:10px;line-height:16px/);
+  assert.match(nativeRule(rowsCss, 'projectRow'), /height:34px/); assert.match(ownRule('.dsh-wt-project-head'), /height:34px/);
+  assert.match(nativeRule(rowsCss, 'sessionRow'), /height:32px/); assert.match(ownRule('.dsh-wt-thread-main'), /height:32px/);
+  assert.match(nativeRule(browserCss, 'sessionOverflowButton'), /font-size:12px/); assert.match(ownRule('.dsh-wt-projects .dsh-wt-session-overflow'), /font-family:inherit;font-size:12px;font-weight:inherit/);
+  assert.match(ownRule('.dsh-wt-projects .dsh-wt-session-overflow'), /height:28px.*padding:0 12px 0 28px/);
+  assert.match(source, /max-width:0;.*overflow:hidden;opacity:0;pointer-events:none/); assert.match(source, /dsh-wt-thread:is\(:hover,:focus-within\).*dsh-wt-thread-time/);
+});
+
+test('session last-active labels match native relative-time buckets and dictionaries without a timer', () => {
+  const start = nativePrimitives.indexOf('function relativeTime(at, now)');
+  const relative = vm.runInNewContext(`(() => { ${nativePrimitives.slice(start, nativePrimitives.indexOf('//#endregion', start))}; return relativeTime; })()`);
+  const dictionaries = vm.runInNewContext(`(() => { ${source.slice(source.indexOf('    const en ='), source.indexOf('    const css ='))}; return { en, zh }; })()`);
+  const translate = dict => (key, args = {}) => dict[key].replace(/\{([^}]+)\}/g, (_match, field) => String(args[field]));
+  const now = Date.UTC(2026, 9, 10, 9, 41), day = 86400000;
+  for (const dict of [dictionaries.en, dictionaries.zh]) {
+    const t = translate(dict);
+    for (const age of [-1, 0, 59999, 60000, 3599999, 3600000, day - 1, day, 26 * day, 30 * day - 1, 30 * day, 364 * day, 365 * day, 2 * 365 * day]) {
+      const at = now - age, expected = relative(at, now), actual = helpers.projectSessionTime(at, now, t);
+      assert.equal(actual.label, expected.unit === 'now' ? t('time.now') : t('time.' + expected.unit, { n: expected.n })); assert.equal(actual.dateTime, new Date(at).toISOString()); assert.ok(actual.title.includes(t('lastActive', { time: '' }).trim()));
+    }
+  }
+  for (const at of [undefined, null, '2026-10-10', NaN, Infinity, -1, 8640000000000001]) assert.equal(helpers.projectSessionTime(at, now, translate(dictionaries.en)), null);
+  assert.equal(helpers.projectSessionTime(now, NaN, translate(dictionaries.en)), null);
+  const row = source.slice(source.indexOf('    function ThreadRow('), source.indexOf('    function ProjectGroup('));
+  assert.match(row, /row.session.blank \? null : projectSessionTime\(row.session.updatedAt, now, t\)/); assert.match(row, /h\('time', \{ className: 'dsh-wt-thread-time', dateTime: activity.dateTime, title: activity.title/);
+  assert.doesNotMatch(row, /project\.updatedAt|setInterval|setTimeout|requestHost|requestProjects/);
+});
+
+test('Show X more sessions counts actual hidden rows and retains the native five-idle-row expansion rhythm', () => {
+  const idle = Array.from({ length: 11 }, (_, i) => ({ id: String(i), session: {} }));
+  const rows = [...idle, { id: 'blank', session: { blank: true } }, { id: 'busy', session: {}, running: true }, { id: 'pending', session: {}, pending: {} }];
+  const first = helpers.visibleProjectRows(rows, 5, '10'), second = helpers.visibleProjectRows(rows, 10, '10'), all = helpers.visibleProjectRows(rows, Infinity, '10');
+  assert.equal(rows.length - first.length, 5); assert.equal(rows.length - second.length, 0); assert.equal(all.length, rows.length);
+  for (const id of ['blank', 'busy', 'pending', '10']) assert.ok(first.some(row => row.id === id));
+  const group = source.slice(source.indexOf('    function ProjectGroup('), source.indexOf('    function SidebarToggle('));
+  assert.match(group, /remaining = group.rows.length - rows.length/); assert.match(group, /hasOverflow = group.rows.length > visibleProjectRows\(group.rows, 5, selectedId\).length/);
+  assert.match(group, /className: 'dsh-wt-session-overflow', 'aria-expanded': remaining === 0/); assert.match(group, /remaining === 0 \? 5 : remaining <= 5 \? Infinity : value \+ 5/);
+  assert.match(group, /t\('showMore', \{ n: remaining \}\)/); assert.match(source, /showMore: 'Show \{n\} more sessions'/); assert.match(source, /showMore: '展开其余 \{n\} 个会话'/);
+});
+
 test('folded rows reserve idle quota only, preserve running/pending/current rows and folder subdirectories', () => {
   const rows = Array.from({ length: 9 }, (_, i) => ({ id: String(i), running: i === 7, pending: i === 8 ? {} : undefined }));
   assert.deepEqual(Array.from(helpers.visibleProjectRows(rows, 2, '6'), row => row.id), ['0', '1', '6', '7', '8']);
@@ -269,7 +417,7 @@ test('folded rows reserve idle quota only, preserve running/pending/current rows
   assert.equal(helpers.sameProject(context, { ...context, folderId: 'folder-b' }), false);
 });
 
-function projectRuntime({ delayedStart = false, delayedReady = false, delayedOwnership = false, draft = '', targetDraft = '', startId = 'fresh', effectiveCwd = local.effectiveCwd } = {}) {
+function projectRuntime({ delayedStart = false, delayedReady = false, delayedOwnership = false, draft = '', targetDraft = '', startId = 'fresh', effectiveCwd = local.effectiveCwd, records = [] } = {}) {
   const calls = [], opened = [], selected = [], cleanups = new Set(), ownership = observable({ retainedBy: {} });
   const list = observable({ byId: { local: { retainedBy: { mainView: 1 } } } }), workspaceList = observable(copy(workspaces)), generation = observable({ id: 1 });
   const srcInput = observable({ ...copy(empty), draft }), dstInput = observable({ ...copy(empty), draft: targetDraft });
@@ -277,7 +425,7 @@ function projectRuntime({ delayedStart = false, delayedReady = false, delayedOwn
   const references = [], conversation = { input: { for: ctx => ({ state: ctx.id === 'local' ? srcInput : dstInput }) } };
   let navigation, resolveStart, resolveReady;
   const ready = delayedReady ? new Promise(resolve => { resolveReady = resolve; }) : Promise.resolve(dstBinding);
-  let serverMetadata = copy(metadata);
+  let serverMetadata = copy({ ...metadata, records });
   const result = { sessionId: startId, workspaceId: 'folder-a', binding: { ...local, sessionId: startId, effectiveCwd } };
   const ctx = {
     get: name => { assert.equal(name, 'conversation'); return conversation; },
@@ -296,6 +444,10 @@ function projectRuntime({ delayedStart = false, delayedReady = false, delayedOwn
         Object.assign(saved, { ...(request.title !== undefined ? { title: request.title } : {}), ...(request.folders ? { folders: request.folders.map(path => saved.folders.find(folder => folder.path === path)) } : {}), updatedAt: saved.updatedAt + 1 });
         saved.mainFolderId = request.mainFolder ? saved.folders.find(folder => folder.path === request.mainFolder).id : helpers.projectMainFolder(saved).id;
         return success({ project: copy(saved) });
+      }
+      if (request.action === 'remove') {
+        serverMetadata.projects = serverMetadata.projects.filter(item => item.id !== request.projectId); serverMetadata.bindings = serverMetadata.bindings.filter(item => item.projectId !== request.projectId);
+        return success({ removed: true, projectId: request.projectId, scope: 'project-metadata' });
       }
       if (request.action === 'bind') {
         const binding = { ...local, sessionId: request.sessionId, projectId: request.projectId, folderId: request.folderId };
@@ -330,6 +482,72 @@ test('metadata refresh is root-owned and structural/generation driven, never tok
   await settle(); assert.equal(run.calls.length, 3);
   run.dispose(); assert.equal(run.workspaceList.listeners.size, 0); assert.equal(run.generation.listeners.size, 0);
   run.generation.publish({ id: 3 }); await settle(); assert.equal(run.calls.length, 3);
+});
+
+test('Remove changes only cached project membership, omits actor, and retains native state and managed records', async () => {
+  const run = projectRuntime({ draft: 'keep the native draft', records: [retainedRecord] }); await run.ready();
+  const native = copy(run.workspaceList.getSnapshot()), sessionList = copy(run.list.getSnapshot()), input = copy(run.srcInput.getSnapshot());
+  const records = run.store.store.getSnapshot().records;
+  const result = await run.store.mutate({ action: 'remove', projectId });
+  assert.deepEqual(copy(result), { removed: true, projectId, scope: 'project-metadata' }); assert.equal(run.store.store.getSnapshot().projects.length, 0); assert.equal(run.store.store.getSnapshot().bindings.length, 0);
+  assert.equal(run.store.store.getSnapshot().records, records); assert.equal(run.store.context('local'), undefined); assert.equal(run.store.context('tree'), undefined);
+  const request = run.calls.find(call => call.request.action === 'remove'); assert.equal(Object.hasOwn(request.payload, 'actorId'), false);
+  await settle(); assert.equal(run.store.store.getSnapshot().projects.length, 0); assert.deepEqual(copy(run.store.store.getSnapshot().records), [retainedRecord]);
+  assert.deepEqual(copy(run.workspaceList.getSnapshot()), native); assert.deepEqual(copy(run.list.getSnapshot()), sessionList); assert.deepEqual(copy(run.srcInput.getSnapshot()), input);
+  assert.deepEqual(run.opened, []); assert.deepEqual(run.selected, []); assert.deepEqual(run.references, []);
+  run.dispose(); const count = run.calls.length; await assert.rejects(run.store.mutate({ action: 'remove', projectId }), error => error.kind === 'cancelled'); assert.equal(run.calls.length, count);
+});
+
+test('Remove fences earlier reads and defers reads requested while its metadata commit is pending', async () => {
+  const run = projectRuntime({ records: [retainedRecord] }); await run.ready();
+  const stale = copy(run.store.store.getSnapshot()); delete stale.loading; delete stale.error;
+  const fresh = { projects: [], bindings: [], records: [retainedRecord] };
+  let oldReply, removeReply, reads = 0; const calls = [];
+  run.ctx.connection.rpc.call = async (_channel, _endpoint, payload, signal) => {
+    calls.push({ payload, signal });
+    if (payload.request.action === 'remove') return new Promise(resolve => { removeReply = resolve; });
+    if (++reads === 1) return new Promise(resolve => { oldReply = resolve; });
+    return success(fresh);
+  };
+  const old = run.store.refresh(); await settle(); const removal = run.store.mutate({ action: 'remove', projectId });
+  assert.equal(calls[0].signal.aborted, true); await run.store.refresh(); run.workspaceList.publish({ ...run.workspaceList.getSnapshot(), items: [...run.workspaceList.getSnapshot().items, { workspaceId: 'added', path: '/added', title: 'Added', sessionIds: [] }] }); await settle();
+  assert.equal(reads, 1, 'pending mutations defer all scheduled/explicit metadata reads');
+  oldReply(success(stale)); await old; assert.equal(run.store.store.getSnapshot().projects[0].id, projectId, 'no optimistic removal or stale response publication');
+  removeReply(success({ removed: true, projectId, scope: 'project-metadata' })); await removal; await settle();
+  assert.equal(reads, 2); assert.equal(run.store.store.getSnapshot().projects.length, 0); assert.equal(run.store.store.getSnapshot().bindings.length, 0); assert.deepEqual(copy(run.store.store.getSnapshot().records), [retainedRecord]); run.dispose();
+});
+
+test('malformed Remove acknowledgements never optimistically erase project metadata', async () => {
+  for (const response of [{ removed: false, projectId, scope: 'project-metadata' }, { removed: true, projectId: operationId, scope: 'project-metadata' }, { removed: true, projectId, scope: 'files' }, { removed: true, projectId, scope: 'project-metadata', project }]) {
+    const run = projectRuntime({ draft: 'retained draft', records: [retainedRecord] }); await run.ready(); const original = run.ctx.connection.rpc.call;
+    run.ctx.connection.rpc.call = (...args) => args[2].request.action === 'remove' ? Promise.resolve(success(response)) : original(...args);
+    await assert.rejects(run.store.mutate({ action: 'remove', projectId }), error => error.kind === 'decode'); await settle();
+    assert.equal(run.store.store.getSnapshot().projects[0].id, projectId); assert.equal(run.store.store.getSnapshot().bindings.length, 2); assert.equal(run.srcInput.getSnapshot().draft, 'retained draft'); assert.deepEqual(copy(run.store.store.getSnapshot().records), [retainedRecord]); run.dispose();
+  }
+});
+
+test('a disconnected Remove with a possibly committed result reconciles metadata without navigation or duplicate action', async () => {
+  const run = projectRuntime({ draft: 'keep this', records: [retainedRecord] }); await run.ready(); let finish, committed = false, removes = 0;
+  run.ctx.connection.rpc.call = async (_channel, _endpoint, payload) => {
+    if (payload.request.action === 'remove') { ++removes; return new Promise(resolve => { finish = () => { committed = true; resolve(success({ removed: true, projectId, scope: 'project-metadata' })); }; }); }
+    return success({ projects: committed ? [] : [project], bindings: committed ? [] : [local, tree], records: [retainedRecord] });
+  };
+  const removal = run.store.mutate({ action: 'remove', projectId }); run.generation.publish({ id: 2 }); await settle(); finish();
+  await assert.rejects(removal, error => error.kind === 'cancelled'); await settle(); assert.equal(removes, 1); assert.equal(run.store.store.getSnapshot().projects.length, 0);
+  assert.equal(run.srcInput.getSnapshot().draft, 'keep this'); assert.deepEqual(run.opened, []); assert.deepEqual(run.selected, []); run.dispose();
+});
+
+test('unassigned conversations preserve exact managed backing, Local handoff/fork truth, pinned/archive access and grouping on re-add', () => {
+  const removed = { projects: [], bindings: [], records: [retainedRecord] }, native = { ...workspaces, archivedSessionIds: ['tree'], pinnedSessionIds: ['fork'] };
+  const sessions = { byId: { local: { title: 'Local', updatedAt: 1 }, tree: { title: 'Linked', updatedAt: 2 }, fork: { title: 'Ordinary fork', parentId: 'tree', updatedAt: 3 }, child: { origin: 'subagent', title: 'Child' } } };
+  const groups = helpers.projectRows(removed, native, sessions, new Map(), { archived: 'all' }); assert.equal(groups.length, 1); assert.equal(groups[0].project, null);
+  const rows = groups[0].rows; assert.equal(rows[0].id, 'fork'); assert.equal(rows[0].pinned, true); assert.equal(rows.length, 3);
+  const linked = rows.find(row => row.id === 'tree'); assert.equal(linked.context, undefined); assert.equal(linked.backing.mode, 'worktree'); assert.equal(linked.backing.record.branch, 'worktree/retained'); assert.equal(linked.backing.effectiveCwd, tree.effectiveCwd); assert.equal(linked.archived, true);
+  for (const id of ['local', 'fork']) assert.equal(rows.find(row => row.id === id).backing.mode, 'local', 'historical managed sessionIds and parentId cannot override native cwd');
+  const handoff = { ...workspaces, items: [{ ...workspaces.items[0], sessionIds: ['local', 'fork', 'tree'] }] };
+  assert.equal(helpers.projectBacking(metadata, handoff, 'tree').mode, 'local', 'actual native Local cwd beats even a stale worktree binding');
+  const winner = { ...project, id: operationId }, restored = { ...removed, projects: [winner], bindings: [local, tree].map(binding => ({ ...binding, projectId: operationId })) };
+  const regrouped = helpers.projectRows(restored, workspaces, sessions, new Map(), { archived: 'all' }); assert.equal(regrouped[0].project.id, operationId); assert.equal(regrouped[0].rows.find(row => row.id === 'tree').backing.mode, 'worktree');
 });
 
 test('successful create/update/bind install actual Host-shaped commits, cancel stale reads, and never use chat commands', async () => {
@@ -438,7 +656,7 @@ test('project metadata validates and installs refreshed branch records without p
 
 test('Projects sidebar rows keep only the worktree icon; branch/path appear in hover and details', () => {
   const row = source.slice(source.indexOf('    function ThreadRow('), source.indexOf('    function ProjectGroup('));
-  const marker = row.slice(row.indexOf("worktree ? h('span'"), row.indexOf("!row.session.blank && h('span'"));
+  const marker = row.slice(row.indexOf("worktree && h('span'"), row.indexOf("activity && h('time'"));
   assert.match(marker, /className: 'dsh-wt-branch-chip', title: marker, 'aria-label': marker, role: 'img'/);
   assert.match(marker, /h\(Icon, \{ size: 13 \}\)/);
   assert.doesNotMatch(marker, /record\??\.(?:branch|displayName)|h\('span', null/);
@@ -459,10 +677,10 @@ test('project dialog declares the compact reference layout and a separately stag
   assert.ok(editor.includes("'createProject'"));
   for (const key of ['projectName', 'sourceFolders', 'localFolders', 'add', 'cancel']) assert.ok(editor.includes("t('" + key + "')"), key);
   assert.match(editor, /h\(FolderRows, \{ folders, remove, disabled: busy, t \}\)/);
-  assert.match(editor, /existing: folders, picked: add, close: \(\) => setBrowser\(false\)/);
+  assert.match(editor, /existing: folders, picked: add, close: closeBrowser/);
   assert.match(editor, /appendProjectFolders\(currentFolders\.current, paths\)/);
-  assert.match(editor, /submitter\.current\.pending \|\| picker\.current \|\| browser/);
-  assert.match(editor, /const dismiss = \(\) => \{ if \(!submitter\.current\.pending && !picker\.current\) close\(\)/);
+  assert.match(editor, /submitter\.current\.pending \|\| picker\.current \|\| browsing\.current \|\| confirming\.current/);
+  assert.match(editor, /const dismiss = \(\) => \{ if \(!submitter\.current\.pending && !picker\.current && !confirming\.current\) close\(\)/);
   assert.ok(editor.indexOf('picker.current = true;') < editor.indexOf('await ctx.uiWorkspace.pickDirectory()'));
   assert.match(editor, /if \(lifetime\.current && selected\) add\(\[selected\]\)/);
   assert.doesNotMatch(editor, /setFlow|setBrowser\(true\)[^\n]*catch|remote\.commands|fetch\(/);
@@ -474,7 +692,7 @@ test('project dialog declares the compact reference layout and a separately stag
   assert.match(editor, /initialFocus: nameInput/); assert.match(editor, /ref: nameInput/);
   assert.match(browser, /initialFocus: pathInput/); assert.match(browser, /ref: pathInput/);
   const styling = source.slice(source.indexOf('.dsh-wt-project-dialog{'), source.indexOf('.dsh-wt-progress{'));
-  const allowed = new Set(['border-l1', 'border-l2', 'bg-layer-1', 'bg-layer-2', 'bg-overlay', 'label-primary', 'label-secondary', 'brand-primary']);
+  const allowed = new Set(['border-l1', 'border-l2', 'bg-layer-1', 'bg-layer-2', 'bg-overlay', 'label-primary', 'label-secondary', 'brand-primary', 'state-error-primary']);
   for (const match of styling.matchAll(/var\(--dsw-alias-([^)]*)\)/g)) assert.ok(allowed.has(match[1]), match[1]);
   assert.doesNotMatch(styling, /#[0-9a-f]{3,8}\b|rgba?\(/i);
 });
@@ -496,12 +714,34 @@ test('project UI requires the main for multi-folder creation and preserves per-c
   assert.match(composer, /chooseConversationFolder\(ctx, projects, flow, sessionId, event\.target\.value\)/);
 });
 
+test('Manage-only Remove is staged, Cancel-first, independently gated from invalid drafts, and sidebar-owned', () => {
+  const editor = source.slice(source.indexOf('    function ProjectEditor('), source.indexOf('    function ThreadRow('));
+  const confirmation = source.slice(source.indexOf('    function ConfirmProjectRemoval('), source.indexOf('    function ProjectEditor('));
+  const group = source.slice(source.indexOf('    function ProjectGroup('), source.indexOf('    function SidebarToggle('));
+  const sidebar = source.slice(source.indexOf('    function ProjectsSidebar('), source.indexOf('    function NewWorktreeControls('));
+  const begin = editor.slice(editor.indexOf('      function beginRemoval('), editor.indexOf('      function dismissRemoval('));
+  assert.match(begin, /confirming.current = true; setError\(''\); setConfirmRemoval\(true\)/); assert.doesNotMatch(begin, /\.mutate\(|\.remove\(|title|folders|mainFolder/);
+  assert.match(editor, /project && h\(Button, \{ ref: removeTrigger, className: 'dsh-wt-remove-project', disabled: busy \|\| browser \|\| confirmRemoval, onClick: beginRemoval/);
+  assert.match(source, /const Button = React.forwardRef\(.*type: 'button'/);
+  assert.match(editor, /await submitter.current.remove\(\); if \(lifetime.current\) close\(\)/);
+  assert.match(editor, /function dismissRemoval\(\) \{ if \(!submitter.current.pending\)/);
+  assert.match(confirmation, /dismissible: !busy, initialFocus: cancel, returnFocus, descriptionId: description/);
+  assert.match(confirmation, /ref: cancel.*disabled: busy, onClick: close/); assert.match(confirmation, /t\('removeProjectHelp'\)/);
+  assert.match(source, /returnFocus\?\.current\?\.isConnected.*returnFocus.current.focus\(\); else fallbackFocus\?\.current\?\.focus\(\)/);
+  assert.doesNotMatch(group, /h\(ProjectEditor|setEditing/);
+  assert.match(sidebar, /\[editor, setEditor\] = React.useState\(null\)/); assert.match(sidebar, /setEditor\(\{ project \}\)/);
+  assert.match(sidebar, /editor && h\(ProjectEditor, \{ key: editor.project\?\.id \|\| 'new-project', project: editor.project/);
+  assert.match(sidebar, /returnFocus: editorTrigger, fallbackFocus: newProjectTrigger/);
+  assert.doesNotMatch(sidebar, /if\s*\([^)]*metadata\.projects[^)]*\).*setEditor|useEffect/);
+  for (const phrase of ['Only the project metadata will be removed.', 'folders, files, conversations and worktrees will be kept', 'Other threads', 'Folder view', '仅移除项目元数据']) assert.ok(source.includes(phrase));
+});
+
 test('chat header retains passive project metadata without a Worktrees button; sidebar manager stays available', () => {
   const header = source.slice(source.indexOf('    function Header('), source.indexOf('    function Manager('));
   assert.doesNotMatch(header, /h\(Button|h\(Icon|selectPanel|onClick|t\('title'\)/);
-  assert.match(header, /if \(blank \|\| !context\) return null/);
-  assert.match(header, /context\.project\.title/);
-  assert.match(header, /title: context\.binding\.effectiveCwd/);
+  assert.match(header, /if \(blank \|\| \(!context && backing.mode !== 'worktree'\)\) return null/);
+  assert.match(header, /context\?\.project\.title/);
+  assert.match(header, /title: backing\.effectiveCwd/);
   assert.match(source, /name: 'sidebar.panellist', id: PANEL/);
   assert.match(source, /name: 'main', key: PANEL.*Manager/);
 });

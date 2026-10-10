@@ -125,7 +125,7 @@ test('publication allowlists and bounds preserve both old leaves and explicitly 
     const policy = publicationPolicy(name);
     const extras = name === 'dsh-worktrees' ? ['client.js', 'locale/en.json', 'icon.svg'] : [];
     assert.deepEqual(policy.files, [...common, ...names.flatMap(module => [`dist/${module}.js`, `dist/${module}.d.ts`]), ...extras].sort());
-    assert.equal(policy.maxBytes, name === 'dsh-worktrees' ? 475_000 : 150_000);
+    assert.equal(policy.maxBytes, name === 'dsh-worktrees' ? 525_000 : 150_000);
     assert.doesNotThrow(() => validatePublicationSize(name, policy.maxBytes - 1));
     assert.throws(() => validatePublicationSize(name, policy.maxBytes), /Unexpectedly large/u);
     assert.throws(() => validatePublicationSize(name, -1), /Unexpectedly large/u);

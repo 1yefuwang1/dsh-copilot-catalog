@@ -22,7 +22,7 @@ function record(root) {
 }
 function table() { const map = new Map(); return { map, get: key => map.get(key), entries: () => map.entries(), async put(key, value) { map.set(key, structuredClone(value)); }, async delete(key) { return map.delete(key); } }; }
 function domainTables(worktree) {
-  const tables = { dsh_worktrees: { worktrees: table(), operations: table() }, dsh_worktree_projects: { projects: table(), bindings: table(), starts: table() } };
+  const tables = { dsh_worktrees: { worktrees: table(), operations: table() }, dsh_worktree_projects: { projects: table(), bindings: table(), starts: table(), removals: table() } };
   tables.dsh_worktrees.worktrees.map.set(worktree.id, worktree); return tables;
 }
 async function hostFixture(t) {
@@ -430,4 +430,47 @@ test('real project reminder lifecycle attaches during serial creation and unwind
   await other.scope.dispose(); assert.equal((await contexts(other)).length, 0); assert.equal(f.agents.get(other.id), other);
   f.host.emit(scopeTarget(other, other), 'agent/disposed', { agent: other }); reminders.close(); reminders.close();
   assert.equal(f.events.length, 0);
+});
+
+
+test('project remove shares exact quiet RPC/tool/command execution and retains live sessions, managed rows and start receipts', async t => {
+  const f = await hostFixture(t), source = f.agent(f.root), worktree = record(f.root), tables = domainTables(worktree);
+  const transport = await connectionFixture(f); const signal = new AbortController().signal;
+  f.host.provide('storageDomain', { async open(spec) { return { table: name => tables[spec.name][name], async close() {} }; } });
+  f.host.provide('sessionPersistence', {}); f.host.provide('workspaceRegistry', f.registry);
+  f.host.provide('sessionController', { async resolveAgent(id) { const agent = f.agents.get(id); return agent ? { agent } : { error: { code: 'session/not-found', message: 'Missing ordinary session', details: {} } }; } });
+  const scope = f.host.plugin(plugin, { root: resolve(f.root, 'managed') }); f.scopes.push(scope); await scope;
+  const rpc = request => transport.rpc('dsh-worktrees/projects', { v: 1, request });
+  const id = randomUUID(); const create = await rpc({ action: 'create', id, title: 'Metadata to remove', folders: [f.root] }); assert.equal(create.value.ok, true);
+  const native = f.registry.list()[0]; await native.attachSession(source.id); native.pins = [source.id]; native.archived = [source.id];
+  source.status = 'running'; source.inbox.nextTurn.push({ retained: 'pending conversation' });
+  worktree.projectId = id; worktree.folderId = native.id;
+  const isolated = f.agent(worktree.effectiveCwd); isolated.status = 'running'; worktree.sessionIds.push(isolated.id);
+  const startId = randomUUID(); const start = { id: startId, projectId: id, folderId: native.id, actorId: source.id, effectiveCwd: f.root, requestedSessionId: startId, phase: 'recovery-required', sessionId: source.id, workspaceId: native.id, createdAt: 1, updatedAt: 2 };
+  await tables.dsh_worktree_projects.starts.put(startId, start); await rpc({ action: 'list' });
+  const headers = [structuredClone(source.session.header), structuredClone(isolated.session.header)], inbox = structuredClone(source.inbox), retained = structuredClone(worktree);
+  const before = f.events.length, request = { action: 'remove', projectId: id }, data = { removed: true, projectId: id, scope: 'project-metadata' };
+  const removed = await f.host.tools.execute({ name: 'workspace_project', callId: 'project-sdk-remove', arguments: request, agent: source, signal });
+  assert.equal(removed.isError, false); assert.deepEqual(removed.value, { v: 1, ok: true, data });
+  const ui = await rpc(request); assert.deepEqual(ui, { ok: true, value: removed.value }); assert.equal(f.events.length, before);
+  const command = await f.host.commands.execute(source, `/project ${JSON.stringify(request)}`, [], signal);
+  assert.equal(command.result.kind, 'success'); assert.deepEqual(JSON.parse(command.result.text), removed.value);
+  assert.deepEqual(f.events.slice(before).map(value => value.event.type), ['command/run', 'command/done']);
+  assert.deepEqual((await rpc({ action: 'list', projectId: id })).value.data, { projects: [], bindings: [], records: [] });
+  assert.deepEqual(source.session.header, headers[0]); assert.deepEqual(isolated.session.header, headers[1]); assert.deepEqual(source.inbox, inbox);
+  assert.equal(source.status, 'running'); assert.equal(isolated.status, 'running'); assert.equal(f.agents.get(source.id), source); assert.equal(f.agents.get(isolated.id), isolated);
+  assert.deepEqual(tables.dsh_worktrees.worktrees.get(worktree.id), retained); assert.deepEqual(tables.dsh_worktree_projects.starts.get(startId), start);
+  assert.deepEqual(native.pins, [source.id]); assert.deepEqual(native.archived, [source.id]); assert.deepEqual(native.sessionIds, [source.id]); assert.equal(native.path, f.root);
+  assert.ok(!(await f.host.systemPrompt.assemble({ scope: source })).contexts.some(value => value.name === 'dsh-worktrees:project' && value.text));
+  const schema = f.host.tools.schemas(source).find(tool => tool.name === 'workspace_project');
+  assert.equal(schema.parameters.oneOf.length, 6); assert.equal(f.host.tools.executionMode({ name: 'workspace_project', arguments: request, agent: source }).kind, 'exclusive');
+  const unknown = await rpc({ action: 'remove', projectId: randomUUID() }); assert.equal(unknown.value.error.code, 'PROJECT_NOT_FOUND');
+  const invalid = await rpc({ ...request, deleteFolders: true }); assert.equal(invalid.ok, false); assert.equal(invalid.error.code, 'INVALID_RPC_REQUEST');
+  const noCaller = await f.host.tools.execute({ name: 'workspace_project', callId: 'project-sdk-remove-no-caller', arguments: request, signal }); assert.equal(noCaller.isError, true);
+  const impostor = await f.host.tools.execute({ name: 'workspace_project', callId: 'project-sdk-remove-impostor', arguments: request, agent: { ...source }, signal }); assert.equal(impostor.isError, true); assert.match(JSON.stringify(impostor), /SESSION_CHANGED|exact ordinary live session/u);
+  const aborted = new AbortController(); aborted.abort(); const cancel = await f.host.tools.execute({ name: 'workspace_project', callId: 'project-sdk-remove-cancelled', arguments: request, agent: source, signal: aborted.signal }); assert.equal(cancel.isError, true);
+  // Retained managed rows are still independently operable without project metadata.
+  const protect = await f.host.tools.execute({ name: 'git_worktree', callId: 'project-sdk-retained-protect', arguments: { action: 'protect', id: worktree.id, protected: true }, agent: source, signal });
+  assert.equal(protect.isError, false); assert.equal(protect.value.data.worktree.protected, true); assert.equal(tables.dsh_worktree_projects.projects.map.size, 0);
+  assert.deepEqual(f.events.slice(before).map(value => value.event.type), ['command/run', 'command/done']);
 });

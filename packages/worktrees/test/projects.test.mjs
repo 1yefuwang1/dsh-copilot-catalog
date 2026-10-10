@@ -12,7 +12,7 @@ import { WorktreeError } from '../dist/errors.js';
 const errorCode = code => error => error instanceof WorktreeError && error.code === code;
 function table(schema, initial = [], persist = async () => {}) {
   const map = new Map(initial.map(([id, value]) => [id, structuredClone(schema.parse(value))]));
-  return { map, get: id => map.get(id), entries: () => map.entries(), async put(id, value) { map.set(id, structuredClone(schema.parse(value))); await persist(); }, async delete(id) { const deleted = map.delete(id); await persist(); return deleted; } };
+  return { map, get: id => map.get(id), entries: () => map.entries(), async put(id, value) { const parsed = structuredClone(schema.parse(value)); await persist(); map.set(id, parsed); }, async delete(id) { await persist(); return map.delete(id); } };
 }
 async function fixture(t, options = {}) {
   const directory = await mkdtemp(resolve(tmpdir(), 'project-layer-owned-'));
@@ -61,7 +61,7 @@ async function fixture(t, options = {}) {
     },
   } };
   const owner = { get: name => services[name] };
-  const store = { projects: table(projectDomain.tables.projects.valueSchema), bindings: table(projectDomain.tables.bindings.valueSchema), starts: table(projectDomain.tables.starts.valueSchema), async close() {} };
+  const store = { projects: table(projectDomain.tables.projects.valueSchema), bindings: table(projectDomain.tables.bindings.valueSchema), starts: table(projectDomain.tables.starts.valueSchema), removals: table(projectDomain.tables.removals.valueSchema), async close() {} };
   const dependencies = { bootstrap, localPath: async (_agent, path) => realpath(path), operationTimeoutMs: 60000 };
   const controller = new ProjectController(owner, store, { records: () => structuredClone(worktrees) }, dependencies);
   const invocation = { origin: 'ui', signal: new AbortController().signal };
@@ -123,9 +123,9 @@ test('bind and internal receipt infer backing instead of trusting identity lists
 
 test('strict actions and existing absolute canonical paths reject duplicates, managed checkouts, unknown and authority fields', async t => {
   const f = await fixture(t); const id = randomUUID(); const base = { action: 'create', id, title: 'Name', folders: [f.paths.a] };
-  for (const request of [null, [], {}, { action: 'remove', projectId: id }, { ...base, title: ' ' }, { ...base, title: 'x'.repeat(121) }, { ...base, folders: [] }, { ...base, folders: Array(33).fill(f.paths.a) }, { ...base, folders: ['relative'] }, { ...base, permissions: 'full' }, { action: 'list', folderId: id }, { action: 'update', projectId: id }, { ...base, folders: ['/tmp/line\nbreak'] }]) assert.throws(() => parseProjectRequest(request), errorCode('INVALID_REQUEST'));
+  for (const request of [null, [], {}, { action: 'remove', projectId: 'not-a-uuid' }, { ...base, title: ' ' }, { ...base, title: 'x'.repeat(121) }, { ...base, folders: [] }, { ...base, folders: Array(33).fill(f.paths.a) }, { ...base, folders: ['relative'] }, { ...base, permissions: 'full' }, { action: 'list', folderId: id }, { action: 'update', projectId: id }, { ...base, folders: ['/tmp/line\nbreak'] }]) assert.throws(() => parseProjectRequest(request), errorCode('INVALID_REQUEST'));
   let accessor = false; const request = { action: 'list' }; Object.defineProperty(request, 'evil', { enumerable: true, get() { accessor = true; return 1; } }); assert.throws(() => parseProjectRequest(request)); assert.equal(accessor, false);
-  assert.ok(!JSON.stringify(parameterSchema).includes('~standard')); assert.equal(parameterSchema.oneOf.length, 5);
+  assert.ok(!JSON.stringify(parameterSchema).includes('~standard')); assert.equal(parameterSchema.oneOf.length, 6);
   await assert.rejects(f.invoke({ ...base, folders: [resolve(f.directory, 'missing')] }), errorCode('INVALID_PROJECT_PATH'));
   const file = resolve(f.directory, 'regular'); await writeFile(file, 'file'); await assert.rejects(f.invoke({ ...base, folders: [file] }), errorCode('INVALID_PROJECT_PATH'));
   const alias = resolve(f.directory, 'alias'); await symlink(f.paths.a, alias); await assert.rejects(f.invoke({ ...base, folders: [f.paths.a, alias] }), errorCode('DUPLICATE_PROJECT_FOLDER'));
@@ -183,12 +183,12 @@ test('restart reloads validated durable storage and repairs interrupted import a
   // Crash boundary immediately after winner publish, before donor cleanup and thread rebinding.
   await f.store.projects.put(id, explicit);
   const filename = resolve(f.directory, 'durable.json');
-  await writeFile(filename, JSON.stringify(Object.fromEntries(['projects', 'bindings', 'starts'].map(name => [name, [...f.store[name].entries()]]))));
+  await writeFile(filename, JSON.stringify(Object.fromEntries(['projects', 'bindings', 'starts', 'removals'].map(name => [name, [...f.store[name].entries()]]))));
   await f.controller.close(); const loaded = JSON.parse(await readFile(filename, 'utf8'));
-  const store = Object.fromEntries(['projects', 'bindings', 'starts'].map(name => [name, table(projectDomain.tables[name].valueSchema, loaded[name])])); store.close = async () => {};
+  const store = Object.fromEntries(['projects', 'bindings', 'starts', 'removals'].map(name => [name, table(projectDomain.tables[name].valueSchema, loaded[name])])); store.close = async () => {};
   const restarted = new ProjectController(f.owner, store, { records: () => f.worktrees }, f.dependencies); t.after(() => restarted.close());
   await restarted.synchronize(); const snapshot = await restarted.execute({ action: 'list' }, f.invocation); assert.equal(snapshot.projects.length, 1); assert.deepEqual(snapshot.projects[0], { ...explicit, mainFolderId: explicit.folders[0].id }); assert.ok(snapshot.bindings.every(binding => binding.projectId === id));
-  assert.equal(projectDomain.name, 'dsh_worktree_projects'); assert.equal(projectDomain.version, 1); assert.deepEqual(Object.keys(projectDomain.tables), ['projects', 'bindings', 'starts']);
+  assert.equal(projectDomain.name, 'dsh_worktree_projects'); assert.equal(projectDomain.version, 1); assert.deepEqual(Object.keys(projectDomain.tables), ['projects', 'bindings', 'starts', 'removals']);
 });
 
 test('ensureFolder imports ordinary existing source once and close aborts/awaits flights', async t => {
@@ -230,8 +230,8 @@ test('metadata lists return current branch records as isolated snapshots, scoped
 test('ready starts replay their durable identity after controller/storage restart', async t => {
   const f = await fixture(t); await f.registry.create(f.paths.a); await f.controller.synchronize(); const folder = f.controller.folderForPath(f.paths.a); const request = { action: 'start', operationId: randomUUID(), projectId: folder.projectId, folderId: folder.folderId };
   const first = await f.invoke(request); const filename = resolve(f.directory, 'start-restart.json');
-  await writeFile(filename, JSON.stringify(Object.fromEntries(['projects', 'bindings', 'starts'].map(name => [name, [...f.store[name].entries()]])))); await f.controller.close();
-  const loaded = JSON.parse(await readFile(filename, 'utf8')); const store = Object.fromEntries(['projects', 'bindings', 'starts'].map(name => [name, table(projectDomain.tables[name].valueSchema, loaded[name])])); store.close = async () => {};
+  await writeFile(filename, JSON.stringify(Object.fromEntries(['projects', 'bindings', 'starts', 'removals'].map(name => [name, [...f.store[name].entries()]])))); await f.controller.close();
+  const loaded = JSON.parse(await readFile(filename, 'utf8')); const store = Object.fromEntries(['projects', 'bindings', 'starts', 'removals'].map(name => [name, table(projectDomain.tables[name].valueSchema, loaded[name])])); store.close = async () => {};
   const restarted = new ProjectController(f.owner, store, { records: () => f.worktrees }, f.dependencies); t.after(() => restarted.close());
   assert.deepEqual(await restarted.execute(request, f.invocation), first); assert.equal(f.calls.filter(([kind]) => kind === 'native').length, 1);
 });
@@ -383,8 +383,8 @@ test('legacy first-main repair persists across restart without rebinding existin
   const legacy = { id, title: 'Legacy', folders: [{ id: b.id, path: b.path, title: b.title }, { id: a.id, path: a.path, title: a.title }], createdAt: 1, updatedAt: 2 }; await f.store.projects.put(id, legacy);
   const local = f.session(f.paths.a); const binding = { sessionId: local.id, projectId: id, folderId: a.id, mode: 'local', effectiveCwd: f.paths.a }; await f.store.bindings.put(local.id, binding);
   const filename = resolve(f.directory, 'main-restart.json');
-  const persist = async store => writeFile(filename, JSON.stringify(Object.fromEntries(['projects', 'bindings', 'starts'].map(name => [name, [...store[name].entries()]]))));
-  const load = async () => { const loaded = JSON.parse(await readFile(filename, 'utf8')); const store = Object.fromEntries(['projects', 'bindings', 'starts'].map(name => [name, table(projectDomain.tables[name].valueSchema, loaded[name])])); store.close = async () => {}; return store; };
+  const persist = async store => writeFile(filename, JSON.stringify(Object.fromEntries(['projects', 'bindings', 'starts', 'removals'].map(name => [name, [...store[name].entries()]]))));
+  const load = async () => { const loaded = JSON.parse(await readFile(filename, 'utf8')); const store = Object.fromEntries(['projects', 'bindings', 'starts', 'removals'].map(name => [name, table(projectDomain.tables[name].valueSchema, loaded[name])])); store.close = async () => {}; return store; };
   await persist(f.store); await f.controller.close(); const store = await load(); const restarted = new ProjectController(f.owner, store, { records: () => f.worktrees }, f.dependencies); t.after(() => restarted.close());
   assert.equal(restarted.resolveFolder(id).id, b.id); await restarted.synchronize(); assert.deepEqual(store.projects.get(id), { ...legacy, mainFolderId: b.id }); assert.deepEqual(store.bindings.get(local.id), binding); assert.equal(f.headers.get(local.id).cwd, f.paths.a);
   const request = { action: 'start', operationId: randomUUID(), projectId: id }; const first = await restarted.execute(request, f.invocation); assert.equal(first.binding.folderId, b.id);
@@ -399,4 +399,125 @@ test('partial imported adoption preserves a retained main or selects the first r
   await f.store.projects.put(importedId, { id: importedId, title: 'Imported group', imported: true, folders: [folder(a), folder(b), folder(c)], mainFolderId: c.id, createdAt: 1, updatedAt: 2 });
   await f.invoke({ action: 'create', id: randomUUID(), title: 'Adopt A', folders: [f.paths.a] }); assert.equal(f.store.projects.get(importedId).mainFolderId, c.id); assert.deepEqual(f.store.projects.get(importedId).folders.map(value => value.id), [b.id, c.id]);
   await f.invoke({ action: 'create', id: randomUUID(), title: 'Adopt C', folders: [f.paths.c] }); assert.equal(f.store.projects.get(importedId).mainFolderId, b.id); assert.deepEqual(f.store.projects.get(importedId).folders.map(value => value.id), [b.id]);
+});
+
+
+test('strict remove exposes only project UUID and metadata-only semantics', () => {
+  const request = { action: 'remove', projectId: randomUUID() };
+  assert.deepEqual(parseProjectRequest(request), request);
+  for (const projectId of ['', 'folder-id', null, 1]) assert.throws(() => parseProjectRequest({ ...request, projectId }), errorCode('INVALID_REQUEST'));
+  for (const field of ['id', 'folders', 'folderId', 'deleteFolders', 'recursive', 'force', 'permissions', 'origin', 'actorId', 'settings']) assert.throws(() => parseProjectRequest({ ...request, [field]: true }), errorCode('INVALID_REQUEST'));
+  const remove = parameterSchema.oneOf.find(value => value.properties.action.const === 'remove');
+  assert.equal(remove.additionalProperties, false); assert.deepEqual(remove.required, ['action', 'projectId']);
+  assert.deepEqual(Object.keys(remove.properties), ['action', 'projectId']); assert.equal(remove.properties.projectId.format, 'uuid');
+  assert.match(remove.properties.projectId.description, /only project metadata/u); assert.match(remove.properties.projectId.description, /remain/u);
+  const receipt = { id: request.projectId, folders: [{ id: 'folder', path: '/source' }], removedAt: 1 };
+  assert.deepEqual(projectDomain.tables.removals.valueSchema.parse(receipt), receipt);
+  assert.equal(projectDomain.tables.removals.valueSchema.safeParse({ ...receipt, title: 'Deleted title' }).success, false);
+});
+
+test('remove allows running/bound Local and managed threads and all start receipts, touching only its own metadata', async t => {
+  const f = await fixture(t); const id = randomUUID(); const created = await f.invoke({ action: 'create', id, title: 'Remove metadata', folders: [f.paths.a, f.paths.b] });
+  const local = f.actor(); local.status = 'running'; const isolated = f.actor(f.paths.checkout); isolated.status = 'running'; const unrelated = f.session(f.paths.c);
+  const row = managed(f, { projectId: id, folderId: created.project.folders[0].id, sessionIds: [isolated.id], branch: 'worktree/retained', baseRef: 'refs/retained', archived: true, protected: true });
+  const readyRequest = { action: 'start', operationId: randomUUID(), projectId: id }; await f.invoke(readyRequest);
+  const recoveryId = randomUUID(); await f.store.starts.put(recoveryId, { ...f.store.starts.get(readyRequest.operationId), id: recoveryId, requestedSessionId: recoveryId, phase: 'recovery-required' });
+  await f.registry.create(f.paths.c); await f.controller.synchronize(); const otherProject = f.controller.folderForPath(f.paths.c).projectId;
+  const sentinelPaths = [resolve(f.paths.a, 'sentinel.txt'), resolve(f.paths.b, 'sentinel.txt'), resolve(f.paths.checkout, '.git')];
+  for (const path of sentinelPaths) await writeFile(path, 'must remain byte-for-byte');
+  const headers = structuredClone([...f.headers]); const events = structuredClone([...f.sessionEvents]); const worktrees = structuredClone(f.worktrees); const starts = structuredClone([...f.store.starts.entries()]);
+  const native = f.registry.list().map(workspace => ({ id: workspace.id, path: workspace.path, title: workspace.title, sessionIds: [...workspace.sessionIds] }));
+  const other = structuredClone(f.store.projects.get(otherProject)), otherBinding = structuredClone(f.store.bindings.get(unrelated.id));
+  f.registry.delete = f.registry.removeWorkspace = () => assert.fail('native workspace deletion is forbidden'); f.services.sessionController.removeSession = () => assert.fail('session deletion is forbidden');
+  const count = f.calls.length; const request = { action: 'remove', projectId: id };
+  const expected = { removed: true, projectId: id, scope: 'project-metadata' };
+  assert.deepEqual(await f.invoke(request), expected); assert.deepEqual(await f.invoke(request), expected);
+  assert.equal(f.calls.length, count, 'remove needs no native or session services');
+  const receipt = f.store.removals.get(id); assert.deepEqual(Object.keys(receipt), ['id', 'folders', 'removedAt']); assert.deepEqual(receipt.folders, created.project.folders.map(({ id, path }) => ({ id, path })));
+  assert.equal(f.store.projects.get(id), undefined); assert.ok(![...f.store.bindings.entries()].some(([, binding]) => binding.projectId === id));
+  assert.equal(f.controller.bindingFor(local.id), undefined); assert.equal(f.controller.bindingFor(isolated.id), undefined); assert.equal(f.controller.selectionForWorktree(row.id), undefined);
+  assert.throws(() => f.controller.resolveFolder(id), errorCode('PROJECT_FOLDER_NOT_FOUND'));
+  assert.deepEqual(await f.invoke({ action: 'list', projectId: id }), { projects: [], bindings: [], records: [] });
+  assert.deepEqual(f.headers.size, headers.length); assert.deepEqual([...f.headers], headers); assert.deepEqual([...f.sessionEvents], events); assert.deepEqual(f.worktrees, worktrees); assert.deepEqual([...f.store.starts.entries()], starts);
+  assert.deepEqual(f.registry.list().map(workspace => ({ id: workspace.id, path: workspace.path, title: workspace.title, sessionIds: [...workspace.sessionIds] })), native);
+  assert.deepEqual(f.store.projects.get(otherProject), other); assert.deepEqual(f.store.bindings.get(unrelated.id), otherBinding);
+  for (const path of sentinelPaths) assert.equal(await readFile(path, 'utf8'), 'must remain byte-for-byte');
+  assert.equal(local.status, 'running'); assert.equal(isolated.status, 'running');
+  await assert.rejects(f.invoke({ action: 'remove', projectId: randomUUID() }), errorCode('PROJECT_NOT_FOUND'));
+});
+
+test('tombstone-first interrupted cleanup masks membership immediately and replay or restart completes each crash boundary', async t => {
+  for (const boundary of ['project', 'first-binding', 'second-binding']) await t.test(boundary, async t => {
+    const f = await fixture(t); const id = randomUUID(); const created = await f.invoke({ action: 'create', id, title: 'Interrupted', folders: [f.paths.a] });
+    const first = f.session(f.paths.a), second = f.session(f.paths.a), isolated = f.session(f.paths.checkout); const row = managed(f, { projectId: id, folderId: created.project.mainFolderId, sessionIds: [isolated.id] });
+    await f.controller.synchronize(); const projectsDelete = f.store.projects.delete, bindingsDelete = f.store.bindings.delete; let deletes = 0;
+    if (boundary === 'project') f.store.projects.delete = async () => { throw Error('project deletion interrupted'); };
+    else f.store.bindings.delete = async key => { if (++deletes === (boundary === 'first-binding' ? 1 : 2)) throw Error('binding deletion interrupted'); return bindingsDelete(key); };
+    await assert.rejects(f.invoke({ action: 'remove', projectId: id }), /deletion interrupted/u);
+    assert.ok(f.store.removals.get(id)); assert.deepEqual(f.controller.records(), []); assert.equal(f.controller.folderForPath(f.paths.a), undefined);
+    for (const thread of [first, second, isolated]) assert.equal(f.controller.bindingFor(thread.id), undefined);
+    assert.equal(f.controller.selectionForWorktree(row.id), undefined); assert.throws(() => f.controller.resolveFolder(id), errorCode('PROJECT_FOLDER_NOT_FOUND'));
+    f.store.projects.delete = projectsDelete; f.store.bindings.delete = bindingsDelete;
+    if (boundary === 'first-binding') {
+      assert.deepEqual(await f.invoke({ action: 'remove', projectId: id }), { removed: true, projectId: id, scope: 'project-metadata' });
+    } else {
+      const persisted = Object.fromEntries(Object.keys(projectDomain.tables).map(name => [name, [...f.store[name].entries()]])); await f.controller.close();
+      const store = Object.fromEntries(Object.keys(projectDomain.tables).map(name => [name, table(projectDomain.tables[name].valueSchema, persisted[name])]));
+      const restarted = new ProjectController(f.owner, store, { records: () => f.worktrees }, f.dependencies); t.after(() => restarted.close());
+      await restarted.synchronize(); assert.deepEqual(await restarted.execute({ action: 'list' }, f.invocation), { projects: [], bindings: [], records: [row] });
+      assert.equal(store.projects.get(id), undefined); assert.equal([...store.bindings.entries()].length, 0);
+      assert.deepEqual(await restarted.execute({ action: 'remove', projectId: id }, f.invocation), { removed: true, projectId: id, scope: 'project-metadata' });
+    }
+  });
+});
+
+test('failed receipt write leaves project/bindings untouched; cancellation and exact caller/plan guards remain fail closed', async t => {
+  const f = await fixture(t); const id = randomUUID(); await f.invoke({ action: 'create', id, title: 'Guarded', folders: [f.paths.a] }); const actor = f.actor(); await f.controller.synchronize();
+  const request = { action: 'remove', projectId: id }; const invocation = { ...f.invocation, agent: actor, origin: 'tool' };
+  const before = structuredClone([...f.store.projects.entries()]), bindings = structuredClone([...f.store.bindings.entries()]);
+  const put = f.store.removals.put; f.store.removals.put = async () => { throw Error('storage before commit'); };
+  await assert.rejects(f.controller.execute(request, invocation), /storage before commit/u); assert.deepEqual([...f.store.projects.entries()], before); assert.deepEqual([...f.store.bindings.entries()], bindings); assert.equal(f.store.removals.map.size, 0);
+  f.store.removals.put = put;
+  for (const origin of ['tool', 'command']) await assert.rejects(f.controller.execute(request, { ...f.invocation, origin }), errorCode('NO_CALLER'));
+  await assert.rejects(f.controller.execute(request, { ...invocation, agent: { ...actor } }), errorCode('SESSION_CHANGED'));
+  const child = f.actor(f.paths.a, 'subagent'); await assert.rejects(f.controller.execute(request, { ...invocation, agent: child }), errorCode('SUBAGENT_SOURCE'));
+  for (const state of [{ active: true, pending: false }, { active: false, pending: true }]) { f.plans.set(actor.id, state); await assert.rejects(f.controller.execute(request, invocation), errorCode('PLAN_MODE')); }
+  f.plans.set(actor.id, { active: false, pending: false }); const early = new AbortController(); early.abort(); await assert.rejects(f.controller.execute(request, { ...invocation, signal: early.signal }), errorCode('CANCELLED')); assert.equal(f.store.removals.map.size, 0);
+  const committed = new AbortController(); f.store.removals.put = async (...args) => { await put(...args); committed.abort(); };
+  await assert.rejects(f.controller.execute(request, { ...invocation, signal: committed.signal }), errorCode('CANCELLED')); assert.equal(f.store.projects.get(id), undefined); assert.equal(f.store.bindings.map.size, 0); const receipt = structuredClone(f.store.removals.get(id));
+  f.store.removals.put = async () => assert.fail('replay must not replace receipt');
+  f.plans.set(actor.id, { active: true }); await assert.rejects(f.controller.execute(request, invocation), errorCode('PLAN_MODE'));
+  assert.deepEqual(await f.controller.execute(request, { ...invocation, origin: 'command' }), { removed: true, projectId: id, scope: 'project-metadata' }); assert.deepEqual(f.store.removals.get(id), receipt);
+});
+
+test('durable removal suppresses list/restart/ensureFolder imports, permits fresh UUID adoption and makes stale remove harmless', async t => {
+  const f = await fixture(t); const id = randomUUID(); const created = await f.invoke({ action: 'create', id, title: 'Retain folders', folders: [f.paths.a, f.paths.b] }); const local = f.session(f.paths.a), isolated = f.session(f.paths.checkout);
+  const row = managed(f, { projectId: id, folderId: created.project.folders[0].id, sessionIds: [isolated.id] }); await f.controller.synchronize();
+  await f.invoke({ action: 'remove', projectId: id }); const count = f.calls.length;
+  assert.equal(await f.controller.ensureFolder(f.paths.a), undefined); assert.equal(await f.controller.ensureFolder(f.paths.b), undefined); assert.equal(f.calls.length, count);
+  const filename = resolve(f.directory, 'removed-restart.json'); await writeFile(filename, JSON.stringify(Object.fromEntries(Object.keys(projectDomain.tables).map(name => [name, [...f.store[name].entries()]])))); await f.controller.close();
+  const loaded = JSON.parse(await readFile(filename, 'utf8')); const store = Object.fromEntries(Object.keys(projectDomain.tables).map(name => [name, table(projectDomain.tables[name].valueSchema, loaded[name])]));
+  const restarted = new ProjectController(f.owner, store, { records: () => f.worktrees }, f.dependencies); t.after(() => restarted.close()); const invoke = request => restarted.execute(request, f.invocation);
+  await restarted.synchronize(); assert.deepEqual((await invoke({ action: 'list' })).projects, []); assert.equal(await restarted.ensureFolder(f.paths.a), undefined);
+  for (const removedId of [id, id.toUpperCase()]) await assert.rejects(invoke({ action: 'create', id: removedId, title: 'Recycled', folders: [f.paths.a] }), errorCode('PROJECT_REMOVED'));
+  await assert.rejects(invoke({ action: 'update', projectId: id, title: 'Unknown' }), errorCode('PROJECT_NOT_FOUND'));
+  const newId = randomUUID(); const adopted = await invoke({ action: 'create', id: newId, title: 'Explicitly re-added', folders: [f.paths.a, f.paths.b] });
+  assert.deepEqual(adopted.project.folders.map(folder => folder.id), created.project.folders.map(folder => folder.id)); assert.equal(restarted.bindingFor(local.id).projectId, newId); assert.equal(restarted.bindingFor(isolated.id).projectId, newId);
+  assert.equal(restarted.selectionForWorktree(row.id).projectId, newId); assert.equal((await restarted.ensureFolder(f.paths.a)).projectId, newId);
+  assert.deepEqual(await invoke({ action: 'remove', projectId: id }), { removed: true, projectId: id, scope: 'project-metadata' }); assert.deepEqual(store.projects.get(newId), adopted.project);
+  // Suppression is not consumed by re-add: dropping a now-unused folder cannot resurrect it.
+  await invoke({ action: 'update', projectId: newId, folders: [f.paths.a] }); await restarted.synchronize(); assert.equal(restarted.folderForPath(f.paths.b), undefined); assert.equal(await restarted.ensureFolder(f.paths.b), undefined);
+  assert.equal(store.removals.get(id).folders.length, 2); assert.deepEqual(f.worktrees, [row]); assert.equal(f.headers.get(local.id).cwd, f.paths.a);
+});
+
+test('receipt commit still finishes metadata cleanup when actual caller or plan changes, and preserves exact request UUID', async t => {
+  for (const change of ['caller', 'plan']) await t.test(change, async t => {
+    const f = await fixture(t); const id = randomUUID().toUpperCase(); await f.invoke({ action: 'create', id, title: 'Exact UUID', folders: [f.paths.a] }); const actor = f.actor(); await f.controller.synchronize();
+    f.policy.set(actor.id, 'read-only'); const invocation = { ...f.invocation, origin: 'tool', agent: actor }; const request = { action: 'remove', projectId: id };
+    const put = f.store.removals.put; f.store.removals.put = async (...args) => { await put(...args); if (change === 'caller') f.actors.delete(actor.id); else f.plans.set(actor.id, { active: false, pending: true }); };
+    await assert.rejects(f.controller.execute(request, invocation), errorCode(change === 'caller' ? 'SESSION_CHANGED' : 'PLAN_MODE'));
+    assert.equal(f.store.projects.get(id), undefined); assert.equal(f.store.bindings.map.size, 0); const receipt = structuredClone(f.store.removals.get(id));
+    f.actors.set(actor.id, actor); f.plans.set(actor.id, { active: false, pending: false }); f.store.removals.put = async () => assert.fail('stale retry cannot replace a receipt');
+    assert.deepEqual(await f.controller.execute(request, invocation), { removed: true, projectId: id, scope: 'project-metadata' }); assert.deepEqual(f.store.removals.get(id), receipt); assert.equal(f.policy.get(actor.id), 'read-only');
+  });
 });

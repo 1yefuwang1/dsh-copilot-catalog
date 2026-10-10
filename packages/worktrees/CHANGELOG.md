@@ -1,6 +1,46 @@
 # dsh-worktrees changelog
 
-## 0.2.9 — Unreleased
+## 0.2.13 — Unreleased
+
+- Match Projects working-session markers to native Folder view: a neutral 14px
+  SVG ring with synchronized 1.5s rotation/breathing and reduced-motion support.
+- Use native-sized solid pending/completion dots and preserve pending/activity/
+  completion priority, blank/archive suppression and idle extension decorations.
+- Keep activity state distinct from permanent worktree backing. No core changes.
+
+## 0.2.12 — Compact sidebar toolbar
+
+- Replace the always-visible search field and archive dropdown with a compact
+  Projects toolbar: Search, View options and Add project icons match Folder view.
+- Reveal and focus inline search on request; Escape/Close clears the filter and
+  restores trigger focus. Keep archive choices in an owned keyboard-accessible
+  popover, without changing project management, sessions or native editor state.
+
+## 0.2.11 — Native sidebar alignment
+
+- Match Projects sidebar typography and row spacing to the native Folder view,
+  with the same open/closed workspace-folder artwork instead of text glyphs.
+- Show localized session last-active times and an absolute-date tooltip using
+  the native relative-time buckets, with hover/focus actions replacing the time.
+- Use counted Show X more sessions labels and the native 12px overflow style;
+  count only actually hidden rows while preserving running/current sessions.
+- Retain permanent worktree indicators, native row extensions and metadata-only
+  project management. No core changes or background date/Git polling.
+
+## 0.2.10 — Metadata-only project removal
+
+- Add Remove project to Manage project, with a metadata-only confirmation that
+  keeps source folders, files, conversations and managed worktrees intact.
+- Persist removal receipts before cleanup; prevent folder auto-import from
+  recreating removed projects on refresh, restart or ordinary worktree use.
+  Explicit re-add uses a fresh project UUID and retains native folder identities.
+- Keep removed projects' conversations accessible under Other threads and Folder
+  view, with truthful managed-worktree icons, branches and execution paths.
+- Share Save/Remove single-flight admission, preserve refused editor drafts, and
+  fence stale reads and ownership-sensitive New intents without Local fallback.
+- Retain native workspaces, sessions, start receipts and Git data. No core changes.
+
+## 0.2.9 — Git-aware conversation options
 
 - Offer New worktree/remote-branch controls only after the actual blank target
   passes a read-only local Git status check and has a configured remote. Plain

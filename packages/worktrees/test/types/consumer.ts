@@ -1,5 +1,5 @@
 import { Config, apply, GitOperations as RootGitOperations, WorktreeError, ProjectController as RootProjectController, type WorktreeConfig as RootConfig, type CommandEnvelope, type ProjectRecord as RootProjectRecord } from 'dsh-worktrees';
-import { ProjectController, parseProjectRequest, projectParameterSchema, resolveMainFolder, type ProjectRequest, type ProjectThreadBinding, type ProjectSnapshot, type ProjectStartResult } from 'dsh-worktrees/projects';
+import { ProjectController, parseProjectRequest, projectParameterSchema, resolveMainFolder, type ProjectRequest, type ProjectThreadBinding, type ProjectSnapshot, type ProjectStartResult, type ProjectRemoveResult } from 'dsh-worktrees/projects';
 import { GitOperations } from 'dsh-worktrees/git';
 import { NAMING_DEFAULTS, namingConfig, safeSlug } from 'dsh-worktrees/naming';
 import type { WorktreeConfig, GitExecutor, GitRunSpec, GitRunResult, RepositoryInfo, RemoteBranches, CheckoutState, CreateCheckoutInput, CreatedCheckout, SnapshotInput, WorktreePreview, WorktreeRecord, SessionSettings, SessionResult, WorktreeRequest, WorktreeAction, OperationRecord, OperationPhase } from 'dsh-worktrees/types';
@@ -47,6 +47,12 @@ const projectControllerClass: typeof RootProjectController = ProjectController;
 const projectQuery: ProjectRequest = { action: 'list', projectId: projectRecord.id };
 const projectStart: ProjectRequest = { action: 'start', operationId: operation.id, projectId: projectRecord.id, folderId: projectRecord.folders[0]!.id };
 const defaultProjectStart: ProjectRequest = { action: 'start', operationId: operation.id, projectId: projectRecord.id };
+const projectRemove: ProjectRequest = { action: 'remove', projectId: projectRecord.id };
+const removedProject: ProjectRemoveResult = { removed: true, projectId: projectRecord.id, scope: 'project-metadata' };
+const ensuredFolder: ReturnType<ProjectController['ensureFolder']> = Promise.resolve(undefined);
+// @ts-expect-error removal never accepts folder deletion flags
+const invalidRemoval: ProjectRequest = { action: 'remove', projectId: projectRecord.id, deleteFolders: true };
+void [projectRemove, removedProject, ensuredFolder, invalidRemoval];
 const projectMainUpdate: ProjectRequest = { action: 'update', projectId: projectRecord.id, mainFolder: projectRecord.folders[0]!.path };
 const projectMainCreate: ProjectRequest = { action: 'create', id: projectRecord.id, title: projectRecord.title, folders: projectRecord.folders.map(folder => folder.path), mainFolder: projectRecord.folders[0]!.path };
 const legacyProject: RootProjectRecord = { id: projectRecord.id, title: projectRecord.title, folders: projectRecord.folders, createdAt: 1, updatedAt: 1 };

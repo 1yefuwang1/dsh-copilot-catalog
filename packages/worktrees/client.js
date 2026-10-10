@@ -10,8 +10,12 @@ window.__ModuleLoader__.load({
     const NS = 'worktrees.ui';
     const PANEL = 'dsh-worktrees';
     const en = {
-      projects: 'Projects', folderView: 'Folder view', newProject: 'New project', editProject: 'Manage project', projectName: 'Project name', project: 'Project', folders: 'Folders', folder: 'Folder', addFolder: 'Add folder', chooseDirectory: 'Choose directory', browse: 'Browse folders', absolutePath: 'Absolute Host directory path', save: 'Save', newThread: 'New thread', threadMode: 'Thread mode', threadActions: 'Thread actions', threadDetails: 'Thread details', unassigned: 'Other threads', showMore: 'Show more', showLess: 'Show less', filterThreads: 'Search threads or projects', allThreads: 'All threads', archivedOnly: 'Archived only', hideArchived: 'Hide archived', untitled: 'Untitled', blankThread: 'New thread', collapse: 'Collapse project', expand: 'Expand project', waiting: 'Waiting for interaction', done: 'Finished, not yet viewed', localThread: 'Local thread', worktreeThread: 'Worktree thread', draftWarning: 'This draft contains text or attachments. Keep it in this thread before choosing another project or folder.', chooseFolder: 'Choose a folder', createFolder: 'Create folder', folderName: 'Folder name', chooseThisFolder: 'Use this folder', noProjects: 'Add a project to organize your threads.',
+      searchProjects: 'Search projects and sessions', closeSearch: 'Close search', viewOptions: 'View options',
+      'time.now': 'now', 'time.minutes': '{n}min', 'time.hours': '{n}h', 'time.days': '{n}d', 'time.months': '{n}mo', 'time.years': '{n}y', 'date.ymd': '{y}-{m}-{d}', lastActive: 'Last active {time}',
+      projects: 'Projects', folderView: 'Folder view', newProject: 'New project', editProject: 'Manage project', projectName: 'Project name', project: 'Project', folders: 'Folders', folder: 'Folder', addFolder: 'Add folder', chooseDirectory: 'Choose directory', browse: 'Browse folders', absolutePath: 'Absolute Host directory path', save: 'Save', newThread: 'New thread', threadMode: 'Thread mode', threadActions: 'Thread actions', threadDetails: 'Thread details', unassigned: 'Other threads', showMore: 'Show {n} more sessions', showLess: 'Show less', filterThreads: 'Search threads or projects', allThreads: 'All threads', archivedOnly: 'Archived only', hideArchived: 'Hide archived', untitled: 'Untitled', blankThread: 'New thread', collapse: 'Collapse project', expand: 'Expand project', waiting: 'Waiting for interaction', done: 'Finished, not yet viewed', localThread: 'Local thread', worktreeThread: 'Worktree thread', draftWarning: 'This draft contains text or attachments. Keep it in this thread before choosing another project or folder.', chooseFolder: 'Choose a folder', createFolder: 'Create folder', folderName: 'Folder name', chooseThisFolder: 'Use this folder', noProjects: 'Add a project to organize your threads.',
       repoUnavailable: 'Worktree mode is unavailable or unverified for this folder. Choose Local to continue.',
+      projectChanged: 'The project or selected folder changed. Choose Local or keep the current folder before selecting New worktree again.', keepCurrentFolder: 'Keep current folder',
+      removeProject: 'Remove project', removeProjectConfirm: 'Remove this project?', removeProjectHelp: 'Only the project metadata will be removed. All folders, files, conversations and worktrees will be kept. Conversations remain available under Other threads and in Folder view.',
       mainFolder: 'Main folder', main: 'Main', chooseMainFolder: 'Select the main folder', mainFolderRequired: 'Choose a main folder from the project source folders.', mainFolderHelp: 'Default for new conversations. You can choose another folder before sending.', conversationFolder: 'Conversation folder',
       createProject: 'Create project', sourceFolders: 'Source folders', localFolders: 'Add a folder on this computer', enterFolderPath: 'Enter a folder path', add: 'Add', cancel: 'Cancel', selectedFolders: 'Selected folders', selectFolder: 'Select folder', folderLimit: 'A project can contain at most 32 folders.', invalidFolder: 'Enter a valid absolute Host folder path.', alreadyAdded: 'Already added', multiFolderHelp: 'Select multiple folders using the checkboxes. Selections are kept as you browse.', hostFolderHelp: 'Folders are on the Host computer; adding them does not move files.', noSubfolders: 'No subfolders.', directoryTruncated: 'This listing is truncated. Enter a path to browse other folders.',
       rootFolder: 'Worktree root folder', rootSummary: 'Choose where new worktrees are created.', rootHelp: 'Absolute folder path on the Host, outside your source repositories. Changes apply to new worktrees only; existing directories and in-flight creates are not moved.', rootReset: 'Reset to inherited default', rootSaved: 'Saved. New worktrees will use this location.', rootUnavailable: 'Host-backed settings are unavailable for this entry.', rootInvalid: 'Enter a valid absolute Host folder path.', rootConflict: 'The setting changed or the Host refused the write. Your draft is preserved; reopen this page to read the latest value.',
@@ -40,8 +44,12 @@ window.__ModuleLoader__.load({
       idle: 'Idle', busy: 'Busy', recovery: 'Recovery required', settings: 'Repository settings changed. Check the created worktree before continuing.',
     };
     const zh = { ...en,
-      projects: '项目', folderView: '文件夹视图', newProject: '新建项目', editProject: '管理项目', projectName: '项目名称', project: '项目', folders: '文件夹', folder: '文件夹', addFolder: '添加文件夹', chooseDirectory: '选择目录', browse: '浏览文件夹', absolutePath: '主机绝对目录路径', save: '保存', newThread: '新建对话', threadMode: '对话模式', threadActions: '对话操作', threadDetails: '对话详情', unassigned: '其他对话', showMore: '显示更多', showLess: '收起', filterThreads: '搜索对话或项目', allThreads: '所有对话', archivedOnly: '仅已归档', hideArchived: '隐藏已归档', untitled: '未命名', blankThread: '新对话', collapse: '收起项目', expand: '展开项目', waiting: '等待交互', done: '已完成，尚未查看', localThread: '本地对话', worktreeThread: '工作树对话', draftWarning: '此草稿包含文字或附件。请先保留当前对话，再选择其他项目或文件夹。', chooseFolder: '选择文件夹', createFolder: '创建文件夹', folderName: '文件夹名称', chooseThisFolder: '使用此文件夹', noProjects: '添加项目以组织您的对话。',
+      searchProjects: '搜索项目和会话', closeSearch: '关闭搜索', viewOptions: '视图选项',
+      'time.now': '刚刚', 'time.minutes': '{n}分钟', 'time.hours': '{n}小时', 'time.days': '{n}天', 'time.months': '{n}个月', 'time.years': '{n}年', 'date.ymd': '{y}年{m}月{d}日', lastActive: '最后活跃于 {time}',
+      projects: '项目', folderView: '文件夹视图', newProject: '新建项目', editProject: '管理项目', projectName: '项目名称', project: '项目', folders: '文件夹', folder: '文件夹', addFolder: '添加文件夹', chooseDirectory: '选择目录', browse: '浏览文件夹', absolutePath: '主机绝对目录路径', save: '保存', newThread: '新建对话', threadMode: '对话模式', threadActions: '对话操作', threadDetails: '对话详情', unassigned: '其他对话', showMore: '展开其余 {n} 个会话', showLess: '收起', filterThreads: '搜索对话或项目', allThreads: '所有对话', archivedOnly: '仅已归档', hideArchived: '隐藏已归档', untitled: '未命名', blankThread: '新对话', collapse: '收起项目', expand: '展开项目', waiting: '等待交互', done: '已完成，尚未查看', localThread: '本地对话', worktreeThread: '工作树对话', draftWarning: '此草稿包含文字或附件。请先保留当前对话，再选择其他项目或文件夹。', chooseFolder: '选择文件夹', createFolder: '创建文件夹', folderName: '文件夹名称', chooseThisFolder: '使用此文件夹', noProjects: '添加项目以组织您的对话。',
       repoUnavailable: '此文件夹的工作树模式不可用或尚未验证，请选择本地模式继续。',
+      projectChanged: '项目或选定文件夹已更改，请先选择本地模式或保留当前文件夹，再重新选择新建工作树。', keepCurrentFolder: '保留当前文件夹',
+      removeProject: '移除项目', removeProjectConfirm: '移除此项目？', removeProjectHelp: '仅移除项目元数据，所有文件夹、文件、对话和工作树都会保留。对话仍可在“其他对话”和“文件夹视图”中访问。',
       mainFolder: '主文件夹', main: '主目录', chooseMainFolder: '选择主文件夹', mainFolderRequired: '请从项目源文件夹中选择一个主文件夹。', mainFolderHelp: '新对话默认使用此文件夹，发送前仍可选择其他文件夹。', conversationFolder: '对话文件夹',
       createProject: '创建项目', sourceFolders: '源文件夹', localFolders: '添加此计算机上的文件夹', enterFolderPath: '输入文件夹路径', add: '添加', cancel: '取消', selectedFolders: '已选文件夹', selectFolder: '选择文件夹', folderLimit: '一个项目最多可包含 32 个文件夹。', invalidFolder: '请输入有效的主机绝对文件夹路径。', alreadyAdded: '已添加', multiFolderHelp: '使用复选框选择多个文件夹，浏览其他目录时会保留已选项。', hostFolderHelp: '文件夹位于主机计算机上；添加不会移动文件。', noSubfolders: '没有子文件夹。', directoryTruncated: '目录列表已截断，请输入路径浏览其他文件夹。',
       rootFolder: '工作树根目录', rootSummary: '选择新工作树的创建位置。', rootHelp: '主机上的绝对目录路径，需位于源仓库之外。仅影响新工作树，已有目录和进行中的创建不会移动。', rootReset: '恢复继承的默认值', rootSaved: '已保存，新工作树将使用此位置。', rootUnavailable: '此条目的主机设置不可用。', rootInvalid: '请输入有效的主机绝对目录路径。', rootConflict: '设置已更改或主机拒绝了保存，草稿已保留。请重新打开页面读取最新值。',
@@ -88,11 +96,25 @@ window.__ModuleLoader__.load({
 .dsh-wt-project-dialog .dsh-wt-source-select{border:0;background:transparent;max-width:100%;font-size:13px;text-align:center;color:var(--dsw-alias-label-secondary);padding:0 6px}.dsh-wt-project-dialog .dsh-wt-add-pill{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:2px 10px;min-height:26px;border:0;border-radius:999px;background:var(--dsw-alias-bg-layer-2);font-size:13px}.dsh-wt-project-dialog .dsh-wt-add-pill:hover:not(:disabled){background:var(--dsw-alias-bg-overlay)}
 .dsh-wt-source-list{list-style:none;padding:0!important;margin:0!important;max-height:208px;overflow:auto}.dsh-wt-source-list li{display:flex;align-items:center;gap:10px;padding:10px 12px}.dsh-wt-source-list li+li{border-top:1px solid var(--dsw-alias-border-l1)}.dsh-wt-source-list svg{flex-shrink:0;color:var(--dsw-alias-label-secondary)}.dsh-wt-source-info{display:flex;flex-direction:column;flex:1;min-width:0}.dsh-wt-source-info>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dsh-wt-source-path{color:var(--dsw-alias-label-secondary);font-size:12px}.dsh-wt-project-dialog .dsh-wt-source-remove{border:0;padding:0;width:28px;min-height:28px;color:var(--dsw-alias-label-secondary);flex-shrink:0}
 .dsh-wt-project-path{width:100%;display:flex;gap:8px!important;flex-wrap:nowrap!important}.dsh-wt-project-path input{flex:1;min-width:0}.dsh-wt-project-footer{display:flex;justify-content:flex-end;align-items:center;gap:12px;margin-top:32px}.dsh-wt-project-dialog .dsh-wt-cancel{border:0;color:var(--dsw-alias-label-secondary)}.dsh-wt-project-dialog .dsh-wt-confirm{border:0;border-radius:10px;padding:6px 18px;min-height:32px;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-1);font-size:13px}.dsh-wt-project-dialog .dsh-wt-confirm:hover:not(:disabled){background:var(--dsw-alias-label-secondary)}
+.dsh-wt-project-dialog .dsh-wt-remove-project{margin-right:auto;border:0;color:var(--dsw-alias-state-error-primary);font-size:13px}.dsh-wt-project-dialog .dsh-wt-danger{border-color:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary)}
 .dsh-wt-project-dialog .dsh-wt-main-folder{display:flex;flex-direction:column;align-items:stretch;gap:6px;margin-top:12px;font-size:13px}.dsh-wt-main-folder select{width:100%;min-width:0;border-color:var(--dsw-alias-border-l2)}.dsh-wt-main-folder small{color:var(--dsw-alias-label-secondary);font-size:12px}.dsh-wt-create-controls .dsh-wt-conversation-folder{max-width:180px}
 .dsh-wt-folder-picker{width:min(640px,calc(100vw - 32px))}.dsh-wt-picker-path{display:flex;gap:8px;align-items:flex-end}.dsh-wt-picker-path label{flex:1;min-width:0}.dsh-wt-picker-crumbs{margin:12px 0;gap:4px}.dsh-wt-picker-entries{list-style:none;padding:0;margin:8px 0;max-height:240px;overflow:auto}.dsh-wt-picker-entries li,.dsh-wt-picker-current{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px}.dsh-wt-picker-entries li:hover{background:var(--dsw-alias-bg-layer-2)}.dsh-wt-picker-check{flex-shrink:0}.dsh-wt-picker-check input{accent-color:var(--dsw-alias-brand-primary)}.dsh-wt-picker-entries .dsh-wt-picker-open{border:0;flex:1;min-width:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dsh-wt-picker-current{border:1px solid var(--dsw-alias-border-l1)}.dsh-wt-picker-selected{margin-top:12px}.dsh-wt-picker-selected .dsh-wt-source-list{max-height:128px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px}.dsh-wt-picker-selected h3{font-size:13px}.dsh-wt-picker-create{margin-top:12px}.dsh-wt-picker-create summary{cursor:pointer;color:var(--dsw-alias-label-secondary);font-size:13px}.dsh-wt-picker-create form{display:flex;align-items:flex-end;gap:8px;margin-top:8px}
 .dsh-wt-progress{padding:10px 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1);font-size:12px}.dsh-wt-progress ol{margin:8px 0;padding-left:18px;display:flex;flex-direction:column;gap:5px}.dsh-wt-progress li{color:var(--dsw-alias-label-secondary)}.dsh-wt-progress li[data-active=true]{font-weight:600;color:var(--dsw-alias-label-primary)}
 .dsh-wt-create-controls{position:relative;font-size:12px}.dsh-wt-create-controls select{max-width:160px;min-height:28px}.dsh-wt-base-options{position:absolute;bottom:calc(100% + 8px);left:0;z-index:20;min-width:240px;max-width:360px;padding:12px;display:flex;flex-direction:column;gap:8px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-overlay)}.dsh-wt-create-error{max-width:360px;font-size:12px;color:var(--dsw-alias-state-error-primary)}
 .dsh-wt-projects{min-height:0;display:flex;flex-direction:column;gap:6px;padding:8px;width:100%;box-sizing:border-box;font-size:13px}.dsh-wt-projects-header{display:flex;align-items:center;justify-content:space-between;padding:4px}.dsh-wt-project-list{min-height:0;overflow:auto}.dsh-wt-project-head{display:flex;align-items:center;gap:4px;margin-top:8px}.dsh-wt-project-head>button:first-child{flex:1;min-width:0;text-align:left;display:flex;align-items:center;gap:7px}.dsh-wt-projects button{border:0;padding:4px 6px}.dsh-wt-project-title,.dsh-wt-thread-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.dsh-wt-project-title{font-weight:600}.dsh-wt-thread{border-radius:7px;position:relative}.dsh-wt-thread[aria-selected=true]{background:var(--dsw-alias-interactive-bg-hover)}.dsh-wt-thread-main{display:flex;align-items:center;gap:5px;min-height:32px;padding-left:12px}.dsh-wt-thread-main>button:first-child{display:flex;align-items:center;gap:6px;flex:1;min-width:0;text-align:left}.dsh-wt-thread-title{flex:1}.dsh-wt-thread-main:hover .dsh-wt-thread-title{overflow:auto;text-overflow:clip}.dsh-wt-thread-actions{display:flex;align-items:center;opacity:0}.dsh-wt-thread:is(:hover,:focus-within) .dsh-wt-thread-actions{opacity:1}.dsh-wt-thread-actions button{min-width:24px}.dsh-wt-thread-leading{width:16px;display:inline-flex;flex-shrink:0}.dsh-wt-thread-status{font-size:11px;color:var(--dsw-alias-state-business-primary)}.dsh-wt-thread-pending{color:var(--dsw-alias-state-warning-primary)}.dsh-wt-thread-archived{opacity:.65}.dsh-wt-branch-chip{display:inline-flex;align-items:center;justify-content:center;width:16px;flex-shrink:0;color:var(--dsw-alias-label-secondary)}.dsh-wt-thread-hover{padding:8px;border:1px solid var(--dsw-alias-border-l3);border-radius:6px;background:var(--dsw-alias-bg-layer-2)}.dsh-wt-project-menu{display:flex;flex-direction:column;align-items:stretch}.dsh-wt-project-menu button{text-align:left}.dsh-wt-project-picker{display:flex;align-items:center;gap:4px;max-width:100%}.dsh-wt-project-picker select{max-width:190px}.dsh-wt-folder-list{padding:0;list-style:none}.dsh-wt-folder-list li{display:flex;align-items:center;gap:8px;padding:4px 0;overflow-wrap:anywhere}.dsh-wt-folder-list code{flex:1}.dsh-wt-folder-browser{max-height:45vh;overflow:auto}.dsh-wt-folder-browser button{display:block;width:100%;text-align:left}.dsh-wt-dialog::backdrop{background:var(--dsw-alias-bg-mask-1)}.dsh-wt-details{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px}.dsh-wt-details dd{margin:0;overflow-wrap:anywhere}
+/* Sidebar cell metrics follow the native Folder view; dialogs keep their own rules. */
+.dsh-wt-projects{font-family:inherit;font-size:14px;font-weight:400;line-height:20px;gap:4px}.dsh-wt-projects-header{height:36px;box-sizing:border-box;padding:0 4px;margin:2px 0 4px;color:var(--dsw-alias-label-secondary)}.dsh-wt-projects-header strong{font-weight:inherit}.dsh-wt-projects-header>button{width:28px;height:28px;min-height:28px;padding:0}.dsh-wt-project-list{padding-bottom:16px}.dsh-wt-project-group+.dsh-wt-project-group{margin-top:4px}
+.dsh-wt-project-head{height:34px;box-sizing:border-box;padding:0 8px;gap:6px;margin-top:2px;border-radius:8px}.dsh-wt-project-head:hover{background:var(--dsw-alias-interactive-bg-hover)}.dsh-wt-project-head>button:first-child{height:34px;min-height:34px;gap:6px;padding:0;background:transparent}.dsh-wt-project-title{font-size:14px;line-height:20px;font-weight:inherit}.dsh-wt-project-glyph{display:inline-flex;align-items:center;justify-content:center;width:16px;height:20px;flex:none;color:var(--dsw-alias-label-secondary)}.dsh-wt-project-chevron{display:none;font-size:14px}.dsh-wt-project-head:is(:hover,:focus-within) .dsh-wt-project-folder{display:none}.dsh-wt-project-head:is(:hover,:focus-within) .dsh-wt-project-chevron{display:inline-flex}
+.dsh-wt-project-head-actions,.dsh-wt-thread-actions{display:inline-flex;align-items:center;gap:10px;max-width:0;height:20px;flex:none;overflow:hidden;opacity:0;pointer-events:none}.dsh-wt-project-head:is(:hover,:focus-within) .dsh-wt-project-head-actions,.dsh-wt-thread:is(:hover,:focus-within) .dsh-wt-thread-actions,.dsh-wt-thread[data-menu-open=true] .dsh-wt-thread-actions{max-width:none;overflow:visible;opacity:1;pointer-events:auto}.dsh-wt-project-head-actions button,.dsh-wt-thread-actions button{min-width:16px;width:16px;min-height:16px;height:16px;padding:0;color:var(--dsw-alias-label-secondary)}
+.dsh-wt-thread{margin-top:2px;border-radius:8px}.dsh-wt-thread:hover,.dsh-wt-thread[data-menu-open=true]{background:var(--dsw-alias-interactive-bg-hover)}.dsh-wt-thread-main{height:32px;min-height:32px;padding:0 8px;gap:0;box-sizing:border-box}.dsh-wt-thread-main>button:first-child{height:32px;min-height:32px;padding:0;gap:0;font-size:14px;line-height:20px;font-weight:inherit;background:transparent}.dsh-wt-thread-title{margin:0 6px 0 4px;font-size:14px;line-height:20px}.dsh-wt-thread-leading{height:20px;align-items:center;justify-content:center;flex:none}.dsh-wt-branch-chip{margin-right:6px}.dsh-wt-thread-pin{margin-left:6px}.dsh-wt-thread-time{flex:none;font-size:10px;line-height:16px;color:var(--dsw-alias-label-secondary)}.dsh-wt-thread:is(:hover,:focus-within) .dsh-wt-thread-time,.dsh-wt-thread:is(:hover,:focus-within) .dsh-wt-thread-pin,.dsh-wt-thread[data-menu-open=true] .dsh-wt-thread-time,.dsh-wt-thread[data-menu-open=true] .dsh-wt-thread-pin{display:none}
+.dsh-wt-projects .dsh-wt-session-overflow{display:block;width:100%;height:28px;min-height:28px;margin-top:0;padding:0 12px 0 28px;text-align:left;font-family:inherit;font-size:12px;font-weight:inherit;border:0;border-radius:0;color:var(--dsw-alias-label-secondary);background:transparent}.dsh-wt-projects .dsh-wt-session-overflow:hover:not(:disabled){background:transparent;color:var(--dsw-alias-label-primary)}
+.dsh-wt-project-toolbar{position:relative;justify-content:flex-end;gap:4px;overflow:visible}.dsh-wt-project-section-label{margin-right:auto;min-width:0;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;line-height:20px}.dsh-wt-projects .dsh-wt-toolbar-icon{display:inline-flex;align-items:center;justify-content:center;flex:none;width:28px;height:28px;min-height:28px;padding:0;border:0;border-radius:6px;color:var(--dsw-alias-label-secondary);background:transparent}.dsh-wt-projects .dsh-wt-toolbar-icon[data-active=true]{color:var(--dsw-alias-label-primary)}
+.dsh-wt-project-search{display:flex;align-items:center;flex:1;min-width:0;border:1px solid var(--dsw-alias-border-l1);border-radius:6px}.dsh-wt-project-toolbar .dsh-wt-project-search-input{flex:1;min-width:0;width:100%;max-width:none;height:28px;padding:0 6px;border:0;background:transparent;font-family:inherit;font-size:13px;line-height:20px}.dsh-wt-project-search-input::-webkit-search-cancel-button{display:none}.dsh-wt-view-options{display:flex;align-items:center;flex:none}.dsh-wt-view-menu{position:absolute;top:calc(100% + 4px);right:0;z-index:30;min-width:200px;padding:6px;display:flex;flex-direction:column;gap:2px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary)}.dsh-wt-projects .dsh-wt-view-menu button{display:flex;align-items:center;gap:8px;padding:4px 8px;text-align:left;font-size:13px;line-height:20px;white-space:nowrap}.dsh-wt-view-check{width:16px;flex:none}
+/* Native StateDot geometry and timing, owned locally rather than imported. */
+.dsh-wt-state-dot{position:relative;display:inline-block;flex:none;width:10px;height:10px}.dsh-wt-state-dot::after{content:'';position:absolute;inset:20%;border-radius:50%;background:currentColor}.dsh-wt-state-dot[data-state=warning]{color:var(--dsw-alias-state-warn-primary)}.dsh-wt-state-dot[data-state=done]{color:var(--dsw-alias-state-success-primary)}
+.dsh-wt-state-spinner{display:block;flex:none;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}.dsh-wt-state-motion{transform-origin:center;animation:dsh-wt-state-spin 1.5s linear infinite}.dsh-wt-state-track,.dsh-wt-state-arc{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}.dsh-wt-state-track{opacity:.25}.dsh-wt-state-arc{stroke-dasharray:12 150;animation:dsh-wt-state-dash 1.5s ease-in-out infinite}
+@keyframes dsh-wt-state-spin{to{transform:rotate(360deg)}}@keyframes dsh-wt-state-dash{0%{stroke-dasharray:12 150;stroke-dashoffset:0}50%{stroke-dasharray:24 150;stroke-dashoffset:-6}100%{stroke-dasharray:12 150;stroke-dashoffset:0}}
+@media(prefers-reduced-motion:reduce){.dsh-wt-state-motion,.dsh-wt-state-arc{animation:none}.dsh-wt-state-arc{stroke-dasharray:18 150;stroke-dashoffset:-3}}
 `;
     class WorktreeError extends Error {
       constructor(kind, code, message = '') { super(message); this.kind = kind; this.code = code; }
@@ -232,23 +254,31 @@ window.__ModuleLoader__.load({
       ctx.uiWorkspace.startSession(folder.id); return true;
     }
     function createProjectSubmitter(projects, projectId, id) {
-      let pending;
+      let pending, pendingAction;
+      function commit(request) {
+        Object.freeze(request.folders); Object.freeze(request);
+        const task = Promise.resolve().then(() => projects.mutate(request)); pending = task; pendingAction = request.action;
+        const clear = () => { if (pending === task) { pending = undefined; pendingAction = undefined; } }; void task.then(clear, clear);
+        return task;
+      }
+      const conflict = () => { throw new WorktreeError('busy', 'project-operation-pending'); };
       return {
         get pending() { return !!pending; },
         submit(title, folders, selectedMain) {
-          if (pending) return pending;
+          if (pending) return pendingAction === 'remove' ? conflict() : pending;
           const savedFolders = appendProjectFolders([], folders), mainFolder = draftMainFolder(savedFolders, selectedMain);
           if (savedFolders.length && !mainFolder) throw new WorktreeError('mainFolderRequired', 'main-folder-required');
-          const request = projectRequest({ ...(projectId ? { action: 'update', projectId } : { action: 'create', id }), title: title.trim(), folders: savedFolders, ...(mainFolder ? { mainFolder } : {}) });
-          Object.freeze(request.folders); Object.freeze(request);
-          const task = Promise.resolve().then(() => projects.mutate(request)); pending = task;
-          const clear = () => { if (pending === task) pending = undefined; }; void task.then(clear, clear);
-          return task;
+          return commit(projectRequest({ ...(projectId ? { action: 'update', projectId } : { action: 'create', id }), title: title.trim(), folders: savedFolders, ...(mainFolder ? { mainFolder } : {}) }));
+        },
+        remove() {
+          if (!projectId) throw new WorktreeError('decode', 'remove-requires-saved-project');
+          if (pending) return pendingAction === 'remove' ? pending : conflict();
+          return commit(projectRequest({ action: 'remove', projectId }));
         },
       };
     }
     function projectRequest(request) {
-      const keys = { list: ['action', 'projectId'], create: ['action', 'id', 'title', 'folders', 'mainFolder'], update: ['action', 'projectId', 'title', 'folders', 'mainFolder'], bind: ['action', 'projectId', 'folderId', 'sessionId'], start: ['action', 'operationId', 'projectId', 'folderId'] }[request?.action];
+      const keys = { list: ['action', 'projectId'], create: ['action', 'id', 'title', 'folders', 'mainFolder'], update: ['action', 'projectId', 'title', 'folders', 'mainFolder'], remove: ['action', 'projectId'], bind: ['action', 'projectId', 'folderId', 'sessionId'], start: ['action', 'operationId', 'projectId', 'folderId'] }[request?.action];
       const title = value => typeof value === 'string' && value.trim().length > 0 && value.length <= 120;
       const folders = value => Array.isArray(value) && value.length > 0 && value.length <= 32 && value.every(absolutePath);
       const main = value => value === undefined || (absolutePath(value) && value.length <= 4096 && !/[\u0000-\u001f\u007f]/u.test(value));
@@ -257,6 +287,7 @@ window.__ModuleLoader__.load({
       if (request?.action === 'list') valid = valid && (request.projectId === undefined || uuid(request.projectId));
       if (request?.action === 'create') valid = valid && uuid(request.id) && title(request.title) && folders(request.folders) && main(request.mainFolder);
       if (request?.action === 'update') valid = valid && uuid(request.projectId) && (request.title !== undefined || request.folders !== undefined || request.mainFolder !== undefined) && (request.title === undefined || title(request.title)) && (request.folders === undefined || folders(request.folders)) && main(request.mainFolder);
+      if (request?.action === 'remove') valid = valid && uuid(request.projectId);
       if (request?.action === 'bind') valid = valid && uuid(request.projectId) && folderId(request.folderId) && typeof request.sessionId === 'string' && !!request.sessionId;
       if (request?.action === 'start') valid = valid && uuid(request.projectId) && uuid(request.operationId) && (request.folderId === undefined || folderId(request.folderId));
       if (!valid) throw new WorktreeError('decode', 'invalid-project-request');
@@ -272,6 +303,7 @@ window.__ModuleLoader__.load({
         if (valid && data.records !== undefined) validateData({ action: 'list' }, { items: data.records });
       }
       else if (request.action === 'start') valid = data && string(data.sessionId) && binding(data.binding) && data.workspaceId === data.binding.folderId && data.binding.sessionId === data.sessionId && data.binding.projectId === request.projectId && (request.folderId === undefined || data.binding.folderId === request.folderId) && data.binding.mode === 'local';
+      else if (request.action === 'remove') valid = data && data.removed === true && data.projectId === request.projectId && data.scope === 'project-metadata' && Object.keys(data).every(key => ['removed', 'projectId', 'scope'].includes(key));
       else if (request.action === 'bind') valid = data && binding(data.binding) && data.binding.sessionId === request.sessionId && data.binding.projectId === request.projectId && data.binding.folderId === request.folderId;
       else valid = data && project(data.project) && data.project.id === (request.id || request.projectId);
       if (!valid) throw new WorktreeError('decode', 'invalid-project-' + request.action + '-data');
@@ -299,6 +331,14 @@ window.__ModuleLoader__.load({
       const folder = project?.folders.find(item => item.id === workspace?.workspaceId);
       return folder ? { project, folder, binding: { sessionId, projectId: project.id, folderId: folder.id, mode: 'local', effectiveCwd: folder.path } } : undefined;
     }
+    function projectBacking(snapshot, workspaces, sessionId) {
+      const context = projectContext(snapshot, workspaces, sessionId), workspace = workspaces.items.find(item => item.sessionIds.includes(sessionId));
+      // Actual native cwd wins over historical membership/sessionIds, including a Local handoff.
+      const effectiveCwd = workspace?.path || context?.binding.effectiveCwd || '';
+      const record = (snapshot.records || []).find(item => item.effectiveCwd === effectiveCwd);
+      const boundWorktree = context?.binding.mode === 'worktree' && context.binding.effectiveCwd === effectiveCwd;
+      return { mode: record || boundWorktree ? 'worktree' : 'local', effectiveCwd, record };
+    }
     function captureProject(context) { return context ? Object.freeze({ projectId: context.project.id, folderId: context.folder.id, path: context.folder.path }) : undefined; }
     function sameProject(before, after) { return before?.projectId === after?.projectId && before?.folderId === after?.folderId && before?.path === after?.path; }
     function projectPath(status, captured) { return captured?.path || status.projectPath || status.repository.root; }
@@ -317,15 +357,27 @@ window.__ModuleLoader__.load({
         const live = statuses.get(id);
         const children = sessions.projectionsBySession?.[id]?.values.subagentCatalog || [];
         const childRunning = children.some(child => (statuses.get(child.id)?.running ?? sessions.byId[child.id]?.running) === true);
-        const row = { id, session, title, context, archived: isArchived, pinned: !isArchived && pins.has(id), running: (live?.running ?? session.running ?? false) || childRunning, pending: live?.pendingInteraction, done: live?.completionUnread === true };
+        const row = { id, session, title, context, backing: projectBacking(metadata, workspaces, id), archived: isArchived, pinned: !isArchived && pins.has(id), running: (live?.running ?? session.running ?? false) || childRunning, pending: live?.pendingInteraction, done: live?.completionUnread === true };
         (groups.find(group => group.project.id === context?.project.id) || unassigned).rows.push(row);
       }
       for (const group of [...groups, unassigned]) group.rows.sort((a, b) => Number(b.pinned) - Number(a.pinned) || (b.session.updatedAt || 0) - (a.session.updatedAt || 0) || a.id.localeCompare(b.id));
       return [...groups.filter(group => archived !== 'only' || group.rows.length), ...(unassigned.rows.length ? [unassigned] : [])];
     }
+    function projectRowState(row) {
+      if (row.archived || row.session.blank) return 'idle';
+      return row.pending ? 'warning' : row.running ? 'ongoing' : row.done ? 'done' : 'idle';
+    }
+    function projectSessionTime(at, now, t) {
+      if (!Number.isFinite(at) || at < 0 || at > 8640000000000000 || !Number.isFinite(now)) return null;
+      const minute = 60000, hour = 3600000, day = 86400000, diff = Math.max(0, now - at);
+      const [unit, n] = diff < minute ? ['now', 0] : diff < hour ? ['minutes', Math.floor(diff / minute)] : diff < day ? ['hours', Math.floor(diff / hour)] : diff < 30 * day ? ['days', Math.floor(diff / day)] : diff < 365 * day ? ['months', Math.floor(diff / (30 * day))] : ['years', Math.floor(diff / (365 * day))];
+      const date = new Date(at), clock = String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0');
+      const absolute = t('date.ymd', { y: date.getFullYear(), m: date.getMonth() + 1, d: date.getDate() }) + ' ' + clock;
+      return { label: unit === 'now' ? t('time.now') : t('time.' + unit, { n }), dateTime: date.toISOString(), title: t('lastActive', { time: absolute }) };
+    }
     function visibleProjectRows(rows, limit, selectedId) {
       let idle = 0;
-      return rows.filter(row => row.running || row.pending || row.id === selectedId || idle++ < limit);
+      return rows.filter(row => row.session?.blank || row.running || row.pending || row.id === selectedId || idle++ < limit);
     }
     function projectActor(list) {
       const ids = Object.keys(list.byId).filter(id => (list.byId[id].retainedBy?.mainView || 0) > 0 && list.byId[id].origin !== 'subagent');
@@ -354,7 +406,7 @@ window.__ModuleLoader__.load({
         if (next !== serialized) { serialized = next; publish(data); }
       }
       async function refresh() {
-        if (disposed || ctx.connection.generation.getSnapshot() === undefined) return;
+        if (disposed || operations.size || ctx.connection.generation.getSnapshot() === undefined) return;
         refreshRequest?.abort(); refreshRequest = new AbortController(); const controller = refreshRequest, seq = ++sequence;
         publish({ loading: true, error: '' });
         try {
@@ -375,15 +427,20 @@ window.__ModuleLoader__.load({
         if (next !== generation) { generation = next; refreshRequest?.abort(); ++sequence; for (const op of operations) op.controller.abort(); if (next !== undefined) schedule(); }
       });
       async function mutate(request) {
+        if (disposed) throw new WorktreeError('cancelled', 'project-store-closed');
         const controller = new AbortController(), op = { controller }; operations.add(op);
+        // A read before or during a mutation cannot publish stale ownership.
+        refreshRequest?.abort(); ++sequence;
         try {
-          const data = await requestProjects(ctx, projectActor(ctx.sessions.list.getSnapshot()), request, controller.signal);
+          const actorId = request.action === 'remove' ? undefined : projectActor(ctx.sessions.list.getSnapshot());
+          const data = await requestProjects(ctx, actorId, request, controller.signal);
           if (disposed || controller.signal.aborted) throw new WorktreeError('cancelled', 'cancelled');
           refreshRequest?.abort(); ++sequence;
+          if (request.action === 'remove') install({ projects: state.projects.filter(item => item.id !== data.projectId), bindings: state.bindings.filter(item => item.projectId !== data.projectId) });
           if (data.project) install({ projects: [...state.projects.filter(item => item.id !== data.project.id), data.project], bindings: state.bindings });
           if (data.binding) install({ projects: state.projects, bindings: [...state.bindings.filter(item => item.sessionId !== data.binding.sessionId), data.binding] });
-          schedule(); return data;
-        } finally { operations.delete(op); }
+          return data;
+        } finally { operations.delete(op); if (!operations.size) schedule(); }
       }
       const api = { store, context, refresh, mutate,
         rememberRecords(records) { publish({ records: [...state.records.filter(item => !records.some(record => record.id === item.id)), ...records] }); },
@@ -587,8 +644,8 @@ window.__ModuleLoader__.load({
     }
     function createWorktreeFlow(ctx, t, projects, repositories) {
       const conversation = ctx.get('conversation'), listeners = new Set(), leases = new Map(), operations = new Set(), restaged = new Set();
-      let state = { sessionId: undefined, mode: 'local', busy: false, loading: false, error: '', status: null, remote: '', branch: '', branches: null, query: '', steps: [], phase: '', op: null };
-      let query, generation = 0, disposed = false;
+      let state = { sessionId: undefined, mode: 'local', sourceChanged: false, busy: false, loading: false, error: '', status: null, remote: '', branch: '', branches: null, query: '', steps: [], phase: '', op: null };
+      let query, selectedSource, generation = 0, disposed = false;
       const publish = patch => { if (disposed) return; state = { ...state, ...patch }; for (const listener of [...listeners]) listener(); };
       const store = { getSnapshot: () => state, subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener); } };
       const pending = id => ctx.uiSession.sessionStatus.getSnapshot().get(id)?.pendingInteraction !== undefined;
@@ -607,6 +664,13 @@ window.__ModuleLoader__.load({
         if (!binding || projectActor(ctx.sessions.list.getSnapshot()) !== sessionId || !sourceEligible(binding.session.getSnapshot()) || pending(sessionId)) throw new WorktreeError('changed', 'source-not-blank-idle');
         return { binding, input, project: captureProject(projects.context(sessionId)) };
       }
+      function requireIntent(sessionId, current) {
+        if (state.sessionId === sessionId && state.mode === 'new' && (state.sourceChanged || !selectedSource || selectedSource.binding !== current.binding || !sameProject(selectedSource.project, current.project))) throw new WorktreeError('projectChanged', 'selected-worktree-source-changed');
+      }
+      function checkSource(sessionId, before) {
+        const current = source(sessionId); requireRepository(sessionId); requireIntent(sessionId, current);
+        if (current.binding !== before.binding || !sameProject(current.project, before.project)) throw new WorktreeError('changed', 'source-changed');
+      }
       function check(op) {
         if (disposed || op.signal.aborted || op.navigation.aborted) throw new WorktreeError('cancelled', 'cancelled');
         const current = source(op.sessionId); requireRepository(op.sessionId);
@@ -617,7 +681,7 @@ window.__ModuleLoader__.load({
         if (state.sessionId !== sessionId || state.mode !== 'new') return { mode: 'local' };
         if (state.busy) throw new WorktreeError('busy', 'first-message-already-preparing');
         requireRepository(sessionId);
-        const captured = source(sessionId); if (captured.binding !== binding) throw new WorktreeError('changed', 'binding-changed');
+        const captured = source(sessionId); requireIntent(sessionId, captured); if (captured.binding !== binding) throw new WorktreeError('changed', 'binding-changed');
         const old = state.op;
         if (old && !old.retryable) throw new WorktreeError('recovery', 'check-created-conversation-before-retry');
         const intent = Object.freeze({ remote: state.remote, branch: state.branch, branches: state.branches && Object.freeze({ ...state.branches, items: Object.freeze(state.branches.items.map(item => Object.freeze({ ...item }))) }) });
@@ -696,26 +760,34 @@ window.__ModuleLoader__.load({
         lease.stopScope = stop;
       }
       function select(sessionId, mode) {
-        if (disposed || !['local', 'new'].includes(mode)) return;
-        const latchedNew = state.sessionId === sessionId && state.mode === 'new';
+        if (disposed || !['local', 'new', 'worktree'].includes(mode)) return;
+        const latchedNew = state.sessionId === sessionId && state.mode === 'new', keepCurrent = mode === 'worktree';
         try {
           const current = source(sessionId); if (mode === 'new') requireRepository(sessionId); observe(sessionId);
-          if (mode === 'local' && projects.context(sessionId)?.binding.mode === 'worktree') {
+          if (keepCurrent) {
+            if (projectBacking(projects.store.getSnapshot(), ctx.workspaces.list.getSnapshot(), sessionId).mode !== 'worktree') throw new WorktreeError('changed', 'current-folder-not-worktree');
+            mode = 'local'; // Native sink, same checkout; never navigate to a Local source folder.
+          }
+          if (mode === 'local' && !keepCurrent && projects.context(sessionId)?.binding.mode === 'worktree') {
             if (!inputEmpty(current.input.state.getSnapshot())) throw new WorktreeError('draftWarning', 'keep-existing-draft');
             for (const lease of leases.values()) lease.cancelNew(); ctx.uiWorkspace.startSession(current.project.folderId); return;
           }
           if (mode === 'local') { for (const lease of leases.values()) lease.cancelNew(); }
-          publish({ sessionId, mode, error: '', ...(state.sessionId === sessionId ? {} : { status: null, branches: null, branch: '', remote: '', op: null, steps: [], phase: '' }) });
+          const changed = state.sessionId !== sessionId || state.sourceChanged || selectedSource?.binding !== current.binding || !sameProject(selectedSource?.project, current.project);
+          if (changed) { query?.abort(); ++generation; }
+          selectedSource = { sessionId, binding: current.binding, project: current.project };
+          publish({ sessionId, mode, sourceChanged: false, error: '', ...(changed ? { status: null, branches: null, branch: '', remote: '', ...(state.sessionId === sessionId ? {} : { op: null, steps: [], phase: '' }) } : {}) });
         } catch (error) { publish({ sessionId, mode: latchedNew ? 'new' : 'local', error: report(t, error) }); }
       }
       async function loadBranches(sessionId, text = '', more = false) {
         if (disposed || state.busy || state.sessionId !== sessionId || !state.status || !state.remote || (more && !state.branches?.nextCursor)) return;
-        try { source(sessionId); requireRepository(sessionId); } catch (error) { publish({ error: report(t, error) }); return; }
-        query?.abort(); query = new AbortController(); const controller = query, seq = ++generation, before = state.branches, remote = state.remote, project = captureProject(projects.context(sessionId));
+        let current;
+        try { current = source(sessionId); requireRepository(sessionId); requireIntent(sessionId, current); } catch (error) { publish({ error: report(t, error) }); return; }
+        query?.abort(); query = new AbortController(); const controller = query, seq = ++generation, before = state.branches, remote = state.remote, project = current.project;
         publish({ loading: true, query: text, ...(more ? {} : { branches: null, branch: '' }) });
         try {
           const data = await requestHost(ctx, sessionId, { action: 'branches', repoPath: projectPath(state.status, project), remote, remoteIdentity: state.status.remotes.find(item => item.name === remote)?.identity, query: text, ...(more ? { cursor: before.nextCursor } : {}), limit: 100 }, controller.signal);
-          if (disposed || controller.signal.aborted || seq !== generation) return;
+          if (disposed || controller.signal.aborted || seq !== generation) return; checkSource(sessionId, current);
           const names = new Set(more ? before.items.map(item => item.name) : []), branches = { ...data, items: [...(more ? before.items : []), ...data.items.filter(item => !names.has(item.name))] };
           publish({ branches, branch: more ? state.branch : text ? '' : advertisedDefault(branches, state.status.defaults?.branch), loading: false });
         } catch (error) { if (!controller.signal.aborted && seq === generation) publish({ loading: false, error: report(t, error) }); }
@@ -723,12 +795,13 @@ window.__ModuleLoader__.load({
       async function configure(sessionId) {
         if (disposed || state.busy) return;
         let current;
-        try { current = source(sessionId); requireRepository(sessionId); } catch (error) { publish({ error: report(t, error) }); return; }
+        try { current = source(sessionId); requireRepository(sessionId); requireIntent(sessionId, current); } catch (error) { publish({ error: report(t, error) }); return; }
         query?.abort(); query = new AbortController(); const controller = query, seq = ++generation, project = current.project;
-        publish({ sessionId, loading: true, status: null, branches: null, branch: '', remote: '', error: '' });
+        if (state.sessionId !== sessionId || state.mode !== 'new') selectedSource = { sessionId, binding: current.binding, project };
+        publish({ sessionId, loading: true, status: null, branches: null, branch: '', remote: '', error: '', ...(state.sessionId === sessionId ? {} : { mode: 'local', sourceChanged: false, op: null, steps: [], phase: '' }) });
         try {
           const status = await repositoryStatus(sessionId, current.binding, project, controller.signal);
-          if (disposed || controller.signal.aborted || seq !== generation) return;
+          if (disposed || controller.signal.aborted || seq !== generation) return; checkSource(sessionId, current);
           const remote = status.remotes.some(item => item.name === status.defaults?.remote) ? status.defaults.remote : status.remotes[0]?.name || '';
           publish({ status, remote, loading: false }); if (remote) await loadBranches(sessionId);
         } catch (error) { if (!controller.signal.aborted && seq === generation) publish({ loading: false, error: report(t, error) }); }
@@ -748,14 +821,24 @@ window.__ModuleLoader__.load({
         if (state.mode === 'new') for (const lease of leases.values()) lease.cancelNew();
         publish({ loading: false, status: null, branches: null, remote: '', branch: '', ...(state.mode === 'new' ? { error: t('repoUnavailable') } : {}) });
       });
-      const unselect = ctx.sessions.list.subscribe(() => { for (const op of operations) if (!op.committing && projectActor(ctx.sessions.list.getSnapshot()) !== op.sessionId) op.controller.abort(); });
+      function selectionChanged() {
+        if (!selectedSource || state.sessionId !== selectedSource.sessionId || (state.mode === 'new' && state.sourceChanged)) return;
+        const binding = ctx.sessions.binding(state.sessionId), project = captureProject(projects.context(state.sessionId));
+        if (binding === selectedSource.binding && sameProject(project, selectedSource.project)) return;
+        query?.abort(); ++generation;
+        if (state.mode === 'new') for (const lease of leases.values()) lease.cancelNew();
+        else selectedSource = { sessionId: state.sessionId, binding, project };
+        publish({ loading: false, status: null, branches: null, query: '', remote: '', branch: '', ...(state.mode === 'new' ? { sourceChanged: true, error: t('projectChanged') } : {}) });
+      }
+      const projectChanged = projects.store.subscribe(selectionChanged);
+      const unselect = ctx.sessions.list.subscribe(() => { for (const op of operations) if (!op.committing && projectActor(ctx.sessions.list.getSnapshot()) !== op.sessionId) op.controller.abort(); selectionChanged(); });
       const reconnect = ctx.connection.generation.subscribe(() => { query?.abort(); ++generation; for (const lease of leases.values()) lease.cancelNew(); publish({ loading: false, status: null, branches: null, branch: '', remote: '' }); });
       return { store, observe, select, configure, loadBranches, reconcile,
         cancel() { for (const lease of leases.values()) lease.cancelNew(); },
-        setRemote(sessionId, remote) { if (!state.busy && state.sessionId === sessionId && repositoryAllowed(sessionId) && state.status?.remotes.some(item => item.name === remote)) { publish({ remote, query: '' }); void loadBranches(sessionId); } },
-        setBranch(branch) { if (!state.busy && repositoryAllowed(state.sessionId) && state.branches?.items.some(item => item.name === branch)) publish({ branch }); },
+        setRemote(sessionId, remote) { if (!state.busy && !state.sourceChanged && state.sessionId === sessionId && repositoryAllowed(sessionId) && state.status?.remotes.some(item => item.name === remote)) { publish({ remote, query: '' }); void loadBranches(sessionId); } },
+        setBranch(branch) { if (!state.busy && !state.sourceChanged && repositoryAllowed(state.sessionId) && state.branches?.items.some(item => item.name === branch)) publish({ branch }); },
         openTarget(sessionId) { const op = state.sessionId === sessionId && state.op; if (op?.result?.sessionId) ctx.uiWorkspace.openSession(op.result.sessionId); },
-        async dispose() { disposed = true; query?.abort(); ++generation; repositoryChanged?.(); unselect(); reconnect(); for (const op of operations) op.controller.abort(); await Promise.allSettled([...leases.values()].map(lease => lease.close())); for (const lease of leases.values()) lease.stopScope?.(); leases.clear(); },
+        async dispose() { disposed = true; query?.abort(); ++generation; repositoryChanged?.(); projectChanged(); unselect(); reconnect(); for (const op of operations) op.controller.abort(); await Promise.allSettled([...leases.values()].map(lease => lease.close())); for (const lease of leases.values()) lease.stopScope?.(); leases.clear(); selectedSource = undefined; },
       };
     }
     const projectSlotName = key => PANEL + '.projects.' + key;
@@ -793,24 +876,50 @@ window.__ModuleLoader__.load({
       const store = { getSnapshot: () => native, subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener); } };
       return { store, toggle() { if (disposed) return; if (native) registration = register(); else { registration(); registration = null; } native = !native; for (const listener of [...listeners]) listener(); }, dispose() { disposed = true; registration?.(); listeners.clear(); } };
     }
+    function syncProjectSpinner(element) {
+      if (element === null) return;
+      for (const animation of element.getAnimations?.({ subtree: true }) ?? []) animation.startTime = 0;
+    }
     function Icon({ size = 18 }) {
       return h('svg', { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, 'aria-hidden': true },
         h('path', { d: 'M6 5v14M6 9h6a6 6 0 0 0 6-6M6 15h6a6 6 0 0 1 6 6' }),
         ...[[6, 3], [6, 21], [18, 3], [18, 21]].map(([cx, cy]) => h('circle', { key: cx + '-' + cy, cx, cy, r: 2 })));
     }
     const Styles = () => h('style', null, css);
-    const Button = ({ children, ...props }) => h('button', { type: 'button', ...props }, children);
+    const Button = React.forwardRef(({ children, ...props }, ref) => h('button', { type: 'button', ...props, ref }, children));
+    function ProjectStateDot({ state }) {
+      if (state !== 'ongoing') return h('span', { className: 'dsh-wt-state-dot', 'data-state': state, 'aria-hidden': true });
+      return h('svg', { ref: syncProjectSpinner, className: 'dsh-wt-state-spinner', 'data-state': 'ongoing', width: 14, height: 14, viewBox: '0 0 24 24', 'aria-hidden': true },
+        h('g', { className: 'dsh-wt-state-motion' }, h('circle', { className: 'dsh-wt-state-track', cx: 12, cy: 12, r: 9.5 }), h('circle', { className: 'dsh-wt-state-arc', cx: 12, cy: 12, r: 9.5 })));
+    }
+    // Native workspace-folder artwork copied locally; React is the only runtime import.
+    function WorkspaceFolderIcon({ expanded = false, className }) {
+      return h('svg', { width: 16, height: 16, className, viewBox: '0 0 16 16', fill: 'none', strokeWidth: 1, 'aria-hidden': true }, expanded ? [
+        h('path', { key: 'tint', d: 'M2.55912 7.93683C2.67584 7.49906 3.0723 7.19446 3.52536 7.19446H13.6491C14.3061 7.19446 14.7846 7.81725 14.6153 8.45209L13.4411 12.856C13.3244 13.2938 12.9279 13.5984 12.4748 13.5984H2.35113C1.69411 13.5984 1.21562 12.9756 1.38489 12.3407L2.55912 7.93683Z', fill: 'currentColor', opacity: 0.16 }),
+        h('path', { key: 'front', d: 'M13.6491 6.69446C14.6346 6.69453 15.3522 7.62895 15.0983 8.58118L13.9245 12.9845C13.7494 13.6412 13.1539 14.0988 12.4743 14.0988H2.35126C1.36574 14.0988 0.648153 13.1643 0.902044 12.212L2.07587 7.80774C2.25102 7.15128 2.84567 6.69455 3.52509 6.69446H13.6491ZM3.52509 7.69446C3.29865 7.69455 3.10004 7.84674 3.04169 8.06555L1.86786 12.4698C1.78345 12.7872 2.02285 13.0988 2.35126 13.0988H12.4743C12.7007 13.0988 12.8992 12.9463 12.9577 12.7277L14.1325 8.32336C14.2171 8.00598 13.9776 7.69453 13.6491 7.69446H3.52509Z', fill: 'currentColor' }),
+        h('path', { key: 'back', d: 'M4.7666 1.90137C5.13227 1.90144 5.48571 2.03525 5.75977 2.27734L7.27246 3.61328C7.36379 3.69382 7.48174 3.73828 7.60352 3.73828H12.3994C13.2276 3.73841 13.8993 4.41005 13.8994 5.23828V6.7168C13.8183 6.70327 13.735 6.69436 13.6494 6.69434H12.8994V5.23828C12.8993 4.96233 12.6754 4.73841 12.3994 4.73828H7.60352C7.23781 4.73828 6.88446 4.60438 6.61035 4.3623L5.09766 3.02637C5.00636 2.94576 4.88838 2.90144 4.7666 2.90137H2.0498C1.77366 2.90137 1.5498 3.12523 1.5498 3.40137V9.78223L0.902344 12.2119C0.648452 13.1642 1.36604 14.0986 2.35156 14.0986H2.0498C1.2214 14.0986 0.549838 13.427 0.549805 12.5986V3.40137C0.549805 2.57294 1.22138 1.90137 2.0498 1.90137H4.7666Z', fill: 'currentColor' }),
+      ] : [
+        h('path', { key: 'outline', d: 'M1.50439 3.11059C1.50439 2.55831 1.95211 2.1106 2.50439 2.1106H5.43389C5.67773 2.1106 5.91318 2.19969 6.09593 2.36113L7.71649 3.79265C7.89924 3.95409 8.1347 4.04319 8.3785 4.04319H13.4958C14.0481 4.04319 14.4958 4.4909 14.4958 5.04319V12.8894C14.4958 13.4417 14.0481 13.8894 13.4958 13.8894H2.50439C1.95211 13.8894 1.50439 13.4417 1.50439 12.8894V4.04319V3.11059Z', stroke: 'currentColor' }),
+        h('path', { key: 'line', d: 'M3.63501 7.66614H12.3647', stroke: 'currentColor' }),
+      ]);
+    }
+    function SidebarToolbarIcon({ kind, size = 16 }) {
+      const svg = { width: size, height: size, viewBox: '0 0 16 16', fill: 'none', strokeWidth: 1, 'aria-hidden': true };
+      if (kind === 'search') return h('svg', svg, h('path', { d: 'M6.58727 11.8586C9.55061 11.8586 11.9529 9.45637 11.9529 6.49304C11.9529 3.5297 9.55061 1.12744 6.58727 1.12744C3.62394 1.12744 1.22168 3.5297 1.22168 6.49304C1.22168 9.45637 3.62394 11.8586 6.58727 11.8586Z', stroke: 'currentColor' }), h('path', { d: 'M10.2991 10.3933L14.7783 14.8725', stroke: 'currentColor' }));
+      if (kind === 'add') return h('svg', svg, h('path', { d: 'M5.54492 2.06738C5.91034 2.06754 6.26318 2.20149 6.53711 2.44336L7.94043 3.68164V4.7998C7.71462 4.74105 7.50367 4.63139 7.32617 4.47461L5.87598 3.19238C5.78477 3.11185 5.66658 3.06754 5.54492 3.06738H2.94922C2.67322 3.06738 2.44946 3.29145 2.44922 3.56738V12.4326C2.44927 12.7087 2.67311 12.9326 2.94922 12.9326H12.9326C13.2086 12.9325 13.4326 12.7086 13.4326 12.4326V8.53613H14.4326V12.4326C14.4326 13.2609 13.7609 13.9325 12.9326 13.9326H2.94922C2.12083 13.9326 1.44927 13.261 1.44922 12.4326V3.56738C1.44946 2.73916 2.12094 2.06738 2.94922 2.06738H5.54492Z', fill: 'currentColor' }), h('path', { d: 'M9.75977 4.50208H14.5509', stroke: 'currentColor' }), h('path', { d: 'M12.1492 6.89758L12.1492 2.10642', stroke: 'currentColor' }));
+      return h('svg', { ...svg, stroke: 'currentColor', strokeLinecap: 'round' }, h('path', { d: 'M2.3 5h5.85M12.05 5h1.65' }), h('circle', { cx: 9.95, cy: 5, r: 1.45 }), h('path', { d: 'M2.3 11h1.65M7.85 11h5.85' }), h('circle', { cx: 5.75, cy: 11, r: 1.45 }));
+    }
     function FolderIcon({ plus = false, size = 16 }) {
       return h('svg', { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
         h('path', { d: 'M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7h18' }), plus && h('path', { d: 'M12 11v6m-3-3h6' }));
     }
-    function Dialog({ title, close, t, children, className = '', compact = false, dismissible = true, initialFocus }) {
+    function Dialog({ title, close, t, children, className = '', compact = false, dismissible = true, initialFocus, returnFocus, fallbackFocus, descriptionId }) {
       const ref = React.useRef(null), heading = React.useId();
       React.useEffect(() => {
         const dialog = ref.current; dialog.showModal(); initialFocus?.current?.focus();
-        return () => { if (dialog.open) dialog.close(); };
+        return () => { if (dialog.open) dialog.close(); if (returnFocus?.current?.isConnected) returnFocus.current.focus(); else fallbackFocus?.current?.focus(); };
       }, []);
-      return h('dialog', { ref, className: 'dsh-wt dsh-wt-dialog ' + className, 'aria-labelledby': heading, onCancel: event => { event.preventDefault(); event.stopPropagation(); if (dismissible) close(); } },
+      return h('dialog', { ref, className: 'dsh-wt dsh-wt-dialog ' + className, 'aria-labelledby': heading, 'aria-describedby': descriptionId, onCancel: event => { event.preventDefault(); event.stopPropagation(); if (dismissible) close(); } },
         h(Styles), h('div', { className: 'dsh-wt-row dsh-wt-between dsh-wt-dialog-heading' }, h('h2', { id: heading }, title), h(Button, { className: compact ? 'dsh-wt-dialog-close' : undefined, onClick: close, disabled: !dismissible, autoFocus: !compact, 'aria-label': t('close') }, compact ? '×' : t('close'))), children);
     }
     function FolderRows({ folders, remove, disabled, t }) {
@@ -856,25 +965,34 @@ window.__ModuleLoader__.load({
         (busy || creating) && h('p', { role: 'status' }, t('loading')), (error || state.error) && h('p', { role: 'alert', className: 'dsh-wt-error' }, error || report(t, state.error)),
         h('div', { className: 'dsh-wt-project-footer' }, h(Button, { className: 'dsh-wt-cancel', disabled: creating, onClick: dismiss }, t('cancel')), h(Button, { className: 'dsh-wt-confirm', disabled: busy || creating || !selected.length, onClick: () => picked([...selection.current]) }, t('add') + (selected.length ? ' · ' + selected.length : ''))));
     }
-    function ProjectEditor({ project, runtime: ctx, projects, t, close }) {
+    function ConfirmProjectRemoval({ project, busy, error, t, close, confirm, returnFocus }) {
+      const cancel = React.useRef(null), description = React.useId();
+      return h(Dialog, { title: t('removeProject'), close, t, className: 'dsh-wt-project-dialog', compact: true, dismissible: !busy, initialFocus: cancel, returnFocus, descriptionId: description },
+        h('p', null, t('removeProjectConfirm'), ' ', h('strong', null, project.title)),
+        h('p', { id: description, className: 'dsh-wt-muted' }, t('removeProjectHelp')),
+        error && h('p', { role: 'alert', className: 'dsh-wt-error' }, error),
+        h('div', { className: 'dsh-wt-project-footer', 'aria-busy': busy }, h(Button, { ref: cancel, className: 'dsh-wt-cancel', disabled: busy, onClick: close }, t('cancel')), h(Button, { className: 'dsh-wt-danger', disabled: busy, onClick: confirm }, t(busy ? 'loading' : 'removeProject'))));
+    }
+    function ProjectEditor({ project, runtime: ctx, projects, t, close, returnFocus, fallbackFocus }) {
       const [title, setTitle] = React.useState(project?.title || ''), [folders, setFolders] = React.useState(project?.folders.map(folder => folder.path) || []), [path, setPath] = React.useState(''), [mainFolder, setMainFolder] = React.useState(projectMainFolder(project)?.path || '');
-      const [busy, setBusy] = React.useState(false), [error, setError] = React.useState(''), [browser, setBrowser] = React.useState(false), [addMode, setAddMode] = React.useState('browse');
-      const lifetime = React.useRef(true), currentFolders = React.useRef(folders), picker = React.useRef(false), submitter = React.useRef(null), heading = React.useId(), nameInput = React.useRef(null);
+      const [busy, setBusy] = React.useState(false), [error, setError] = React.useState(''), [browser, setBrowser] = React.useState(false), [addMode, setAddMode] = React.useState('browse'), [confirmRemoval, setConfirmRemoval] = React.useState(false);
+      const lifetime = React.useRef(true), currentFolders = React.useRef(folders), picker = React.useRef(false), browsing = React.useRef(false), confirming = React.useRef(false), submitter = React.useRef(null), heading = React.useId(), nameInput = React.useRef(null), removeTrigger = React.useRef(null);
       if (!submitter.current) submitter.current = createProjectSubmitter(projects, project?.id, project?.id || crypto.randomUUID());
       React.useEffect(() => { lifetime.current = true; return () => { lifetime.current = false; }; }, []);
-      const dismiss = () => { if (!submitter.current.pending && !picker.current) close(); };
+      const dismiss = () => { if (!submitter.current.pending && !picker.current && !confirming.current) close(); };
       const primary = draftMainFolder(folders, mainFolder);
+      function closeBrowser() { browsing.current = false; setBrowser(false); }
       function add(paths) {
-        if (!lifetime.current || submitter.current.pending) return;
-        try { const next = appendProjectFolders(currentFolders.current, paths); currentFolders.current = next; setFolders(next); setPath(''); setBrowser(false); setError(''); }
+        if (!lifetime.current || submitter.current.pending || confirming.current) return;
+        try { const next = appendProjectFolders(currentFolders.current, paths); currentFolders.current = next; setFolders(next); setPath(''); closeBrowser(); setError(''); }
         catch (failure) { setError(report(t, failure)); }
       }
-      function remove(path) { if (submitter.current.pending || picker.current) return; currentFolders.current = currentFolders.current.filter(value => value !== path); setFolders(currentFolders.current); if (mainFolder === path) setMainFolder(''); setError(''); }
+      function remove(path) { if (submitter.current.pending || picker.current || browsing.current || confirming.current) return; currentFolders.current = currentFolders.current.filter(value => value !== path); setFolders(currentFolders.current); if (mainFolder === path) setMainFolder(''); setError(''); }
       async function choose() {
-        if (submitter.current.pending || picker.current || currentFolders.current.length >= 32) return;
+        if (submitter.current.pending || picker.current || browsing.current || confirming.current || currentFolders.current.length >= 32) return;
         setError('');
         if (addMode === 'path') { add([path.trim()]); return; }
-        if (addMode === 'browse') { setBrowser(true); return; }
+        if (addMode === 'browse') { browsing.current = true; setBrowser(true); return; }
         // The optional native chooser returns one folder or null, never a batch.
         picker.current = true; setBusy(true);
         try { const selected = await ctx.uiWorkspace.pickDirectory(); if (lifetime.current && selected) add([selected]); }
@@ -882,14 +1000,26 @@ window.__ModuleLoader__.load({
         finally { picker.current = false; if (lifetime.current) setBusy(false); }
       }
       async function save(event) {
-        event.preventDefault(); if (submitter.current.pending || picker.current || browser || !title.trim() || !currentFolders.current.length) return;
+        event.preventDefault(); if (submitter.current.pending || picker.current || browsing.current || confirming.current || !title.trim() || !currentFolders.current.length) return;
         if (!draftMainFolder(currentFolders.current, mainFolder)) { setError(t('mainFolderRequired')); return; }
         setBusy(true); setError('');
         try { await submitter.current.submit(title, currentFolders.current, mainFolder); if (lifetime.current) close(); }
         catch (failure) { if (lifetime.current) setError(report(t, failure)); }
         finally { if (lifetime.current) setBusy(false); }
       }
-      return h(Dialog, { title: t(project ? 'editProject' : 'createProject'), close: dismiss, t, className: 'dsh-wt-project-dialog', compact: true, dismissible: !busy, initialFocus: nameInput },
+      function beginRemoval() {
+        if (!project || submitter.current.pending || picker.current || browsing.current || confirming.current) return;
+        confirming.current = true; setError(''); setConfirmRemoval(true);
+      }
+      function dismissRemoval() { if (!submitter.current.pending) { confirming.current = false; setConfirmRemoval(false); setError(''); } }
+      async function removeProject() {
+        if (!confirming.current || submitter.current.pending || picker.current || browsing.current) return;
+        setBusy(true); setError('');
+        try { await submitter.current.remove(); if (lifetime.current) close(); }
+        catch (failure) { if (lifetime.current) setError(report(t, failure)); }
+        finally { if (lifetime.current) setBusy(false); }
+      }
+      return h(Dialog, { title: t(project ? 'editProject' : 'createProject'), close: dismiss, t, className: 'dsh-wt-project-dialog', compact: true, dismissible: !busy, initialFocus: nameInput, returnFocus, fallbackFocus },
         h('form', { onSubmit: save, 'aria-busy': busy }, h('label', { className: 'dsh-wt-project-name' }, h(FolderIcon), h('input', { required: true, ref: nameInput, maxLength: 120, placeholder: t('projectName'), 'aria-label': t('projectName'), value: title, disabled: busy, onChange: event => setTitle(event.target.value) })),
           h('div', { className: 'dsh-wt-source-heading' }, h('span', { id: heading }, t('sourceFolders')), folders.length > 0 && h('span', { className: 'dsh-wt-source-count', 'aria-live': 'polite' }, folders.length + ' / 32')),
           h('section', { className: 'dsh-wt-source-card', 'aria-labelledby': heading, 'data-filled': !!folders.length }, folders.length > 0 && h(FolderRows, { folders, remove, disabled: busy, t }),
@@ -897,66 +1027,94 @@ window.__ModuleLoader__.load({
               addMode === 'path' && h('label', { className: 'dsh-wt-project-path' }, h('input', { value: path, autoFocus: true, placeholder: t('absolutePath'), 'aria-label': t('absolutePath'), disabled: busy || folders.length >= 32, onChange: event => setPath(event.target.value), onKeyDown: event => { if (event.key === 'Enter' && !event.nativeEvent?.isComposing) { event.preventDefault(); void choose(); } } })),
               h(Button, { className: 'dsh-wt-add-pill', disabled: busy || folders.length >= 32 || (addMode === 'path' && !absolutePath(path.trim())), onClick: () => { void choose(); } }, h(FolderIcon, { plus: true }), t('add')))),
           folders.length > 1 && h('label', { className: 'dsh-wt-main-folder' }, t('mainFolder'), h('select', { required: true, value: primary, disabled: busy, title: primary, onChange: event => { setMainFolder(event.target.value); setError(''); } }, h('option', { value: '', disabled: true }, t('chooseMainFolder')), ...folders.map(folder => h('option', { key: folder, value: folder }, projectFolderName(folder) + ' · ' + folder))), h('small', null, t('mainFolderHelp'))),
-          error && h('p', { role: 'alert', className: 'dsh-wt-error' }, error), h('div', { className: 'dsh-wt-project-footer' }, h(Button, { className: 'dsh-wt-cancel', disabled: busy, onClick: dismiss }, t('cancel')), h('button', { className: 'dsh-wt-confirm', type: 'submit', disabled: busy || !title.trim() || !folders.length || !primary }, t(busy ? 'loading' : project ? 'save' : 'createProject')))),
-        browser && h(FolderBrowser, { runtime: ctx, t, existing: folders, picked: add, close: () => setBrowser(false) }));
+          error && !confirmRemoval && h('p', { role: 'alert', className: 'dsh-wt-error' }, error), h('div', { className: 'dsh-wt-project-footer' }, project && h(Button, { ref: removeTrigger, className: 'dsh-wt-remove-project', disabled: busy || browser || confirmRemoval, onClick: beginRemoval }, t('removeProject')), h(Button, { className: 'dsh-wt-cancel', disabled: busy, onClick: dismiss }, t('cancel')), h('button', { className: 'dsh-wt-confirm', type: 'submit', disabled: busy || !title.trim() || !folders.length || !primary }, t(busy ? 'loading' : project ? 'save' : 'createProject')))),
+        browser && h(FolderBrowser, { runtime: ctx, t, existing: folders, picked: add, close: closeBrowser }),
+        confirmRemoval && project && h(ConfirmProjectRemoval, { project, busy, error, t, close: dismissRemoval, confirm: removeProject, returnFocus: removeTrigger }));
     }
-    function ThreadRow({ row, selected, runtime: ctx, metadata, renderSlot, t }) {
+    function ThreadRow({ row, selected, runtime: ctx, metadata, renderSlot, t, now }) {
       const [menu, setMenu] = React.useState(false), [hover, setHover] = React.useState(false);
-      const record = metadata.records.find(item => item.id === row.context?.binding.worktreeId);
-      const worktree = row.context?.binding.mode === 'worktree';
-      const path = row.context?.binding.effectiveCwd || row.context?.folder.path || '';
+      const activity = row.session.blank ? null : projectSessionTime(row.session.updatedAt, now, t);
+      const worktree = (row.backing?.mode || row.context?.binding.mode) === 'worktree';
+      const record = worktree ? row.backing?.record || metadata.records.find(item => item.id === row.context?.binding.worktreeId) : undefined;
+      const path = row.backing?.effectiveCwd || row.context?.binding.effectiveCwd || row.context?.folder.path || '';
       const title = row.session.blank ? t('blankThread') : row.title || t('untitled');
       const marker = (worktree ? t('worktreeThread') : t('localThread')) + (row.context ? ' · ' + row.context.folder.path : '') + (record?.branch ? ' · ' + record.branch : '') + (worktree ? ' · ' + path : '');
-      const status = row.pending ? t('waiting') : row.running ? t('busy') : row.done ? t('done') : t('idle');
+      const state = projectRowState(row), status = row.pending ? t('waiting') : row.running ? t('busy') : row.done ? t('done') : t('idle');
       const owner = { sessionId: row.id, displayTitle: row.title };
-      return h('div', { className: 'dsh-wt-thread' + (row.archived ? ' dsh-wt-thread-archived' : ''), role: 'treeitem', 'aria-selected': selected, 'aria-description': row.archived ? t('archived') : undefined },
+      return h('div', { className: 'dsh-wt-thread' + (row.archived ? ' dsh-wt-thread-archived' : ''), role: 'treeitem', 'aria-selected': selected, 'data-menu-open': menu, 'aria-description': row.archived ? t('archived') : undefined },
         h('div', { className: 'dsh-wt-thread-main' }, h(Button, { disabled: row.archived, title: title + ' · ' + status + (worktree ? ' · ' + marker : ''), onClick: () => ctx.uiWorkspace.openSession(row.id) },
-          h('span', { className: 'dsh-wt-thread-leading', 'aria-label': !row.archived && (row.pending || row.running || row.done) ? status : undefined }, !row.archived && !row.session.blank && (row.pending || row.running || row.done ? h('span', { className: 'dsh-wt-thread-status' + (row.pending ? ' dsh-wt-thread-pending' : '') }, row.pending ? '●' : row.running ? '◌' : '✓') : renderSlot(projectSlotName('sidebar.session.row.leading'), { sessionId: row.id }))),
+          h('span', { className: 'dsh-wt-thread-leading', role: state !== 'idle' ? 'img' : undefined, 'aria-label': state !== 'idle' ? status : undefined }, !row.archived && !row.session.blank && (state !== 'idle' ? h(ProjectStateDot, { state }) : renderSlot(projectSlotName('sidebar.session.row.leading'), { sessionId: row.id }))),
           h('span', { className: 'dsh-wt-thread-title' }, title)),
-          row.pinned && h('span', { className: 'dsh-wt-muted', title: t('pinned'), 'aria-label': t('pinned') }, '⌖'),
-          worktree ? h('span', { className: 'dsh-wt-branch-chip', title: marker, 'aria-label': marker, role: 'img' }, h(Icon, { size: 13 })) : h('span', { className: 'dsh-wt-muted', title: marker, 'aria-label': marker }, '·'),
+          row.pinned && h('span', { className: 'dsh-wt-muted dsh-wt-thread-pin', title: t('pinned'), 'aria-label': t('pinned') }, '⌖'),
+          worktree && h('span', { className: 'dsh-wt-branch-chip', title: marker, 'aria-label': marker, role: 'img' }, h(Icon, { size: 13 })),
+          activity && h('time', { className: 'dsh-wt-thread-time', dateTime: activity.dateTime, title: activity.title, 'aria-label': activity.title }, activity.label),
           !row.session.blank && h('span', { className: 'dsh-wt-thread-actions' }, h(Button, { 'aria-label': t('threadActions') + ' ' + title, onClick: () => setMenu(true) }, '…'), renderSlot(projectSlotName('sidebar.workspaces.session.row.action'), owner), h(Button, { 'aria-label': t('threadDetails'), onClick: () => setHover(value => !value), 'aria-expanded': hover }, 'ⓘ'))),
         hover && h('div', { className: 'dsh-wt-thread-hover' }, h('div', null, title), h('div', { className: 'dsh-wt-muted' }, status), worktree && record?.branch && h('div', null, h('code', null, record.branch)), h('code', null, path), renderSlot(projectSlotName('sidebar.session.row.hover'), { sessionId: row.id })),
         menu && h(Dialog, { title: t('threadActions'), t, close: () => setMenu(false) }, h('div', { role: 'menu', className: 'dsh-wt-project-menu', onKeyDown: event => { if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return; const items = [...event.currentTarget.querySelectorAll('[role=menuitem]:not(:disabled)')]; if (!items.length) return; event.preventDefault(); const at = items.indexOf(event.target); items[event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (at + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus(); } }, renderSlot(projectSlotName('sidebar.workspaces.session.menu.item'), owner, { hookContext: [menu, setMenu] }))));
     }
-    function ProjectGroup({ group, selectedId, runtime, metadata, projects, renderSlot, t, searching }) {
-      const [collapsed, setCollapsed] = React.useState(false), [limit, setLimit] = React.useState(5), [choosingFolder, setChoosingFolder] = React.useState(false), [editing, setEditing] = React.useState(false);
-      const rows = searching ? group.rows : visibleProjectRows(group.rows, limit, selectedId), main = projectMainFolder(group.project);
+    function ProjectGroup({ group, selectedId, runtime, metadata, renderSlot, t, searching, onManage, now }) {
+      const [collapsed, setCollapsed] = React.useState(false), [limit, setLimit] = React.useState(5), [choosingFolder, setChoosingFolder] = React.useState(false);
+      const rows = searching ? group.rows : visibleProjectRows(group.rows, limit, selectedId), main = projectMainFolder(group.project), remaining = group.rows.length - rows.length;
+      const hasOverflow = group.rows.length > visibleProjectRows(group.rows, 5, selectedId).length;
       function start(folderId) { setChoosingFolder(false); runtime.uiWorkspace.startSession(folderId); }
-      return h('section', null, h('div', { className: 'dsh-wt-project-head' }, h(Button, { title: group.project?.folders.map(folder => folder.path).join('\n'), 'aria-expanded': searching || !collapsed, onClick: () => { setCollapsed(value => !value); setLimit(5); }, 'aria-label': t(collapsed ? 'expand' : 'collapse') + ' ' + (group.project?.title || t('unassigned')) }, h('span', { 'aria-hidden': true }, collapsed && !searching ? '▸' : '▾'), h('span', { 'aria-hidden': true }, '▱'), h('span', { className: 'dsh-wt-project-title' }, group.project?.title || t('unassigned'))),
-        group.project && h(React.Fragment, null, h(Button, { 'aria-label': t('newThread') + ' ' + group.project.title, title: t('newThread') + (main ? ' · ' + main.path : ''), disabled: !main, onClick: () => main && start(main.id) }, '+'), group.project.folders.length > 1 && h(Button, { 'aria-label': t('chooseFolder') + ' ' + group.project.title, title: t('chooseFolder'), 'aria-expanded': choosingFolder, onClick: () => setChoosingFolder(value => !value) }, '▾'), h(Button, { 'aria-label': t('editProject') + ' ' + group.project.title, title: t('editProject'), onClick: () => setEditing(true) }, '…'))),
+      return h('section', { className: 'dsh-wt-project-group' }, h('div', { className: 'dsh-wt-project-head' }, h(Button, { title: group.project?.folders.map(folder => folder.path).join('\n'), 'aria-expanded': searching || !collapsed, onClick: () => { setCollapsed(value => !value); setLimit(5); }, 'aria-label': t(collapsed ? 'expand' : 'collapse') + ' ' + (group.project?.title || t('unassigned')) },
+        h('span', { className: 'dsh-wt-project-glyph', 'aria-hidden': true }, h(WorkspaceFolderIcon, { expanded: searching || !collapsed, className: 'dsh-wt-project-folder' }), h('span', { className: 'dsh-wt-project-chevron' }, collapsed && !searching ? '▸' : '▾')), h('span', { className: 'dsh-wt-project-title' }, group.project?.title || t('unassigned'))),
+        group.project && h('span', { className: 'dsh-wt-project-head-actions' }, h(Button, { 'aria-label': t('newThread') + ' ' + group.project.title, title: t('newThread') + (main ? ' · ' + main.path : ''), disabled: !main, onClick: () => main && start(main.id) }, '+'), group.project.folders.length > 1 && h(Button, { 'aria-label': t('chooseFolder') + ' ' + group.project.title, title: t('chooseFolder'), 'aria-expanded': choosingFolder, onClick: () => setChoosingFolder(value => !value) }, '▾'), h(Button, { 'aria-label': t('editProject') + ' ' + group.project.title, title: t('editProject'), onClick: event => onManage(group.project, event.currentTarget) }, '…'))),
         choosingFolder && group.project && h('div', { className: 'dsh-wt-row', 'aria-label': t('chooseFolder') }, ...group.project.folders.map(folder => h(Button, { key: folder.id, title: folder.path, onClick: () => start(folder.id) }, folder.title + (folder.id === main?.id ? ' · ' + t('main') : '')))),
-        (searching || !collapsed) && h('div', { role: 'group' }, ...rows.map(row => h(ThreadRow, { key: row.id, row, selected: row.id === selectedId, runtime, metadata, renderSlot, t })), !searching && group.rows.length > rows.length && h(Button, { onClick: () => setLimit(value => value + 5) }, t('showMore')), !searching && limit > 5 && group.rows.length <= rows.length && h(Button, { onClick: () => setLimit(5) }, t('showLess'))),
-        editing && h(ProjectEditor, { project: group.project, runtime, projects, renderSlot, t, close: () => setEditing(false) }));
+        (searching || !collapsed) && h('div', { role: 'group' }, ...rows.map(row => h(ThreadRow, { key: row.id, row, selected: row.id === selectedId, runtime, metadata, renderSlot, t, now })),
+          !searching && hasOverflow && h(Button, { className: 'dsh-wt-session-overflow', 'aria-expanded': remaining === 0, onClick: () => setLimit(value => remaining === 0 ? 5 : remaining <= 5 ? Infinity : value + 5) }, remaining ? t('showMore', { n: remaining }) : t('showLess'))));
     }
     function SidebarToggle({ sidebarMode, wide, t }) {
       const native = React.useSyncExternalStore(sidebarMode.store.subscribe, sidebarMode.store.getSnapshot);
-      return h('span', { className: 'dsh-wt' }, h(Styles), h(Button, { title: t(native ? 'projects' : 'folderView'), 'aria-label': t(native ? 'projects' : 'folderView'), 'aria-pressed': !native, onClick: sidebarMode.toggle }, '▱', wide && ' ' + t(native ? 'projects' : 'folderView')));
+      return h('span', { className: 'dsh-wt' }, h(Styles), h(Button, { title: t(native ? 'projects' : 'folderView'), 'aria-label': t(native ? 'projects' : 'folderView'), 'aria-pressed': !native, onClick: sidebarMode.toggle }, h(WorkspaceFolderIcon), wide && ' ' + t(native ? 'projects' : 'folderView')));
+    }
+    function ProjectSidebarToolbar({ query, onQuery, archived, onArchived, onCreate, newProjectTrigger, t }) {
+      const [searchOpen, setSearchOpen] = React.useState(!!query), [optionsOpen, setOptionsOpen] = React.useState(false);
+      const input = React.useRef(null), searchTrigger = React.useRef(null), optionsTrigger = React.useRef(null), searchId = React.useId(), menuId = React.useId();
+      React.useEffect(() => { if (searchOpen) input.current?.focus(); }, [searchOpen]);
+      function closeSearch() { onQuery(''); setSearchOpen(false); searchTrigger.current?.focus(); }
+      function closeOptions() { setOptionsOpen(false); optionsTrigger.current?.focus(); }
+      function menuKey(event) {
+        if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeOptions(); return; }
+        if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+        const items = [...event.currentTarget.querySelectorAll('[role=menuitemradio]')], index = items.indexOf(event.target); if (!items.length) return;
+        event.preventDefault(); items[event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus();
+      }
+      return h('div', { className: 'dsh-wt-projects-header dsh-wt-project-toolbar' },
+        !searchOpen && h('span', { className: 'dsh-wt-project-section-label' }, t('projects')),
+        searchOpen && h('div', { className: 'dsh-wt-project-search' }, h('input', { id: searchId, ref: input, type: 'search', maxLength: 256, className: 'dsh-wt-project-search-input', value: query, placeholder: t('filterThreads'), 'aria-label': t('filterThreads'), onChange: event => onQuery(event.target.value), onKeyDown: event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeSearch(); } } }), h(Button, { className: 'dsh-wt-toolbar-icon', 'aria-label': t('closeSearch'), title: t('closeSearch'), onClick: closeSearch }, '×')),
+        h(Button, { ref: searchTrigger, className: 'dsh-wt-toolbar-icon', 'aria-label': t('searchProjects'), title: t('searchProjects'), 'aria-expanded': searchOpen, 'aria-controls': searchOpen ? searchId : undefined, onClick: () => { setOptionsOpen(false); if (searchOpen) closeSearch(); else setSearchOpen(true); } }, h(SidebarToolbarIcon, { kind: 'search', size: 14 })),
+        h('div', { className: 'dsh-wt-view-options', onBlur: event => { if (!event.currentTarget.contains(event.relatedTarget)) setOptionsOpen(false); } },
+          h(Button, { ref: optionsTrigger, className: 'dsh-wt-toolbar-icon', 'aria-label': t('viewOptions'), title: t('viewOptions'), 'aria-haspopup': 'menu', 'aria-expanded': optionsOpen, 'aria-controls': optionsOpen ? menuId : undefined, 'data-active': archived !== 'hide', onClick: () => setOptionsOpen(value => !value), onKeyDown: event => { if (event.key === 'ArrowDown') { event.preventDefault(); setOptionsOpen(true); } else if (event.key === 'Escape') { event.preventDefault(); closeOptions(); } } }, h(SidebarToolbarIcon, { kind: 'options' })),
+          optionsOpen && h('div', { id: menuId, role: 'menu', 'aria-label': t('viewOptions'), className: 'dsh-wt-view-menu', onKeyDown: menuKey }, ...[['hide', 'hideArchived'], ['all', 'allThreads'], ['only', 'archivedOnly']].map(([value, label]) => h(Button, { key: value, role: 'menuitemradio', 'aria-checked': archived === value, autoFocus: archived === value, onClick: () => { onArchived(value); closeOptions(); } }, h('span', { 'aria-hidden': true, className: 'dsh-wt-view-check' }, archived === value ? '✓' : ''), t(label))))),
+        h(Button, { ref: newProjectTrigger, className: 'dsh-wt-toolbar-icon', 'aria-label': t('newProject'), title: t('newProject'), onClick: event => { setOptionsOpen(false); onCreate(event); } }, h(SidebarToolbarIcon, { kind: 'add' })));
     }
     function ProjectsSidebar({ runtime: ctx, projects, t, wide, expandSidebar, useWorkspaces, useSessions, usePanelInfo, useSessionStatus, renderSlot }) {
       const workspaces = useWorkspaces(value => value), sessions = useSessions(value => value), panel = usePanelInfo(value => value.activePanelId), statuses = useSessionStatus(value => value);
       const metadata = React.useSyncExternalStore(projects.store.subscribe, projects.store.getSnapshot);
-      const [query, setQuery] = React.useState(''), [archived, setArchived] = React.useState('hide'), [creating, setCreating] = React.useState(false);
+      const [query, setQuery] = React.useState(''), [archived, setArchived] = React.useState('hide'), [editor, setEditor] = React.useState(null);
+      const editorTrigger = React.useRef(null), newProjectTrigger = React.useRef(null);
       const selectedId = panel ? undefined : Object.keys(sessions.byId).find(id => (sessions.byId[id].retainedBy?.mainView || 0) > 0);
-      const groups = projectRows(metadata, workspaces, sessions, statuses, { query, archived, selectedId });
-      if (!wide) return h('div', { className: 'dsh-wt dsh-wt-projects' }, h(Styles), h(Button, { title: t('projects'), 'aria-label': t('projects'), onClick: expandSidebar }, '▱'));
-      return h('section', { className: 'dsh-wt dsh-wt-projects', 'aria-label': t('projects') }, h(Styles), h('div', { className: 'dsh-wt-projects-header' }, h('strong', null, t('projects')), h(Button, { 'aria-label': t('newProject'), title: t('newProject'), onClick: () => setCreating(true) }, '+')),
-        h('input', { type: 'search', value: query, placeholder: t('filterThreads'), 'aria-label': t('filterThreads'), onChange: event => setQuery(event.target.value) }),
-        h('select', { 'aria-label': t('archived'), value: archived, onChange: event => setArchived(event.target.value) }, h('option', { value: 'hide' }, t('hideArchived')), h('option', { value: 'all' }, t('allThreads')), h('option', { value: 'only' }, t('archivedOnly'))),
+      const groups = projectRows(metadata, workspaces, sessions, statuses, { query, archived, selectedId }), now = Date.now();
+      // Own the editor snapshot here: refresh/removal of a row must not discard refused edits.
+      function openEditor(project, trigger) { editorTrigger.current = trigger; setEditor({ project }); }
+      if (!wide) return h('div', { className: 'dsh-wt dsh-wt-projects' }, h(Styles), h(Button, { title: t('projects'), 'aria-label': t('projects'), onClick: expandSidebar }, h(WorkspaceFolderIcon)));
+      return h('section', { className: 'dsh-wt dsh-wt-projects', 'aria-label': t('projects') }, h(Styles),
+        h(ProjectSidebarToolbar, { query, onQuery: setQuery, archived, onArchived: setArchived, newProjectTrigger, onCreate: event => openEditor(null, event.currentTarget), t }),
         metadata.loading && h('span', { role: 'status', className: 'dsh-wt-muted' }, t('loading')), metadata.error && h('div', null, h('p', { role: 'alert', className: 'dsh-wt-error' }, metadata.error), h(Button, { onClick: () => { void projects.refresh(); } }, t('refresh'))),
-        h('div', { className: 'dsh-wt-project-list', role: 'tree', 'aria-label': t('projects') }, ...groups.map(group => h(ProjectGroup, { key: group.project?.id || 'unassigned', group, selectedId, runtime: ctx, metadata, projects, renderSlot, t, searching: !!query.trim() }))),
-        !metadata.projects.length && !metadata.loading && h('p', { className: 'dsh-wt-muted' }, t('noProjects')), creating && h(ProjectEditor, { projects, runtime: ctx, renderSlot, t, close: () => setCreating(false) }));
+        h('div', { className: 'dsh-wt-project-list', role: 'tree', 'aria-label': t('projects') }, ...groups.map(group => h(ProjectGroup, { key: group.project?.id || 'unassigned', group, selectedId, runtime: ctx, metadata, renderSlot, t, searching: !!query.trim(), onManage: openEditor, now }))),
+        !metadata.projects.length && !metadata.loading && h('p', { className: 'dsh-wt-muted' }, t('noProjects')), editor && h(ProjectEditor, { key: editor.project?.id || 'new-project', project: editor.project, projects, runtime: ctx, t, close: () => setEditor(null), returnFocus: editorTrigger, fallbackFocus: newProjectTrigger }));
     }
-    function NewWorktreeControls({ sessionId, flow, projects, repositories, runtime: ctx, t, useSession, useInput, usePanelInfo }) {
-      const snapshot = useSession(value => value), empty = useInput(inputEmpty), ready = sourceEligible(snapshot), panel = usePanelInfo(value => value.activePanelId);
+    function NewWorktreeControls({ sessionId, flow, projects, repositories, runtime: ctx, t, useSession, useInput, usePanelInfo, useWorkspaces }) {
+      const snapshot = useSession(value => value), empty = useInput(inputEmpty), ready = sourceEligible(snapshot), panel = usePanelInfo(value => value.activePanelId), workspaces = useWorkspaces(value => value);
       const state = React.useSyncExternalStore(flow.store.subscribe, flow.store.getSnapshot);
       React.useSyncExternalStore(repositories.store.subscribe, repositories.store.getSnapshot);
       const metadata = React.useSyncExternalStore(projects.store.subscribe, projects.store.getSnapshot), context = projects.context(sessionId);
       const [options, setOptions] = React.useState(false), [folderError, setFolderError] = React.useState('');
       React.useEffect(() => { setOptions(false); if (panel || !snapshot.blank || snapshot.subagent !== null) return; try { flow.observe(sessionId); } catch { /* New mode reports the guarded ABI refusal. */ } void repositories.ensure(sessionId); return () => repositories.withdraw(sessionId); }, [flow, repositories, sessionId, ready, panel, snapshot.blank, snapshot.subagent, snapshot.openState, snapshot.removed, context?.project.id, context?.folder.id, context?.folder.path]);
       if (panel || !snapshot.blank || snapshot.subagent !== null) return null;
-      const worktree = context?.binding.mode === 'worktree', record = metadata.records.find(item => item.id === context?.binding.worktreeId);
-      const selected = state.sessionId === sessionId, busy = selected && state.busy, main = projectMainFolder(context?.project), canWorktree = repositories.enabled(sessionId), blockedNew = selected && state.mode === 'new' && !canWorktree;
+      const backing = projectBacking(metadata, workspaces, sessionId), worktree = backing.mode === 'worktree', record = backing.record;
+      const selected = state.sessionId === sessionId, busy = selected && state.busy, main = projectMainFolder(context?.project), canWorktree = repositories.enabled(sessionId), blockedNew = selected && state.mode === 'new' && (!canWorktree || state.sourceChanged);
       return h('div', { className: 'dsh-wt dsh-wt-row dsh-wt-create-controls' }, h(Styles),
         context?.project.folders.length > 1 && h('select', { className: 'dsh-wt-conversation-folder', 'aria-label': t('conversationFolder'), value: context.folder.id, disabled: busy || !empty || !sourceEligible(snapshot), title: !empty ? t('draftWarning') : context.folder.path,
           onChange: event => { setFolderError(''); try { chooseConversationFolder(ctx, projects, flow, sessionId, event.target.value); } catch (failure) { setFolderError(report(t, failure)); } } }, ...context.project.folders.map(folder => h('option', { key: folder.id, value: folder.id, title: folder.path }, folder.title + (folder.id === main?.id ? ' · ' + t('main') : '')))),
@@ -965,10 +1123,10 @@ window.__ModuleLoader__.load({
           onChange: event => { setOptions(false); flow.select(sessionId, event.target.value); } },
           h('option', { value: 'local', disabled: worktree && !context?.folder }, t('local')),
           worktree && h('option', { value: 'worktree' }, t('worktreeThread')),
-          canWorktree && h('option', { value: 'new' }, t('new'))) : h(Button, { 'aria-label': t('local'), 'aria-pressed': !selected || state.mode === 'local', disabled: busy || !sourceEligible(snapshot), onClick: () => flow.select(sessionId, 'local') }, t('local')),
-        worktree && h('span', { className: 'dsh-wt-muted', title: context.binding.effectiveCwd }, record?.branch || t('worktreeThread')),
-        canWorktree && !worktree && h(Button, { disabled: busy || !sourceEligible(snapshot), 'aria-expanded': options, 'aria-label': t('branch'), onClick: () => { setOptions(value => !value); if (!options) void flow.configure(sessionId); } }, selected && state.branch ? state.remote + '/' + state.branch : t('select')),
-        canWorktree && !worktree && options && h('fieldset', { className: 'dsh-wt-base-options', onKeyDown: event => { if (event.key === 'Escape') { event.stopPropagation(); setOptions(false); } } }, h('legend', null, t('branch')),
+          canWorktree && h('option', { value: 'new' }, t('new'))) : h(Button, { 'aria-label': t(worktree && !context ? 'keepCurrentFolder' : 'local'), 'aria-pressed': !selected || state.mode === 'local', disabled: busy || !sourceEligible(snapshot), onClick: () => flow.select(sessionId, 'local') }, t(worktree && !context ? 'keepCurrentFolder' : 'local')),
+        worktree && h('span', { className: 'dsh-wt-muted', title: backing.effectiveCwd }, record?.branch || t('worktreeThread')),
+        !blockedNew && canWorktree && !worktree && h(Button, { disabled: busy || !sourceEligible(snapshot), 'aria-expanded': options, 'aria-label': t('branch'), onClick: () => { setOptions(value => !value); if (!options) void flow.configure(sessionId); } }, selected && state.branch ? state.remote + '/' + state.branch : t('select')),
+        !blockedNew && canWorktree && !worktree && options && h('fieldset', { className: 'dsh-wt-base-options', onKeyDown: event => { if (event.key === 'Escape') { event.stopPropagation(); setOptions(false); } } }, h('legend', null, t('branch')),
           selected && state.status?.remotes.length > 1 && h('select', { 'aria-label': t('remote'), disabled: busy || state.loading, value: state.remote, onChange: event => flow.setRemote(sessionId, event.target.value) }, ...state.status.remotes.map(item => h('option', { key: item.name, value: item.name }, item.name))),
           h('select', { 'aria-label': t('branch'), value: selected ? state.branch : '', disabled: !selected || state.loading || busy, onChange: event => flow.setBranch(event.target.value) }, h('option', { value: '' }, t(state.loading ? 'loading' : 'select')), ...(selected && state.branches?.items || []).map(item => h('option', { key: item.name, value: item.name }, item.name))),
           h('input', { type: 'search', 'aria-label': t('search'), value: selected ? state.query : '', disabled: !selected || busy || !state.remote, onChange: event => { void flow.loadBranches(sessionId, event.target.value); } }),
@@ -1024,13 +1182,13 @@ window.__ModuleLoader__.load({
           saved && h('p', { role: 'status', 'aria-live': 'polite', className: 'dsh-wt-muted' }, t('rootSaved')),
           error && h('p', { role: 'alert', className: 'dsh-wt-error' }, error)));
     }
-    function Header({ projects, sessionId, t, useSession }) {
-      const blank = useSession(value => value.blank);
-      const metadata = React.useSyncExternalStore(projects.store.subscribe, projects.store.getSnapshot), context = projects.context(sessionId);
-      if (blank || !context) return null;
-      const worktree = context.binding.mode === 'worktree', record = metadata.records.find(item => item.id === context.binding.worktreeId);
-      const label = [context.project.title, t(worktree ? 'worktreeThread' : 'local'), record?.branch].filter(Boolean).join(' · ');
-      return h('span', { className: 'dsh-wt dsh-wt-muted', title: context.binding.effectiveCwd }, h(Styles), label);
+    function Header({ projects, sessionId, t, useSession, useWorkspaces }) {
+      const blank = useSession(value => value.blank), workspaces = useWorkspaces(value => value);
+      const metadata = React.useSyncExternalStore(projects.store.subscribe, projects.store.getSnapshot), context = projects.context(sessionId), backing = projectBacking(metadata, workspaces, sessionId);
+      if (blank || (!context && backing.mode !== 'worktree')) return null;
+      const worktree = backing.mode === 'worktree', record = backing.record;
+      const label = [context?.project.title, t(worktree ? 'worktreeThread' : 'local'), record?.branch].filter(Boolean).join(' · ');
+      return h('span', { className: 'dsh-wt dsh-wt-muted', title: backing.effectiveCwd }, h(Styles), label);
     }
     function Manager({ runtime: ctx, projects, t, useSessions, usePanelInfo, useSessionStatus }) {
       const list = useSessions(value => value);

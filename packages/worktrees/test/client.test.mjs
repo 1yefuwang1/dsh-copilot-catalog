@@ -26,6 +26,7 @@ const op = { id: 'op-1', phase: 'ready', error: null };
 const status = { settingsHash: 'settings-1', repository: { root: '/repo', head: 'abc123', branch: 'develop' }, remotes: [{ name: 'upstream', identity: 'remote-1' }], defaults: { remote: 'upstream', branch: 'main' } };
 const branches = { remote: 'upstream', remoteIdentity: 'remote-1', defaultBranch: 'develop', items: [{ name: 'main', oid: 'main-oid' }, { name: 'feature/example', oid: 'feature-oid' }], observedAt: 1234 };
 const preview = { id: 'preview-1', worktreeId: 'tree-1', sourceSessionId: 'session-1', targetRoot: '/repo', baseOid: 'abc123', patchPath: '/repo/snapshot.patch', patchHash: 'patch-1', bytes: 15, files: [{ path: 'file.txt', status: 'M', binary: false }] };
+const ownedContext = { project: { id: '12345678-1234-4234-8234-123456789abc', title: 'Two folders', folders: [{ id: 'folder-api', path: '/repo/services/api', title: 'API' }] }, folder: { id: 'folder-api', path: '/repo/services/api', title: 'API' }, binding: { sessionId: 'source', projectId: '12345678-1234-4234-8234-123456789abc', folderId: 'folder-api', mode: 'local', effectiveCwd: '/repo/services/api' } };
 
 function fails(action, kind, code) {
   assert.throws(action, error => error.kind === kind && (code === undefined || error.code === code));
@@ -373,13 +374,13 @@ test('lease restoration is identity-safe and never overwrites a competing writer
   await run.lease.close(); assert.equal(run.input.deps.defaultSink, replacement);
 });
 
-function transaction({ deferredSetup = false, setupFailure, deferredUpload = false, admission = 'success', deferredSourceUpload = false, draft = '', attachments = [], withoutRepositoryGate = false } = {}) {
+function transaction({ deferredSetup = false, setupFailure, deferredUpload = false, admission = 'success', deferredSourceUpload = false, draft = '', attachments = [], withoutRepositoryGate = false, context: initialContext, records = [], sourceCwd = '/repo/services/api' } = {}) {
   const calls = [], events = [], admissions = [], sourceAdmissions = [], opened = [], references = [], cleanups = new Set();
   const empty = { draft: '', draftRev: 7, attachmentIds: [], phase: 'plain', queue: [], occurrences: [] };
   const src = observable({ ...empty, draft, attachmentIds: attachments }), dst = observable({ ...empty });
   const srcSession = observable({ ...blank }), dstSession = observable({ ...blank });
   const list = observable({ byId: { source: { retainedBy: { mainView: 1 } } } }), ownership = observable({ retainedBy: {} });
-  const statuses = observable(new Map()), generation = observable({ id: 1 }), metadata = observable({});
+  const statuses = observable(new Map()), generation = observable({ id: 1 }), metadata = observable({ projects: initialContext ? [initialContext.project] : [], bindings: initialContext?.binding ? [initialContext.binding] : [], records });
   function effect(factory) { const cleanup = factory(); let live = true; const stop = () => { if (live) { live = false; cleanups.delete(stop); return cleanup(); } }; cleanups.add(stop); return stop; }
   const srcBinding = { ctx: { id: 'source', effect }, session: srcSession }, dstBinding = { ctx: { id: 'target', effect }, session: dstSession };
   const nativeSink = async (text, ids, mode, signal) => { sourceAdmissions.push({ text, ids, mode, signal }); return { kind: 'success' }; };
@@ -406,7 +407,7 @@ function transaction({ deferredSetup = false, setupFailure, deferredUpload = fal
       return { kind: 'success' };
     },
   };
-  const ctx = { get: key => { assert.equal(key, 'conversation'); return conversation; }, uiSession: { sessionStatus: statuses }, sessions: { list, binding: id => id === 'source' ? srcBinding : dstBinding,
+  const ctx = { get: key => { assert.equal(key, 'conversation'); return conversation; }, uiSession: { sessionStatus: statuses }, workspaces: { list: observable({ items: [{ workspaceId: 'source-folder', path: sourceCwd, sessionIds: ['source'] }, { workspaceId: 'target-folder', path: result.worktree.effectiveCwd, sessionIds: ['target'] }] }) }, sessions: { list, binding: id => id === 'source' ? srcBinding : dstBinding,
     retain(id, options) { assert.equal(options.source, 'controllerOperation'); const ref = { sessionId: id, ready: Promise.resolve(id === 'source' ? srcBinding : dstBinding), releases: 0, release() { ++ref.releases; } }; references.push(ref); return ref; }, retainInfo: id => id === 'source' ? { getSnapshot: () => ({ retainedBy: list.getSnapshot().byId.source?.retainedBy || {} }), subscribe: list.subscribe } : ownership },
     layout: { beginNavigation() { navigation?.abort(); navigation = new AbortController(); return navigation.signal; } },
     uiWorkspace: { openSession(id) { opened.push(id); navigation.abort(); ownership.publish({ retainedBy: { mainView: 1 } }); list.publish({ byId: { [id]: { retainedBy: { mainView: 1 } } } }); }, startSession() { assert.fail('not used'); } }, effect,
@@ -427,11 +428,13 @@ function transaction({ deferredSetup = false, setupFailure, deferredUpload = fal
       assert.fail('unexpected request');
     } } },
   };
-  const projects = { store: metadata, context: () => undefined, rememberWorktree() {}, rememberRecords() {} };
+  let projectContext = initialContext;
+  const projects = { store: metadata, context: () => projectContext, rememberWorktree() {}, rememberRecords() {} };
   const availability = observable({ available: true });
   const repositories = { store: availability, enabled: id => id === 'source' && availability.getSnapshot().available, unavailable() { availability.publish({ available: false }); } };
   const flow = helpers.createWorktreeFlow(ctx, key => key, projects, withoutRepositoryGate ? undefined : repositories); flow.observe('source');
-  return { flow, ctx, srcInput, src, dst, calls, events, admissions, sourceAdmissions, opened, references, generation, fileUploads, blocks, nativeSink, repositories,
+  return { flow, ctx, srcInput, src, dst, calls, events, admissions, sourceAdmissions, opened, references, generation, metadata, fileUploads, blocks, nativeSink, repositories,
+    contextChanged(next) { projectContext = next; const before = metadata.getSnapshot(); metadata.publish({ ...before, projects: next ? [next.project] : [], bindings: next?.binding ? [next.binding] : [], revision: (before.revision || 0) + 1 }); },
     revoke() { availability.publish({ available: false }); },
     select(mode) { flow.select('source', mode); }, send(text = 'first task', ids = attachments, mode = 'queue') { return srcInput.deps.defaultSink(text, ids, mode, new AbortController().signal); },
     complete() { setupPending.pending.resolve(completeSetup(setupPending.request)); }, navigate() { navigation.abort(); },
@@ -549,6 +552,71 @@ test('revocation cancels already captured slow native codecs and discards delaye
   pending.resolve(success({ ...status, projectPath: '/repo/services/api' })); await waiting; assert.equal(config.flow.store.getSnapshot().status, null); assert.equal(config.flow.store.getSnapshot().branches, null); await config.dispose();
 });
 
+test('project removal invalidates selected New even after cwd availability is positive, until explicit user selection', async () => {
+  const run = transaction({ context: ownedContext, draft: 'keep draft', attachments: ['file-one'] }); run.select('new');
+  const before = structuredClone(run.src.getSnapshot()); run.contextChanged(undefined);
+  assert.equal(run.repositories.enabled('source'), true); assert.equal(run.flow.store.getSnapshot().mode, 'new'); assert.equal(run.flow.store.getSnapshot().sourceChanged, true);
+  assert.equal((await run.send('do not reroute')).kind, 'error'); assert.equal(run.calls.length, 0); assert.equal(run.sourceAdmissions.length, 0); assert.equal(run.admissions.length, 0); assert.deepEqual(run.src.getSnapshot(), before);
+  await run.flow.configure('source'); assert.equal(run.calls.length, 0);
+  run.select('local'); assert.equal((await run.send('explicit current Local')).kind, 'success'); assert.equal(run.sourceAdmissions.length, 1); await run.dispose(); assert.equal(run.metadata.listeners.size, 0);
+  const fresh = transaction({ context: ownedContext }); fresh.select('new'); fresh.contextChanged(undefined); fresh.select('new');
+  assert.equal(fresh.flow.store.getSnapshot().sourceChanged, false); assert.equal((await fresh.send('fresh independent New')).kind, 'success'); await settle();
+  const request = fresh.calls.find(call => call.endpoint === 'dsh-worktrees/prepare').payload.request; assert.equal(Object.hasOwn(request, 'projectId'), false); assert.equal(Object.hasOwn(request, 'folderId'), false); assert.equal(fresh.admissions.length, 1); await fresh.dispose();
+});
+
+test('project main/title edits do not invalidate New, but explicit re-add under a different project UUID does', async () => {
+  const run = transaction({ context: ownedContext }); run.select('new');
+  run.contextChanged({ ...ownedContext, project: { ...ownedContext.project, title: 'Renamed', mainFolderId: 'folder-api' } }); assert.equal(run.flow.store.getSnapshot().sourceChanged, false); assert.equal(run.calls.length, 0);
+  run.contextChanged({ ...ownedContext, project: { ...ownedContext.project, id: 'abcdefab-1234-4234-8234-123456789abc' } });
+  assert.equal(run.flow.store.getSnapshot().sourceChanged, true); assert.equal((await run.send('do not retarget owner')).kind, 'error'); assert.equal(run.calls.length, 0); await run.dispose();
+});
+
+test('project removal cancels slow native serialization without admitting locally or changing draft/chips', async () => {
+  const run = transaction({ context: ownedContext, draft: 'native chip draft', attachments: ['image-one'] }), codec = deferred(), native = new AbortController(); run.select('new');
+  const before = structuredClone(run.src.getSnapshot()); run.srcInput.deps.inputTriggers().serializeReference = () => codec.promise;
+  const sending = run.srcInput.deps.inputTriggers().serializeReference('ref', 'slow', native.signal).then(text => run.srcInput.deps.defaultSink(text, ['image-one'], 'queue', native.signal));
+  run.contextChanged(undefined); await assert.rejects(sending, error => error.kind === 'cancelled'); codec.resolve('late canonical reference'); await settle();
+  assert.equal(run.calls.length, 0); assert.equal(run.sourceAdmissions.length, 0); assert.equal(run.admissions.length, 0); assert.deepEqual(run.src.getSnapshot(), before); await run.dispose();
+});
+
+test('removed ownership aborts delayed configure and branches and cannot publish stale preferences', async () => {
+  for (const stage of ['status', 'branches']) {
+    const run = transaction({ context: ownedContext }), delayed = deferred(); run.select('new'); const original = run.ctx.connection.rpc.call; let request;
+    run.ctx.connection.rpc.call = (...args) => {
+      if (args[2].request?.action === stage) { request = { payload: args[2], signal: args[3] }; return delayed.promise; }
+      return original(...args);
+    };
+    const configuring = run.flow.configure('source'); await settle(); assert.ok(request); run.contextChanged(undefined); assert.equal(request.signal.aborted, true);
+    delayed.resolve(success(stage === 'status' ? { ...status, projectPath: ownedContext.folder.path } : branches)); await configuring;
+    const state = run.flow.store.getSnapshot(); assert.equal(state.status, null); assert.equal(state.branches, null); assert.equal(state.remote, ''); assert.equal(state.branch, ''); assert.equal(state.sourceChanged, true);
+    assert.equal((await run.send('not stale preferences')).kind, 'error'); assert.equal(run.admissions.length, 0); assert.equal(run.sourceAdmissions.length, 0); await run.dispose();
+  }
+});
+
+test('project removal during preparation or target upload cancels before admission and restages source files', async () => {
+  for (const upload of [false, true]) {
+    const run = transaction({ context: ownedContext, deferredSetup: !upload, deferredUpload: upload, draft: 'preserved', attachments: upload ? ['file-one'] : [] }); run.select('new');
+    const sending = run.send('first task'); await settle(); run.contextChanged(undefined); if (!upload) run.complete(); const result = await sending; await settle();
+    assert.equal(result.kind, 'error'); assert.equal(run.sourceAdmissions.length, 0); assert.equal(run.admissions.length, 0); assert.deepEqual(run.opened, []); assert.equal(run.src.getSnapshot().draft, 'preserved');
+    if (upload) assert.equal(run.fileUploads.getSnapshot()['file-one'].owner, 'source'); assert.equal(run.blocks.get('source').getSnapshot(), undefined); await run.dispose();
+  }
+});
+
+test('project removal after accepted worktree Send preserves exactly one admission and deferred navigation', async () => {
+  const run = transaction({ context: ownedContext }); let removed = false;
+  const stop = run.flow.store.subscribe(() => { if (!removed && run.flow.store.getSnapshot().phase === 'complete') { removed = true; run.contextChanged(undefined); } });
+  run.select('new'); assert.equal((await run.send('accepted')).kind, 'success'); await settle(); assert.equal(removed, true); assert.equal(run.admissions.length, 1); assert.equal(run.sourceAdmissions.length, 0); assert.deepEqual(run.opened, ['target']); stop(); await run.dispose();
+});
+
+test('explicit current-worktree selection cancels New and uses native Send without source-folder navigation or Git availability', async () => {
+  for (const assigned of [false, true]) for (const unavailable of [false, true]) {
+    const retained = { ...record, effectiveCwd: '/repo/worktree' }, context = assigned ? { ...ownedContext, binding: { ...ownedContext.binding, mode: 'worktree', effectiveCwd: retained.effectiveCwd, worktreeId: retained.id } } : undefined;
+    const run = transaction({ context, records: [retained], sourceCwd: retained.effectiveCwd, draft: 'keep text', attachments: ['image-one'] }); run.select('new'); if (unavailable) run.revoke();
+    const before = structuredClone(run.src.getSnapshot()); run.select('worktree'); assert.equal(run.flow.store.getSnapshot().mode, 'local'); assert.equal(run.flow.store.getSnapshot().sourceChanged, false); assert.deepEqual(run.src.getSnapshot(), before);
+    assert.equal((await run.send('native current checkout')).kind, 'success'); assert.equal(run.sourceAdmissions.length, 1); assert.equal(run.admissions.length, 0); assert.equal(run.calls.length, 0); assert.deepEqual(run.opened, []); await run.dispose();
+  }
+});
+
 test('fresh configure/Send status rejection replaces an older positive observation without Local fallback', async () => {
   const config = transaction(); config.select('new');
   config.ctx.connection.rpc.call = async () => ({ ok: true, value: { v: 1, ok: false, error: { code: 'GIT_FAILED', message: 'Source no longer valid' } } });
@@ -568,7 +636,7 @@ test('accepted worktree Send survives eligibility revocation during deferred des
 
 test('worktree options and the entire branch fieldset require positive target availability; recovery is explicit Local', () => {
   const controls = source.slice(source.indexOf('    function NewWorktreeControls('), source.indexOf('    function SetupProgress('));
-  assert.match(controls, /canWorktree = repositories.enabled\(sessionId\), blockedNew = selected && state.mode === 'new' && !canWorktree/);
+  assert.match(controls, /canWorktree = repositories.enabled\(sessionId\), blockedNew = selected && state.mode === 'new' && \(!canWorktree \|\| state.sourceChanged\)/);
   assert.match(controls, /!blockedNew && \(canWorktree \|\| worktree\) \? h\('select'/);
   assert.match(controls, /canWorktree && h\('option', \{ value: 'new' \}/);
   assert.match(controls, /canWorktree && !worktree && options && h\('fieldset'/);

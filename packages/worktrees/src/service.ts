@@ -477,7 +477,9 @@ export class WorktreeController {
           project = { projectId: binding.projectId, folderId: folder.id, path: folder.path };
         } else {
           const localFolder = sourceRecord === undefined ? path : resolve(sourceRecord.repoRoot, sourceRecord.projectSubdir);
-          project = await this.dependencies.projects.ensureFolder(localFolder, invocation.signal);
+          // Removed/independent nested sources may name another managed checkout.
+          // Optional metadata must not reimport that checkout or block independent use.
+          if (!this.records().some(record => contained(record.checkoutRoot, localFolder))) project = await this.dependencies.projects.ensureFolder(localFolder, invocation.signal);
         }
       }
     }

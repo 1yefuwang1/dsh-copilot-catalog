@@ -61,7 +61,7 @@ export async function apply(ctx: Context, config: PluginConfig): Promise<void> {
   const domain = await facility.open(worktreeDomain);
   const store: WorktreeStore = { worktrees: domain.table('worktrees'), operations: domain.table('operations'), close: () => domain.close() };
   const projectsDomain = await facility.open(projectDomain).catch(async error => { await domain.close(); throw error; });
-  const projectStore: ProjectStore = { projects: projectsDomain.table('projects'), bindings: projectsDomain.table('bindings'), starts: projectsDomain.table('starts'), close: () => projectsDomain.close() };
+  const projectStore: ProjectStore = { projects: projectsDomain.table('projects'), bindings: projectsDomain.table('bindings'), starts: projectsDomain.table('starts'), removals: projectsDomain.table('removals'), close: () => projectsDomain.close() };
   let controller: WorktreeController;
   const projects = new ProjectController(ctx, projectStore, { records: () => controller.records() }, { operationTimeoutMs: resolvedConfig.operationTimeoutMs });
   let firstMessageNamer: FirstMessageNamer;
@@ -144,7 +144,7 @@ export async function apply(ctx: Context, config: PluginConfig): Promise<void> {
   reminders.start(); projectReminders.start(); firstMessageNamer.start();
 }
 export { ProjectController, resolveMainFolder } from './projects.js';
-export type { ProjectFolder, ProjectRecord, ProjectThreadBinding, ProjectSnapshot, ProjectRequest, ProjectInvocation, ProjectStartResult } from './projects.js';
+export type { ProjectFolder, ProjectRecord, ProjectThreadBinding, ProjectSnapshot, ProjectRequest, ProjectInvocation, ProjectStartResult, ProjectRemoveResult } from './projects.js';
 export { GitOperations } from './git.js';
 export { WorktreeError } from './errors.js';
 export type * from './types.js';

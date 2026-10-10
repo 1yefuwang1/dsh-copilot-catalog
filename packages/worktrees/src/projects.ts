@@ -25,9 +25,11 @@ export type ProjectRequest =
   | { action: 'list'; projectId?: string }
   | { action: 'create'; id: string; title: string; folders: string[]; mainFolder?: string }
   | { action: 'update'; projectId: string; title?: string; folders?: string[]; mainFolder?: string }
+  | { action: 'remove'; projectId: string }
   | { action: 'bind'; projectId: string; folderId: string; sessionId: string }
   | { action: 'start'; operationId: string; projectId: string; folderId?: string };
 export interface ProjectInvocation { agent?: Agent; origin: 'ui' | 'tool' | 'command'; signal: AbortSignal }
+export interface ProjectRemoveResult { removed: true; projectId: string; scope: 'project-metadata' }
 export interface ProjectStartResult { sessionId: string; workspaceId: string; binding: ProjectThreadBinding }
 export interface ProjectWorktreeSource { records(): WorktreeRecord[] }
 type BootstrapApi = Pick<SessionBootstrap, 'actor' | 'isLive' | 'settings' | 'create' | 'close'>;
@@ -52,6 +54,7 @@ const requestSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('list'), projectId: z.string().uuid().optional() }).strict(),
   z.object({ action: z.literal('create'), id: z.string().uuid(), title: titleSchema, folders: foldersSchema, mainFolder: pathSchema.optional() }).strict(),
   z.object({ action: z.literal('update'), projectId: z.string().uuid(), title: titleSchema.optional(), folders: foldersSchema.optional(), mainFolder: pathSchema.optional() }).strict().refine(value => value.title !== undefined || value.folders !== undefined || value.mainFolder !== undefined),
+  z.object({ action: z.literal('remove'), projectId: z.string().uuid() }).strict(),
   z.object({ action: z.literal('bind'), projectId: z.string().uuid(), folderId: text, sessionId: text }).strict(),
   z.object({ action: z.literal('start'), operationId: z.string().uuid(), projectId: z.string().uuid(), folderId: text.optional() }).strict(),
 ]);
@@ -97,6 +100,7 @@ const variant = (action: string, properties: Record<string, unknown>, requiredFi
 export const parameterSchema: Record<string, unknown> = { type: 'object', oneOf: [
   variant('list', { projectId: uuidParameter }, []), variant('create', { id: uuidParameter, title: titleParameter, folders: folderParameter, mainFolder: { ...mainFolderParameter, description: 'Absolute existing source directory in folders (canonical match); omitted uses the first folder.' } }, ['id', 'title', 'folders']),
   { ...variant('update', { projectId: uuidParameter, title: titleParameter, folders: folderParameter, mainFolder: { ...mainFolderParameter, description: 'Absolute existing source directory in resulting folders (canonical match). Omitted retains the main, or uses the sole remaining folder; supply a replacement to remove the main when multiple folders remain.' } }, ['projectId']), anyOf: [{ required: ['title'] }, { required: ['folders'] }, { required: ['mainFolder'] }] },
+  variant('remove', { projectId: { ...uuidParameter, description: 'Remove only project metadata and membership. Folders, files, conversations and worktrees remain; use a fresh UUID to re-add.' } }, ['projectId']),
   variant('bind', { projectId: uuidParameter, folderId: idParameter, sessionId: idParameter }, ['projectId', 'folderId', 'sessionId']),
   variant('start', { operationId: uuidParameter, projectId: uuidParameter, folderId: { ...idParameter, description: 'Override the main folder for this new start. Omitted uses the main; replay reuses the original receipt folder and session.' } }, ['operationId', 'projectId']),
 ] };
@@ -113,14 +117,14 @@ export class ProjectController {
   private closed = false;
   private closing: Promise<void> | undefined;
   constructor(private readonly owner: Context, private readonly store: ProjectStore, private readonly worktrees: ProjectWorktreeSource, private readonly dependencies: ProjectDependencies = {}) { this.bootstrap = dependencies.bootstrap ?? new SessionBootstrap(owner); }
-  records(): ProjectRecord[] { return [...this.store.projects.entries()].map(([, record]) => clone(record)); }
+  records(): ProjectRecord[] { return [...this.store.projects.entries()].filter(([id]) => this.store.removals.get(id) === undefined).map(([, record]) => clone(record)); }
   /** Internal read-only selection from a known managed row, never from a fabricated session ID. */
   selectionForWorktree(worktreeId: string): { projectId: string; folderId: string; path: string } | undefined {
     const records = this.worktrees.records(); const record = records.find(value => value.id === worktreeId);
     return record === undefined ? undefined : this.worktreeFolder(record, records);
   }
   resolveFolder(projectId: string, folderId?: string): ProjectFolder {
-    const project = this.store.projects.get(projectId);
+    const project = this.store.removals.get(projectId) === undefined ? this.store.projects.get(projectId) : undefined;
     const folder = project === undefined ? undefined : folderId === undefined ? resolveMainFolder(project) : project.folders.find(value => value.id === folderId);
     if (folder === undefined) throw new WorktreeError('PROJECT_FOLDER_NOT_FOUND', 'The selected project folder is not registered.');
     return clone(folder);
@@ -149,6 +153,7 @@ export class ProjectController {
     return this.serial(async () => {
       const parsed = parseProjectRequest(request);
       const startFolder = this.guard(parsed, input);
+      if (parsed.action === 'remove') return this.removeProject(parsed, input);
       await this.synchronizeNow(signal); this.guard(parsed, input, startFolder);
       if (parsed.action === 'list') return this.snapshot(parsed.projectId);
       if (parsed.action === 'create' || parsed.action === 'update') return this.changeProject(parsed, input);
@@ -162,15 +167,17 @@ export class ProjectController {
     });
   }
   synchronize(): Promise<void> { return this.serial(() => this.synchronizeNow(this.shutdown.signal)); }
-  /** Internal metadata-only import after the worktree caller has admitted its actual source path. */
-  ensureFolder(path: string, signal?: AbortSignal): Promise<{ projectId: string; folderId: string; path: string }> {
+  /** Internal metadata-only import after admission; removed sources remain independent of projects. */
+  ensureFolder(path: string, signal?: AbortSignal): Promise<{ projectId: string; folderId: string; path: string } | undefined> {
     return this.serial(async () => {
       const lifetime = signal === undefined ? this.shutdown.signal : AbortSignal.any([signal, this.shutdown.signal]);
       abortIfRequested(lifetime);
       if (!isAbsolute(path) || /[\u0000-\u001f\u007f]/u.test(path)) throw new WorktreeError('INVALID_PROJECT_PATH', 'An absolute existing source folder is required.');
       const canonical = (await this.canonicalFolders([path]))[0]!;
       const existing = this.folderForPath(canonical); if (existing !== undefined) return existing;
-      abortIfRequested(lifetime); await required<Registry>(this.owner, 'workspaceRegistry').create(canonical);
+      abortIfRequested(lifetime); const registry = required<Registry>(this.owner, 'workspaceRegistry');
+      if (this.suppressedFolder(canonical, registry.list().find(workspace => workspace.path === canonical)?.id)) return undefined;
+      await registry.create(canonical);
       await this.synchronizeNow(lifetime);
       const imported = this.folderForPath(canonical);
       if (imported === undefined) throw new WorktreeError('PROJECT_FOLDER_NOT_FOUND', 'The source folder could not be imported.');
@@ -226,10 +233,11 @@ export class ProjectController {
     const hint = (row: WorktreeRecord): { projectId: string; folderId: string; path: string } | undefined => {
       const ownership = row as WorktreeRecord & { projectId?: string; folderId?: string };
       if (ownership.folderId === undefined) return undefined;
-      const exact = ownership.projectId === undefined ? undefined : this.store.projects.get(ownership.projectId)?.folders.find(folder => folder.id === ownership.folderId);
+      const projects = this.records();
+      const exact = projects.find(project => project.id === ownership.projectId)?.folders.find(folder => folder.id === ownership.folderId);
       if (exact !== undefined) return { projectId: ownership.projectId!, folderId: exact.id, path: exact.path };
       // Imported-project adoption keeps the native folder ID stable while replacing its logical owner.
-      for (const [, project] of this.store.projects.entries()) {
+      for (const project of projects) {
         const folder = project.folders.find(value => value.id === ownership.folderId);
         if (folder !== undefined) return { projectId: project.id, folderId: folder.id, path: folder.path };
       }
@@ -277,6 +285,8 @@ export class ProjectController {
   }
   private async synchronizeNow(signal?: AbortSignal): Promise<void> {
     abortIfRequested(signal); const registry = required<Registry>(this.owner, 'workspaceRegistry');
+    // Receipt-first removal repair must precede adoption, imports and binding inference.
+    for (const [id] of this.store.removals.entries()) { abortIfRequested(signal); await this.finishRemoval(id); }
     const worktrees = this.worktrees.records();
     // Repair interrupted imported-folder adoption. Custom projects are the only permitted winners.
     const customs = this.records().filter(record => record.imported !== true);
@@ -293,7 +303,7 @@ export class ProjectController {
     }
     for (const workspace of registry.list()) {
       abortIfRequested(signal);
-      if (this.folderForPath(workspace.path) !== undefined || worktrees.some(record => contained(record.checkoutRoot, workspace.path))) continue;
+      if (this.folderForPath(workspace.path) !== undefined || this.suppressedFolder(workspace.path, workspace.id) || worktrees.some(record => contained(record.checkoutRoot, workspace.path))) continue;
       const now = Date.now(); const project: ProjectRecord = { id: randomUUID(), title: workspace.title.trim().slice(0, 120) || basename(workspace.path) || 'Project', folders: [{ id: workspace.id, path: workspace.path, title: workspace.title }], mainFolderId: workspace.id, createdAt: now, updatedAt: now, imported: true };
       await this.store.projects.put(project.id, project);
     }
@@ -318,6 +328,27 @@ export class ProjectController {
     }
     for (const [id] of this.store.bindings.entries()) if (!this.headers.has(id)) await this.store.bindings.delete(id);
   }
+  private suppressedFolder(path: string, folderId?: string): boolean {
+    return [...this.store.removals.entries()].some(([, receipt]) => receipt.folders.some(folder => folder.path === path || folder.id === folderId));
+  }
+  /** Cleanup is metadata-only and may finish after cancellation once the receipt commits. */
+  private async finishRemoval(projectId: string): Promise<void> {
+    await this.store.projects.delete(projectId);
+    for (const [id, binding] of this.store.bindings.entries()) if (binding.projectId === projectId) await this.store.bindings.delete(id);
+  }
+  private async removeProject(request: Extract<ProjectRequest, { action: 'remove' }>, invocation: ProjectInvocation): Promise<ProjectRemoveResult> {
+    const id = request.projectId;
+    if (this.store.removals.get(id) === undefined) {
+      const project = this.store.projects.get(id);
+      if (project === undefined) throw new WorktreeError('PROJECT_NOT_FOUND', 'This project is not registered.');
+      this.guard(request, invocation);
+      // Publish the durable decision before deleting anything. Readers hide it immediately;
+      // retry/restart repairs interrupted cleanup without reimporting retained native folders.
+      await this.store.removals.put(id, { id, folders: project.folders.map(({ id, path }) => ({ id, path })), removedAt: Date.now() });
+    }
+    await this.finishRemoval(id); this.guard(request, invocation);
+    return { removed: true, projectId: id, scope: 'project-metadata' };
+  }
   private async canonicalFolders(paths: string[]): Promise<string[]> {
     const result: string[] = [];
     for (const path of paths) {
@@ -333,6 +364,7 @@ export class ProjectController {
   private async changeProject(request: Extract<ProjectRequest, { action: 'create' | 'update' }>, invocation: ProjectInvocation): Promise<{ project: ProjectRecord }> {
     const id = request.action === 'create' ? request.id : request.projectId;
     const existing = this.store.projects.get(id);
+    if (request.action === 'create' && [...this.store.removals.entries()].some(([removedId]) => removedId.toLowerCase() === id.toLowerCase())) throw new WorktreeError('PROJECT_REMOVED', 'This project id was removed. Use a fresh UUID to re-add folders.');
     if (request.action === 'create' && existing !== undefined) throw new WorktreeError('PROJECT_EXISTS', 'This project id is already registered.');
     if (request.action === 'update' && existing === undefined) throw new WorktreeError('PROJECT_NOT_FOUND', 'This project is not registered.');
     const paths = request.folders === undefined ? existing!.folders.map(folder => folder.path) : await this.canonicalFolders(request.folders);

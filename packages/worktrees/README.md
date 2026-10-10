@@ -1,7 +1,7 @@
 # dsh-worktrees
 
 Multi-folder projects with Local and isolated Git worktree threads for DeepSeek
-Harness. This experimental Host + Web Client package is **`0.2.9`, not yet
+Harness. This experimental Host + Web Client package is **`0.2.13`, not yet
 published**. It does not require Copilot, the catalog plugin, or the search plugin.
 
 ## Projects and threads
@@ -11,8 +11,17 @@ A **thread** belongs to that project and executes in one selected folder: either
 its Local directory or a managed linked Git checkout. Project membership is not
 native Workspace membership, a working-directory change or a permission grant.
 
+- The compact **Projects** header uses Search, View options and Add project icon
+  controls. Search appears only when opened; Escape/Close clears it and restores
+  focus. Archive filters are in View options, not an always-visible dropdown.
 - The **Projects** sidebar lists project headers and their Local/worktree threads
-  together. A permanent branch/worktree icon identifies managed worktree backing,
+  together, using the native Folder view's open/closed workspace icons, regular
+  14px session titles, compact last-active times and 12px **Show X more sessions**
+  controls. Dates use session activity, not project edits; counts reflect only
+  hidden sessions. Hover/focus reveals row actions without permanently reserving
+  their width. Activity uses the native neutral 14px animated ring (including
+  reduced-motion behavior); pending/completion use solid state dots. A permanent
+  branch/worktree icon separately identifies managed worktree backing,
   independent of whether a row is hovered. Worktree/branch names are not shown
   inline; hover the thread title or worktree icon to see them, or open thread
   details. The accessible label and details retain the original folder and actual
@@ -52,9 +61,22 @@ native Workspace membership, a working-directory change or a permission grant.
   plugin-owned aliases through public slot APIs; native entries and declarations
   are never changed. The footer **Folder view** switch restores the original
   native browser; **Projects** switches back. Plugin unload restores native UI.
+- **Manage project → Remove project** asks for confirmation and removes only the
+  logical project and its folder/thread associations. Source folders, files,
+  native workspaces, conversations, managed worktrees and start receipts are kept,
+  even if threads are running. Conversations remain available under **Other
+  threads** and **Folder view**, with permanent worktree icons and path/branch
+  details. Cancel keeps all unsaved edits; failures preserve the editor draft.
+- Removal remains effective after refresh/restart: a minimal durable removal
+  receipt suppresses automatic folder import and repairs interrupted metadata
+  cleanup. The project storage domain remains additive v1. To group the retained
+  folders again, explicitly create a project with a fresh UUID; existing native
+  folder identities and conversations are reused. Removed UUIDs are not recycled.
 - A folder has one project owner. Explicit custom-project conflicts are refused;
-  imported ownership can be adopted. Folders with threads, worktrees or start
-  receipts cannot be removed. Existing cwd values and history stay immutable.
+  imported ownership can be adopted. Removing individual folders from a retained
+  project is still refused if they have threads, worktrees or start receipts;
+  removing the project itself is metadata-only and has no such restriction.
+  Existing cwd values and history stay immutable.
 
 For a multi-folder project, only the **selected Git folder** is isolated in a new
 worktree. Other folders still refer to Local directories; the plugin does not
@@ -393,8 +415,13 @@ Versioned results are `{v:1,ok:true,data:...}` or
 Explicit commands remain normally logged.
 
 `/project` (one JSON action object) and `workspace_project` share the project
-controller: `list` (optional `projectId` filter), `create`, `update`, `bind`, and
-`start`. `create` takes a fresh UUID `id`, title and absolute existing `folders`.
+controller: `list` (optional `projectId` filter), `create`, `update`, `remove`,
+`bind`, and `start`. `remove` takes only `projectId` and returns
+`{removed:true,projectId,scope:"project-metadata"}`. Repeating a committed removal
+is safe; it never deletes directories, sessions or Git data. UI removal uses the
+actual authenticated operator without activating an unrelated conversation;
+commands/tools retain their genuine caller and normal mutation policy.
+`create` takes a fresh UUID `id`, title and absolute existing `folders`.
 Optional `mainFolder` is an absolute path matching a resulting source folder
 canonically; omitted create uses first for API compatibility. `update.folders`
 replaces the complete list; `update.mainFolder` can change only the default.

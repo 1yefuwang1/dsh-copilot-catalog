@@ -2,14 +2,14 @@
 
 A **pnpm monorepo with three independently installable DeepSeek Harness plugins**.
 Host halves use strict TypeScript/ESM with declarations; the worktree package also
-contains a persistent plain-JS Web Client. `dsh-worktrees` is an unreleased `0.2.9`
+contains a persistent plain-JS Web Client. `dsh-worktrees` is an unreleased `0.2.13`
 package, not a promised npm installation target.
 
 | Package | Purpose | DSH behavior |
 | --- | --- | --- |
 | [dsh-copilot-catalog](packages/catalog/README.md) | Account-aware Copilot model discovery | Wraps/replaces the standard pi-ai adapter; preserves its public configuration and credential key |
 | [dsh-copilot-search](<packages/search/README.md>) | Copilot native Responses web search | Registers `github-copilot-search`; does not replace an LLM adapter |
-| [dsh-worktrees](<packages/worktrees/README.md>) | Multi-folder projects with Local/worktree threads | Adds project grouping, main-folder defaults and agent folder reminders, worktree indicators, native first-Send lazy setup with visible progress and fast branch naming, manager/reminders and guarded Local handoff; no core or LLM adapter changes |
+| [dsh-worktrees](<packages/worktrees/README.md>) | Multi-folder projects with Local/worktree threads | Adds project grouping with metadata-only removal, main-folder defaults and agent folder reminders, worktree indicators, native first-Send lazy setup with visible progress and fast branch naming, manager/reminders and guarded Local handoff; no core or LLM adapter changes |
 
 The repository root is **private development tooling**, not a DSH plugin. Install
 or link a leaf package, not the root Git URL. The existing catalog npm name and
