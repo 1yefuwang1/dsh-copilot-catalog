@@ -1,5 +1,16 @@
 # @1yefuwang1/dsh-worktrees changelog
 
+## 0.2.14 — Native sidebar view switch
+
+- Move the view switch from the footer into native sidebar navigation, between
+  Automation tasks and Worktrees, using the native row styling and icon sizing.
+- Label the action by its destination: **Switch to Projects View** or
+  **Switch to Workspace View**, with matching Chinese translations.
+- Preserve native sidebar declarations and extensions through owned slot aliases;
+  switching views leaves the current conversation and other panel actions intact.
+- Add regression coverage for navigation order, labels, callback routing and
+  native sidebar restoration on plugin unload.
+
 ## 0.2.13 — First scoped release preparation
 
 - Package as `@1yefuwang1/dsh-worktrees` to avoid an unrelated unscoped npm name;

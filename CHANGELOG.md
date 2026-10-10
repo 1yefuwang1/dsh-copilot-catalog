@@ -1,5 +1,11 @@
 # Monorepo changelog
 
+## @1yefuwang1/dsh-worktrees 0.2.14
+
+- Move the Projects/Workspace view switch into native sidebar navigation between
+  Automation tasks and Worktrees, with explicit destination labels and native
+  styling. Preserve the current conversation, other panels and sidebar extensions.
+
 ## Unreleased — Three independent plugin workspaces
 
 - Prepare the `@1yefuwang1/dsh-worktrees` `0.2.13` Host/Web Client release: persistent
@@ -38,4 +44,4 @@ Package history and versions are independent:
 
 - [Catalog changelog](packages/catalog/CHANGELOG.md) — `0.2.2` GHE Cloud endpoint support; earlier versions previously published.
 - [Search changelog](<packages/search/CHANGELOG.md>) — `0.1.2` GHE Cloud endpoint support; `0.1.1` first public native-search release and streaming compatibility fix.
-- [Worktrees changelog](<packages/worktrees/CHANGELOG.md>) — `@1yefuwang1/dsh-worktrees@0.2.13`; staged release requires maintainer approval before npm availability.
+- [Worktrees changelog](<packages/worktrees/CHANGELOG.md>) — `@1yefuwang1/dsh-worktrees@0.2.14`; staged release requires maintainer approval before npm availability.
