@@ -52,6 +52,9 @@ native Workspace membership, a working-directory change or a permission grant.
   sessions). Since the picker choice is composed at boot, it is not a setting. The dropdown
   defaults to that share — the system chooser on desktop, the in-app browser where
   the Host lists directories, and path entry only when neither exists.
+  Because that composition is fixed at boot, the in-app browser cannot be reached on
+  desktop through DSH's picker seam; [host-directory-listing.md](docs/host-directory-listing.md)
+  records the deferred design for serving listing from this plugin's own Host half.
   Use **Cancel** to discard unsaved edits;
   saving/native picking blocks dismissal until it settles, and Host refusals preserve the
   draft. The same folder-list design is used by **Manage project**. Removal edits

@@ -24,6 +24,11 @@
   the in-app browser where the Host lists directories, and path entry only when
   neither is reachable. Path entry stays the pre-probe placeholder and is
   promoted once the capability answer arrives, never overriding a user choice.
+- Deferred, not implemented: serving directory listing from this plugin's own Host
+  half, which would restore the in-app multi-folder browser on desktop. The design,
+  the measured reason DSH's composed picker cannot serve both verb sets, and the
+  test matrix to carry over are recorded in
+  [docs/host-directory-listing.md](docs/host-directory-listing.md).
 
 ## 0.2.16 — Clearer folder-entry labels
 
