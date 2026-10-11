@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, realpath, readFile, writeFile, rm } from 'node:fs/promi
 import { dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { Context } from '@deepseek-ai/cordis';
 import { DomainFacility, defineDomain } from '@deepseek-ai/dsh-storage-domain';
@@ -18,7 +19,7 @@ import { tempDirectory, tmpBase } from '../helpers.mjs';
 // Resolve the storage hub through the actual domain SDK's dependency, not an
 // installed profile or an absolute Harness path. The JSON SDK is a dev dependency.
 const require = createRequire(import.meta.resolve('@deepseek-ai/dsh-storage-domain'));
-const { Storage } = await import(require.resolve('@deepseek-ai/dsh-storage'));
+const { Storage } = await import(pathToFileURL(require.resolve('@deepseek-ai/dsh-storage')).href);
 const invocation = { origin: 'ui', signal: new AbortController().signal };
 const names = Object.keys(projectDomain.tables);
 

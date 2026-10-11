@@ -14,7 +14,7 @@ import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt';
 import { createScope, scopeTarget } from '@deepseek-ai/dsh-scope';
 import { HostConnectionService, serverResponseSchema } from '@deepseek-ai/dsh-client-connection';
 import * as plugin from '@1yefuwang1/dsh-worktrees';
-import { WorktreeReminders } from '../../dist/context.js';
+import { WorktreeReminders, renderWorktreeContext } from '../../dist/context.js';
 import { ProjectReminders, renderProjectContext } from '../../dist/project-context.js';
 import { tempDirectory, tmpBase } from '../helpers.mjs';
 
@@ -244,11 +244,25 @@ test('real system prompt reminders are scoped, stable, deduplicated and removed 
   reminders.start(); reminders.attach(isolated); reminders.attach(isolated);
   const first = await f.host.systemPrompt.assemble({ scope: isolated }); const second = await f.host.systemPrompt.assemble({ scope: isolated });
   const context = first.contexts.filter(c => c.name === 'dsh-worktrees:context'); assert.equal(context.length, 1); assert.deepEqual(first.contexts, second.contexts);
-  assert.match(context[0].text, /creation-time fetched snapshot/u); assert.match(context[0].text, /detached HEAD/u); assert.ok(context[0].text.includes(worktree.effectiveCwd));
+  assert.match(context[0].text, /creation-time fetched snapshot/u); assert.match(context[0].text, /detached HEAD/u); assert.ok(context[0].text.includes(`Execution directory: ${JSON.stringify(worktree.effectiveCwd)}`));
   assert.ok(!(await f.host.systemPrompt.assemble({ scope: local })).contexts.some(c => c.name === 'dsh-worktrees:context'));
   cached = { ...cached, branch: 'work' }; assert.match((await f.host.systemPrompt.assemble({ scope: isolated })).contexts[0].text, /work/u);
   await pluginScope.dispose(); assert.ok(!(await f.host.systemPrompt.assemble({ scope: isolated })).contexts.some(c => c.name === 'dsh-worktrees:context'));
   reminders.close(); reminders.close();
+});
+
+test('worktree context JSON-quotes Windows drive and UNC paths on every platform', () => {
+  // Literal Windows paths exercise serialization without host-specific path resolution.
+  for (const root of [String.raw`C:\work trees`, String.raw`\\server\share\work trees`]) {
+    const worktree = { ...record(tmpBase), effectiveCwd: `${root}\\isolated\\project`, repoRoot: `${root}\\original` };
+    const lines = renderWorktreeContext(worktree).split('\n');
+    for (const [label, path] of [['Execution directory', worktree.effectiveCwd], ['Original local checkout', worktree.repoRoot]]) {
+      const line = lines.find(value => value.startsWith(`${label}: `));
+      assert.equal(line, `${label}: ${JSON.stringify(path)}`);
+      assert.equal(JSON.parse(line.slice(`${label}: `.length)), path);
+      assert.ok(!line.includes(path));
+    }
+  }
 });
 
 test('real agent-scope disposal and lifecycle events detach reminder without disposing foreign agents', async t => {
