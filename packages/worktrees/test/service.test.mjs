@@ -780,7 +780,7 @@ test('project-aware status preserves canonical execution subdirectory and create
   const result = await f.controller.execute({ ...f.request(), projectId: selected.projectId, folderId: selected.folderId }, f.invocation);
   assert.equal(result.worktree.projectId, selected.projectId); assert.equal(result.worktree.folderId, selected.folderId);
   assert.deepEqual(p.bindings[0], { sessionId: result.sessionId, projectId: selected.projectId, folderId: selected.folderId, effectiveCwd: result.worktree.effectiveCwd, mode: 'worktree', worktreeId: result.worktree.id });
-  assert.equal(p.bindings[0].effectiveCwd.endsWith('/project'), true);
+  assert.equal(p.bindings[0].effectiveCwd.endsWith(`${sep}project`), true);
   assert.equal(worktreeDomain.tables.worktrees.valueSchema.safeParse(result.worktree).success, true);
 });
 

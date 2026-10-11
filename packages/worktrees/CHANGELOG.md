@@ -24,6 +24,10 @@
   the in-app browser where the Host lists directories, and path entry only when
   neither is reachable. Path entry stays the pre-probe placeholder and is
   promoted once the capability answer arrives, never overriding a user choice.
+- Assert executable-bit and unreadable-file behaviour only where the platform carries
+  POSIX permission bits; Windows has neither, so those checks reported failures
+  instead of uncovered behaviour. Path expectations use the platform separator
+  throughout.
 - Use portable fixture names (no newline in a filename, which Windows rejects), and
   make the handoff fixture's line endings independent of the runner: the source
   pins `core.autocrlf` before its first add, and the clone's working tree is

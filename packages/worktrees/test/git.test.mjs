@@ -82,6 +82,10 @@ async function fixture(t, caps = {}) {
   return { root, remote, seed, local, managed, snapshots, calls, exec, git, config, engine, repository, identity, create, preview };
 }
 const code = expected => error => error?.code === expected;
+// Windows has no POSIX permission bits: chmod cannot add an executable bit or make a
+// file unreadable. Those product behaviours are asserted only where the platform can
+// express them, and reported as uncovered elsewhere.
+const posixModes = process.platform !== 'win32';
 
 // Every fixture owns its temporary resources; no user's checkout or remote is mutated by these tests.
 test('discover, advertised slash branch and fresh atomic fetch leave Source Local untouched', async t => {
@@ -299,7 +303,8 @@ test('snapshot covers committed, staged, unstaged, binary, newline, untracked an
   assert.equal(await readFile(path.join(f.local, 'committed.txt'), 'utf8'), 'commit\n');
   assert.equal(await readFile(path.join(f.local, 'staged.txt'), 'utf8'), 'final unstaged state\n');
   assert.deepEqual(await readFile(path.join(f.local, 'binary.bin')), Buffer.from([0, 255, 128, 1, 0, 4]));
-  assert.ok((await lstat(path.join(f.local, 'script.sh'))).mode & 0o111);
+  if (posixModes) assert.ok((await lstat(path.join(f.local, 'script.sh'))).mode & 0o111);
+  else t.diagnostic('Windows cannot carry an executable bit; mode preservation not exercised');
   assert.equal(await readFile(path.join(f.local, oddName), 'utf8'), 'odd filename\n');
   assert.deepEqual(await readFile(path.join(f.local, '.git', 'index')), targetIndex);
   assert.deepEqual(await readFile(path.join(gitdir, 'index')), index);
@@ -328,7 +333,8 @@ test('rename, delete and mode-only snapshots apply exactly', async t => {
   await f.engine.apply(preview, record);
   assert.equal(await lstat(path.join(f.local, 'project', 'file.txt')).then(() => true, () => false), false);
   assert.equal(await readFile(path.join(f.local, 'renamed.txt'), 'utf8'), 'base\n');
-  assert.ok((await lstat(path.join(f.local, '.gitignore'))).mode & 0o111);
+  if (posixModes) assert.ok((await lstat(path.join(f.local, '.gitignore'))).mode & 0o111);
+  else t.diagnostic('Windows cannot carry an executable bit; mode-only change not exercised');
 });
 
 test('changed unsafe symlinks, unreadable files, caps and truncated executor results fail closed', async t => {
@@ -337,7 +343,8 @@ test('changed unsafe symlinks, unreadable files, caps and truncated executor res
   await assert.rejects(f.preview(record), code('UNSAFE_SYMLINK'));
   const link = path.join(record.checkoutRoot, 'link'); assert.equal(path.resolve(link), link); await rm(link);
   await writeFile(path.join(record.checkoutRoot, 'unreadable.txt'), 'secret\n'); await chmod(path.join(record.checkoutRoot, 'unreadable.txt'), 0o000);
-  await assert.rejects(f.engine.fingerprint(record.checkoutRoot), code('UNREADABLE_FILE'));
+  if (posixModes) await assert.rejects(f.engine.fingerprint(record.checkoutRoot), code('UNREADABLE_FILE'));
+  else t.diagnostic('Windows cannot make a file unreadable by mode; refusal not exercised');
   await chmod(path.join(record.checkoutRoot, 'unreadable.txt'), 0o600);
   await assert.rejects(new GitOperations(f.exec, { ...f.config, maxSnapshotBytes: 1 }).fingerprint(record.checkoutRoot), code('SNAPSHOT_LIMIT'));
   await assert.rejects(new GitOperations(f.exec, { ...f.config, maxFiles: 1 }).fingerprint(record.checkoutRoot), code('FILE_LIMIT'));
