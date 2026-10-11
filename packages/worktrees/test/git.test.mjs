@@ -54,6 +54,14 @@ async function fixture(t, caps = {}) {
   await writeFile(path.join(seed, '.gitignore'), 'ignored-*\n');
   await git(seed, 'add', '.'); await git(seed, 'commit', '-m', 'base');
   await git(root, 'clone', '--bare', seed, remote); await git(root, 'clone', remote, local);
+  // Line endings must not depend on the machine's git config: a runner with
+  // autocrlf would materialise every fixture file differently from the commit.
+  for (const repository of [seed, remote, local]) await git(repository, 'config', 'core.autocrlf', 'false');
+  // A freshly cloned target must read clean before any test touches it. This is the
+  // exact command the engine's cleanliness gate runs, so a platform that makes
+  // a new clone look dirty fails here with the paths instead of far downstream.
+  const cloneStatus = (await git(local, 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignore-submodules=none')).toString();
+  assert.equal(cloneStatus, '', `a fresh target clone is not clean: ${cloneStatus.slice(0, 600)}`);
   await git(seed, 'remote', 'add', 'origin', remote);
   const managed = path.join(root, 'managed'); const snapshots = path.join(managed, '.snapshots'); await mkdir(managed); await mkdir(snapshots);
   const config = { root: managed, gitExecutable: 'git', defaultRemote: 'origin', defaultBranch: '', commandTimeoutMs: 5000, fetchTimeoutMs: 10000, operationTimeoutMs: 60000, maxSnapshotBytes: 4 * 1024 * 1024, maxFiles: 1000, maxRefBytes: 1024 * 1024, ...caps };
@@ -263,7 +271,10 @@ test('snapshot covers committed, staged, unstaged, binary, newline, untracked an
   await writeFile(path.join(record.checkoutRoot, 'staged.txt'), 'final unstaged state\n');
   await writeFile(path.join(record.checkoutRoot, 'project', 'file.txt'), 'updated\n');
   await writeFile(path.join(record.checkoutRoot, 'binary.bin'), Buffer.from([0, 255, 128, 1, 0, 4]));
-  await writeFile(path.join(record.checkoutRoot, 'space Unicode 你好\nname.txt'), 'odd filename\n');
+  // Names with a newline are legal on POSIX but not on Windows, and Git delimits
+  // porcelain output with newlines, so the odd-name fixture stays portable.
+  const oddName = 'space Unicode 你好 name.txt';
+  await writeFile(path.join(record.checkoutRoot, oddName), 'odd filename\n');
   await writeFile(path.join(record.checkoutRoot, 'script.sh'), '#!/bin/sh\nexit 0\n'); await chmod(path.join(record.checkoutRoot, 'script.sh'), 0o755);
   const gitdir = (await f.git(record.checkoutRoot, 'rev-parse', '--absolute-git-dir')).toString().trim();
   const index = await readFile(path.join(gitdir, 'index')); const head = await f.git(record.checkoutRoot, 'rev-parse', 'HEAD');
@@ -282,7 +293,7 @@ test('snapshot covers committed, staged, unstaged, binary, newline, untracked an
   assert.equal(await readFile(path.join(f.local, 'staged.txt'), 'utf8'), 'final unstaged state\n');
   assert.deepEqual(await readFile(path.join(f.local, 'binary.bin')), Buffer.from([0, 255, 128, 1, 0, 4]));
   assert.ok((await lstat(path.join(f.local, 'script.sh'))).mode & 0o111);
-  assert.equal(await readFile(path.join(f.local, 'space Unicode 你好\nname.txt'), 'utf8'), 'odd filename\n');
+  assert.equal(await readFile(path.join(f.local, oddName), 'utf8'), 'odd filename\n');
   assert.deepEqual(await readFile(path.join(f.local, '.git', 'index')), targetIndex);
   assert.deepEqual(await readFile(path.join(gitdir, 'index')), index);
 });

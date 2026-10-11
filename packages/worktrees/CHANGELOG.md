@@ -24,6 +24,10 @@
   the in-app browser where the Host lists directories, and path entry only when
   neither is reachable. Path entry stays the pre-probe placeholder and is
   promoted once the capability answer arrives, never overriding a user choice.
+- Use portable fixture names (no newline in a filename, which Windows rejects) and
+  pin `core.autocrlf=false` in the fixture repositories so line endings cannot
+  depend on the machine's git configuration. A freshly cloned target now asserts it
+  reads clean with the same command the engine's cleanliness gate uses.
 - Compare worktree registrations canonically when verifying a checkout: Git reports
   `worktree list` in machine format, so a raw string comparison against the
   canonical root failed on Windows, where separators and short names differ. An
