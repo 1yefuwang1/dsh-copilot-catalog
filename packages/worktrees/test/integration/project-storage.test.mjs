@@ -13,6 +13,7 @@ import { projectDomain } from '../../dist/project-store.js';
 import { worktreeDomain } from '../../dist/store.js';
 import { WorktreeController } from '../../dist/service.js';
 import { Config } from '../../dist/index.js';
+import { tempDirectory, tmpBase } from '../helpers.mjs';
 
 // Resolve the storage hub through the actual domain SDK's dependency, not an
 // installed profile or an absolute Harness path. The JSON SDK is a dev dependency.
@@ -22,8 +23,8 @@ const invocation = { origin: 'ui', signal: new AbortController().signal };
 const names = Object.keys(projectDomain.tables);
 
 async function fixture(t) {
-  const root = await mkdtemp(resolve(tmpdir(), 'project-storage-owned-'));
-  assert.equal(dirname(root), await realpath(tmpdir()));
+  const root = await tempDirectory('project-storage-owned-');
+  assert.equal(dirname(root), tmpBase);
   const path = resolve(root, 'source'), otherPath = resolve(root, 'other-source'), checkout = resolve(root, 'checkout');
   for (const folder of [path, otherPath, checkout]) await mkdir(folder);
   const files = [resolve(path, 'sentinel'), resolve(checkout, '.git')];
@@ -62,7 +63,7 @@ async function fixture(t) {
   const other = { id: otherId, title: 'Unrelated project', folders: [{ id: otherFolderId, path: otherPath, title: 'Other' }], mainFolderId: otherFolderId, createdAt: 1, updatedAt: 2 };
   const binding = sessionId => ({ sessionId, projectId: id, folderId, mode: sessionId === threads[2] ? 'worktree' : 'local', effectiveCwd: sessionId === threads[2] ? checkout : path, ...(sessionId === threads[2] ? { worktreeId: worktrees[0].id } : {}) });
   const starts = ['ready', 'recovery-required'].map(phase => { const operationId = randomUUID(); return { id: operationId, projectId: id, folderId, actorId: null, effectiveCwd: path, requestedSessionId: operationId, phase, sessionId: threads[0], workspaceId: folderId, createdAt: 1, updatedAt: 2 }; });
-  t.after(async () => { for (const controller of controllers) await controller.close(); await facility.closeAll(); await backend.close(); assert.equal(dirname(root), await realpath(tmpdir())); await rm(root, { recursive: true, force: true }); });
+  t.after(async () => { for (const controller of controllers) await controller.close(); await facility.closeAll(); await backend.close(); assert.equal(dirname(root), tmpBase); await rm(root, { recursive: true, force: true }); });
   return { root, path, checkout, folderId, id, otherId, project, other, threads, binding, starts, native, headers, worktrees, calls, backend, facility, controller, files };
 }
 

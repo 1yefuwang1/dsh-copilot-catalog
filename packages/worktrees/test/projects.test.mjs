@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { ProjectController, parseProjectRequest, parameterSchema, resolveMainFolder } from '../dist/projects.js';
 import { projectDomain, projectRecordSchema } from '../dist/project-store.js';
 import { WorktreeError } from '../dist/errors.js';
+import { tempDirectory, tmpBase } from './helpers.mjs';
 
 const errorCode = code => error => error instanceof WorktreeError && error.code === code;
 function table(schema, initial = [], persist = async () => {}) {
@@ -15,8 +16,8 @@ function table(schema, initial = [], persist = async () => {}) {
   return { map, get: id => map.get(id), entries: () => map.entries(), async put(id, value) { const parsed = structuredClone(schema.parse(value)); await persist(); map.set(id, parsed); }, async delete(id) { await persist(); return map.delete(id); } };
 }
 async function fixture(t, options = {}) {
-  const directory = await mkdtemp(resolve(tmpdir(), 'project-layer-owned-'));
-  assert.equal(dirname(directory), await realpath(tmpdir()));
+  const directory = await tempDirectory('project-layer-owned-');
+  assert.equal(dirname(directory), tmpBase);
   const paths = { a: resolve(directory, 'a'), b: resolve(directory, 'b'), c: resolve(directory, 'c'), checkout: resolve(directory, 'managed', 'checkout') };
   for (const path of Object.values(paths)) await mkdir(path, { recursive: true });
   const headers = new Map(); const sessionEvents = new Map(); const actors = new Map(); const worktrees = []; const workspaces = new Map(); const calls = []; const policy = new Map(); const plans = new Map();
@@ -66,7 +67,7 @@ async function fixture(t, options = {}) {
   const controller = new ProjectController(owner, store, { records: () => structuredClone(worktrees) }, dependencies);
   const invocation = { origin: 'ui', signal: new AbortController().signal };
   const invoke = request => controller.execute(request, invocation);
-  t.after(async () => { await controller.close(); assert.equal(dirname(directory), await realpath(tmpdir())); await rm(directory, { recursive: true, force: true }); });
+  t.after(async () => { await controller.close(); assert.equal(dirname(directory), tmpBase); await rm(directory, { recursive: true, force: true }); });
   return { directory, paths, controller, store, registry, headers, sessionEvents, actors, actor, session, calls, policy, plans, worktrees, invocation, invoke, services, dependencies, owner, settings };
 }
 function managed(f, extra = {}) {

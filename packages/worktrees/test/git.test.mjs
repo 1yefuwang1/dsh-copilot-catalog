@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { GitOperations } from '../dist/git.js';
+import { tempDirectory } from './helpers.mjs';
 
 /** Test-only native runner. Every operation is bounded and confined to this fixture's own repos. */
 function executor(owned, calls = []) {
@@ -38,7 +39,7 @@ function executor(owned, calls = []) {
 }
 
 async function fixture(t, caps = {}) {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'worktrees-engine-test-'));
+  const root = await tempDirectory('worktrees-engine-test-');
   t.after(async () => {
     assert.equal(path.resolve(root), root);
     assert.equal(await realpath(root), root);
@@ -378,8 +379,17 @@ test('fetched filter attributes rejected without invoking configured clean/smudg
 
 test('invalid UTF-8 filenames and bounded advertised generations fail closed', async t => {
   const f = await fixture(t); const record = await f.create();
-  await writeFile(Buffer.concat([Buffer.from(`${record.checkoutRoot}/invalid-`), Buffer.from([0xff])]), 'bytes\n');
-  await assert.rejects(f.engine.fingerprint(record.checkoutRoot), code('UNSUPPORTED_ENCODING'));
+  // Creating a non-UTF-8 name is a filesystem capability, not a product behaviour:
+  // APFS and NTFS reject it with EILSEQ, while Linux ext4 accepts the raw bytes. The
+  // refusal under test can only be exercised where such a name can exist at all.
+  const invalidName = Buffer.concat([Buffer.from(`${record.checkoutRoot}/invalid-`), Buffer.from([0xff])]);
+  try {
+    await writeFile(invalidName, 'bytes\n');
+    await assert.rejects(f.engine.fingerprint(record.checkoutRoot), code('UNSUPPORTED_ENCODING'));
+  } catch (error) {
+    if (error.code !== 'EILSEQ') throw error;
+    t.diagnostic('filesystem rejects non-UTF-8 names; decoding refusal not exercisable here');
+  }
   const truncated = new GitOperations(async spec => {
     const result = await f.exec(spec);
     if (spec.args.includes('ls-remote')) return { ...result, stdout: result.stdout.subarray(0, -1) };

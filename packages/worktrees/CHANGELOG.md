@@ -24,6 +24,13 @@
   the in-app browser where the Host lists directories, and path entry only when
   neither is reachable. Path entry stays the pre-probe placeholder and is
   promoted once the capability answer arrives, never overriding a user choice.
+- Test fixtures create their owned directories under one canonical temporary root.
+  macOS resolves `/var` through a symlink to `/private/var` and Windows can return
+  short or differently-cased names, so fixtures that mixed `os.tmpdir()` with
+  `realpath(tmpdir())` failed their own containment assertions on both platforms
+  while passing on Linux. A filesystem that rejects non-UTF-8 names now reports that
+  decoding coverage is not exercisable instead of failing the suite.
+
 - Deferred, not implemented: serving directory listing from this plugin's own Host
   half, which would restore the in-app multi-folder browser on desktop. The design,
   the measured reason DSH's composed picker cannot serve both verb sets, and the

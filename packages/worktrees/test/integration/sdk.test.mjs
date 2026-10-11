@@ -16,6 +16,7 @@ import { HostConnectionService, serverResponseSchema } from '@deepseek-ai/dsh-cl
 import * as plugin from '@1yefuwang1/dsh-worktrees';
 import { WorktreeReminders } from '../../dist/context.js';
 import { ProjectReminders, renderProjectContext } from '../../dist/project-context.js';
+import { tempDirectory, tmpBase } from '../helpers.mjs';
 
 test('scoped public package and subpaths keep the stable Host identity', async () => {
   const { default: manifest } = await import('@1yefuwang1/dsh-worktrees/package.json', { with: { type: 'json' } });
@@ -36,7 +37,7 @@ function domainTables(worktree) {
   tables.dsh_worktrees.worktrees.map.set(worktree.id, worktree); return tables;
 }
 async function hostFixture(t) {
-  const root = await mkdtemp(resolve(tmpdir(), 'worktree-sdk-owned-')); assert.equal(dirname(root), await realpath(tmpdir()));
+  const root = await tempDirectory('worktree-sdk-owned-'); assert.equal(dirname(root), tmpBase);
   const host = new Context(); new SessionStore(host); new SystemPrompt(host, { includeHarnessIdentity: false }); new ToolRuntime(host); new CommandRuntime(host);
   const scopes = []; const agents = new Map(); const events = [];
   host.on('session/event', (session, event) => { events.push({ session, event }); });
@@ -64,7 +65,7 @@ async function hostFixture(t) {
   };
   host.provide('sandboxPolicy', { resolve: ({ session }) => ({ mode: 'danger-full-access', workspaceRoot: session.header.cwd }) });
   host.provide('subprocess', { async resolveExecutable() { throw Error('No processes are permitted in SDK registration tests'); }, spawn() { throw Error('No processes are permitted in SDK registration tests'); } });
-  t.after(async () => { for (const scope of scopes) await scope.dispose(); assert.equal(dirname(root), await realpath(tmpdir())); await rm(root, { recursive: true, force: true }); });
+  t.after(async () => { for (const scope of scopes) await scope.dispose(); assert.equal(dirname(root), tmpBase); await rm(root, { recursive: true, force: true }); });
   return { host, root, agent, agents, scopes, events, registry };
 }
 
@@ -109,7 +110,7 @@ test('native root Config defaults to existing Host root and returns a bounded vo
   const defaults = plugin.Config({});
   assert.equal(typeof defaults.root, 'object'); assert.equal(typeof defaults.root.get, 'function');
   assert.equal(defaults.root.get(), dshHomePath('worktrees'));
-  const root = resolve(tmpdir(), 'managed root with spaces');
+  const root = resolve(tmpBase, 'managed root with spaces');
   assert.equal(plugin.Config({ root }).root.get(), root);
   const schema = plugin.Config.dict.root;
   assert.equal(schema.type, 'string'); assert.equal(schema.meta.volatile, true);

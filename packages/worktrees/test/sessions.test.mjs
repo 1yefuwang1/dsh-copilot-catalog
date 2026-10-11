@@ -9,9 +9,10 @@ import { SessionStore, SessionId } from '@deepseek-ai/dsh-session';
 import { createScope } from '@deepseek-ai/dsh-scope';
 import { SessionBootstrap } from '../dist/sessions.js';
 import { WorktreeError } from '../dist/errors.js';
+import { tempDirectory, tmpBase } from './helpers.mjs';
 
 async function fixture(t, behavior = {}) {
-  const root = await mkdtemp(resolve(tmpdir(), 'worktrees-session-owned-')); assert.equal(dirname(root), await realpath(tmpdir()));
+  const root = await tempDirectory('worktrees-session-owned-');
   const sourcePath = resolve(root, 'source'); const cwd = resolve(root, 'checkout', 'project');
   await mkdir(sourcePath, { recursive: true }); await mkdir(cwd, { recursive: true });
   const owner = new Context(); new SessionStore(owner);
@@ -45,7 +46,7 @@ async function fixture(t, behavior = {}) {
     return { agent: child, async dispose() { lifecycle.push(['dispose', child.id]); live.delete(child.id); } };
   } });
   const bootstrap = new SessionBootstrap(owner);
-  t.after(async () => { await bootstrap.close(); for (const scope of scopes) await scope.dispose(); assert.equal(dirname(root), await realpath(tmpdir())); await rm(root, { recursive: true, force: true }); });
+  t.after(async () => { await bootstrap.close(); for (const scope of scopes) await scope.dispose(); assert.equal(dirname(root), tmpBase); await rm(root, { recursive: true, force: true }); });
   return { owner, bootstrap, source, cwd, created, logs, lifecycle, flushes, live, set projected(value) { projected = value; }, get globalDefaultReads() { return globalDefaultReads; }, get observedDisposed() { return observedDisposed; } };
 }
 function code(value) { return error => error instanceof WorktreeError && error.code === value; }

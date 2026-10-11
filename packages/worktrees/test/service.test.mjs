@@ -9,6 +9,7 @@ import { FirstMessageNamer } from '../dist/first-message.js';
 import { WorktreeError } from '../dist/errors.js';
 import { hashValue } from '../dist/schema.js';
 import { worktreeDomain } from '../dist/store.js';
+import { tempDirectory, tmpBase } from './helpers.mjs';
 
 const state = { head: 'a'.repeat(40), branch: null, dirty: false, changes: 0, untracked: 0 };
 function table(events, name) {
@@ -21,9 +22,9 @@ function table(events, name) {
   };
 }
 async function fixture(t, options = {}) {
-  const directory = await mkdtemp(resolve(tmpdir(), 'worktree-controller-owned-'));
+  const directory = await tempDirectory('worktree-controller-owned-');
   // Tests remove only the exact unique directory they created, never caller project data.
-  assert.equal(dirname(directory), await realpath(tmpdir()));
+  assert.equal(dirname(directory), tmpBase);
   const root = resolve(directory, 'managed'); const repo = resolve(directory, 'repo');
   await mkdir(resolve(repo, 'project'), { recursive: true });
   const events = []; const agents = new Map(); const settings = new Map(); const calls = [];
@@ -114,7 +115,7 @@ async function fixture(t, options = {}) {
   if (options.observe) { namer = new FirstMessageNamer(ctx, controller); namer.start(); t.after(() => namer.close()); }
   const invocation = { agent: actor, origin: 'command', signal: new AbortController().signal };
   const request = () => ({ action: 'create', operationId: randomUUID(), remote: 'origin', remoteIdentity, remoteBranch: 'main', requireBlankSource: true, settingsHash: settings.get(actor.id).hash });
-  t.after(async () => { await controller.close(); assert.equal(dirname(directory), await realpath(tmpdir())); await rm(directory, { recursive: true, force: true }); });
+  t.after(async () => { await controller.close(); assert.equal(dirname(directory), tmpBase); await rm(directory, { recursive: true, force: true }); });
   return { directory, repo, root, config, ctx, controller, namer, listeners, invocation, actor, agent, agents, policy, plans, store, git, dependencies, calls, events, settings, request, get fetchCount() { return fetchCount; }, get applyCount() { return applyCount; }, set remoteIdentity(value) { remoteIdentity = value; } };
 }
 function errorCode(code) { return error => error instanceof WorktreeError && error.code === code; }
