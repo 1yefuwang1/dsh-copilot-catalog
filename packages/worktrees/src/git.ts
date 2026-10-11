@@ -548,13 +548,16 @@ export class GitOperations {
       await this.run(source.root, ['add', '-A', '--', '.'], signal, { env: privateStore.env });
       const finalTree = oid(line((await this.run(source.root, ['write-tree'], signal, { env: privateStore.env })).stdout));
       const finalEntries = await this.tree(source.root, finalTree, signal, privateStore.env);
-      await this.exactContents(source.root, finalEntries, sourceFiles.paths, signal);
       await this.attributes(source.root, finalEntries.map(entry => entry.path), signal, privateStore.env, true);
       const files = await this.patchFiles(source.root, input.baseOid, finalTree, privateStore, signal);
       for (const file of files) {
         const original = file.status.startsWith('R') ? file.status.slice(file.status.indexOf(':') + 1) : file.path;
         if (symlinks.has(file.path) || symlinks.has(original)) fail('UNSAFE_SYMLINK', 'Changed symlinks are not supported by handoff snapshots.');
       }
+      // Refuse changed symlinks before comparing native readlink bytes with Git blobs:
+      // Windows normalizes link separators, but these changes are unsupported either way.
+      // Supported files must still match their exact working bytes and modes.
+      await this.exactContents(source.root, finalEntries, sourceFiles.paths, signal);
       await this.collisions(target.root, files, base);
       const patch = (await this.run(source.root, ['diff', '--binary', '--full-index', '--no-ext-diff', '--no-textconv', '--find-renames', '--src-prefix=a/', '--dst-prefix=b/', input.baseOid, finalTree, '--'], signal, { env: privateStore.env, maxBytes: this.config.maxSnapshotBytes })).stdout;
       if (await this.fingerprint(source.root, signal) !== sourceFingerprint) fail('SOURCE_CHANGED', 'The source changed while the snapshot was created.');

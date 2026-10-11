@@ -364,6 +364,34 @@ test('changed unsafe symlinks, unreadable files, caps and truncated executor res
   await assert.rejects(f.engine.status(record.checkoutRoot, aborted.signal), code('CANCELLED'));
 });
 
+test('changed symlinks are refused before platform-normalized link bytes are compared', async t => {
+  const f = await fixture(t); const record = await f.create();
+  await symlink('../outside', path.join(record.checkoutRoot, 'link'));
+  const gitdir = (await f.git(record.checkoutRoot, 'rev-parse', '--absolute-git-dir')).toString().trim();
+  const sourceIndex = await readFile(path.join(gitdir, 'index'));
+  const targetIndex = await readFile(path.join(f.local, '.git', 'index'));
+  let normalized = false;
+  const engine = new GitOperations(async spec => {
+    const result = await f.exec(spec);
+    if (spec.args.includes('ls-tree') && spec.env?.GIT_INDEX_FILE) {
+      // Git for Windows normalizes link separators differently from native readlink.
+      // Simulate that blob mismatch on every platform, without weakening byte checks.
+      const stdout = result.stdout.toString().replace(/120000 blob [a-f0-9]{40}\tlink\0/u, () => {
+        normalized = true;
+        return `120000 blob ${'0'.repeat(40)}\tlink\0`;
+      });
+      return { ...result, stdout: Buffer.from(stdout) };
+    }
+    return result;
+  }, f.config);
+  await assert.rejects(engine.snapshot({ worktreeId: record.id, sourceSessionId: 's', repositoryRoot: f.local, checkoutRoot: record.checkoutRoot, targetRoot: f.local, baseOid: record.baseOid, snapshotRoot: f.snapshots }), code('UNSAFE_SYMLINK'));
+  assert.ok(normalized, 'the private tree must exercise the link-byte mismatch');
+  assert.deepEqual(await readdir(f.snapshots), []);
+  assert.deepEqual(await readFile(path.join(gitdir, 'index')), sourceIndex);
+  assert.deepEqual(await readFile(path.join(f.local, '.git', 'index')), targetIndex);
+  assert.equal(await readFile(path.join(f.local, 'project', 'file.txt'), 'utf8'), 'base\n');
+});
+
 test('staged ignored additions and restored mtimes are represented in the final snapshot', async t => {
   const f = await fixture(t); const record = await f.create();
   const tracked = path.join(record.checkoutRoot, 'project', 'file.txt');
