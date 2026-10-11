@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, mkdir, writeFile, rm, realpath, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, resolve, basename, relative } from 'node:path';
+import { basename, dirname, relative, resolve, sep } from 'node:path';
 import test from 'node:test';
 import { WorktreeController } from '../dist/service.js';
 import { FirstMessageNamer } from '../dist/first-message.js';
@@ -76,7 +76,7 @@ async function fixture(t, options = {}) {
   const repository = { root: repo, commonDir: resolve(repo, '.git'), projectSubdir: 'project', head: state.head, branch: 'main' };
   let remoteIdentity = 'opaque-remote'; let fetchCount = 0; let applyCount = 0;
   const git = {
-    async discover(path) { calls.push(['discover', path]); const record = [...store.worktrees.map.values()].find(r => path === r.checkoutRoot || path.startsWith(`${r.checkoutRoot}/`)); return record ? { ...repository, root: record.checkoutRoot, projectSubdir: path === record.checkoutRoot ? '' : 'project' } : { ...repository, projectSubdir: path === repo ? '' : 'project' }; },
+    async discover(path) { calls.push(['discover', path]); const record = [...store.worktrees.map.values()].find(r => path === r.checkoutRoot || path.startsWith(`${r.checkoutRoot}${sep}`)); return record ? { ...repository, root: record.checkoutRoot, projectSubdir: path === record.checkoutRoot ? '' : 'project' } : { ...repository, projectSubdir: path === repo ? '' : 'project' }; },
     async remotes() { return [{ name: 'origin', identity: remoteIdentity }]; },
     async branches() { calls.push(['branches']); if (options.branchesFailure) throw new WorktreeError('GIT_FAILED', 'advertisement unavailable'); return { remote: 'origin', remoteIdentity, defaultBranch: 'main', branches: Array.from({ length: 123 }, (_, index) => ({ name: `branch-${String(index).padStart(3, '0')}`, oid: state.head })).reverse(), observedAt: 42 }; },
     async create(input) {
@@ -144,10 +144,10 @@ test('live root changes affect only new creates and ready replay keeps identity 
   const request = { ...f.request(), firstPrompt: 'Use the original root' };
   const first = await f.controller.execute(request, f.invocation);
   const retained = structuredClone(first.worktree), originalSession = f.agents.get(first.sessionId);
-  assert.ok(first.worktree.checkoutRoot.startsWith(`${f.root}/`));
+  assert.ok(first.worktree.checkoutRoot.startsWith(`${f.root}${sep}`));
   root = resolve(f.directory, 'new managed root');
   const second = await f.controller.execute({ ...f.request(), firstPrompt: 'Use the changed root' }, f.invocation);
-  assert.ok(second.worktree.checkoutRoot.startsWith(`${root}/`));
+  assert.ok(second.worktree.checkoutRoot.startsWith(`${root}${sep}`));
   assert.deepEqual(f.store.worktrees.get(first.worktree.id), retained);
   assert.equal(originalSession.session.header.cwd, retained.effectiveCwd);
   assert.equal(await realpath(retained.checkoutRoot), retained.checkoutRoot);
@@ -165,7 +165,7 @@ test('creation root is captured synchronously before execute yields, ignoring in
   assert.equal(reads, 1);
   root = resolve(f.directory, 'changed-before-any-await');
   const result = await task;
-  assert.ok(result.worktree.checkoutRoot.startsWith(`${f.root}/`)); assert.equal(reads, 1);
+  assert.ok(result.worktree.checkoutRoot.startsWith(`${f.root}${sep}`)); assert.equal(reads, 1);
 });
 
 test('creation root stays captured across asynchronous source bootstrap', async t => {
@@ -176,7 +176,7 @@ test('creation root stays captured across asynchronous source bootstrap', async 
   f.dependencies.bootstrap.settings = async agent => { entered(); await gate; return settings(agent); };
   const task = f.controller.execute(f.request(), f.invocation); await ready;
   root = resolve(f.directory, 'changed-during-bootstrap'); release();
-  assert.ok((await task).worktree.checkoutRoot.startsWith(`${f.root}/`));
+  assert.ok((await task).worktree.checkoutRoot.startsWith(`${f.root}${sep}`));
 });
 
 test('repository-queued and fetching creates retain admission roots, later creates use edited root', async t => {
@@ -193,8 +193,8 @@ test('repository-queued and fetching creates retain admission roots, later creat
   await f.controller.execute({ action: 'status' }, f.invocation);
   assert.equal(f.fetchCount, 1); assert.equal(reads, 2);
   root = resolve(f.directory, 'changed-while-queued'); release();
-  for (const result of await Promise.all([first, second])) assert.ok(result.worktree.checkoutRoot.startsWith(`${f.root}/`));
-  assert.ok((await f.controller.execute(f.request(), f.invocation)).worktree.checkoutRoot.startsWith(`${root}/`));
+  for (const result of await Promise.all([first, second])) assert.ok(result.worktree.checkoutRoot.startsWith(`${f.root}${sep}`));
+  assert.ok((await f.controller.execute(f.request(), f.invocation)).worktree.checkoutRoot.startsWith(`${root}${sep}`));
   assert.equal(reads, 3);
 });
 
@@ -204,7 +204,7 @@ test('naming and session opening root edits never relocate the existing checkout
   f = await fixture(t, { worktreeRoot: () => root, agentCapabilities: { llm }, beforeSession() { root = resolve(f.directory, 'changed-during-opening'); } }); root = f.root;
   const request = { ...f.request(), firstPrompt: 'Keep the checkout directory' };
   const result = await f.controller.execute(request, f.invocation);
-  assert.ok(result.worktree.checkoutRoot.startsWith(`${f.root}/`));
+  assert.ok(result.worktree.checkoutRoot.startsWith(`${f.root}${sep}`));
   assert.equal(f.calls.find(([kind]) => kind === 'session')[1].cwd, result.worktree.effectiveCwd);
   assert.deepEqual(await f.controller.execute(request, f.invocation), result); assert.equal(f.fetchCount, 1); assert.equal(llm.calls.length, 2);
 });
@@ -248,7 +248,7 @@ test('plain constructor root strings retain relative resolution when live depend
   // Resolve into the fixture without changing cwd or creating anything outside it.
   f.config.root = relative(process.cwd(), f.root);
   const result = await f.controller.execute(f.request(), f.invocation);
-  assert.ok(result.worktree.checkoutRoot.startsWith(`${f.root}/`));
+  assert.ok(result.worktree.checkoutRoot.startsWith(`${f.root}${sep}`));
 });
 
 test('live root edits leave previews, exports and handoff on the initial private snapshot root', async t => {
@@ -256,13 +256,13 @@ test('live root edits leave previews, exports and handoff on the initial private
   const f = await fixture(t, { worktreeRoot: () => root }); root = f.root;
   const original = await f.controller.execute(f.request(), f.invocation);
   const preview = await f.controller.execute({ action: 'preview', id: original.worktree.id }, f.invocation);
-  assert.ok(preview.patchPath.startsWith(`${resolve(f.root, '.snapshots')}/`));
+  assert.ok(preview.patchPath.startsWith(`${resolve(f.root, '.snapshots')}${sep}`));
   root = resolve(f.directory, 'edited-live-root');
   const changed = await f.controller.execute(f.request(), f.invocation);
-  assert.ok(changed.worktree.checkoutRoot.startsWith(`${root}/`));
+  assert.ok(changed.worktree.checkoutRoot.startsWith(`${root}${sep}`));
   f.dependencies.worktreeRoot = () => { throw Error('non-create must never read this'); };
   const secondPreview = await f.controller.execute({ action: 'preview', id: changed.worktree.id }, f.invocation);
-  assert.ok(secondPreview.patchPath.startsWith(`${resolve(f.root, '.snapshots')}/`));
+  assert.ok(secondPreview.patchPath.startsWith(`${resolve(f.root, '.snapshots')}${sep}`));
   for (const item of [preview, secondPreview]) assert.equal((await f.controller.execute({ action: 'export', previewId: item.id }, f.invocation)).patchHash, item.patchHash);
   const result = await f.controller.execute({ action: 'handoff', id: original.worktree.id, previewId: preview.id, operationId: randomUUID() }, f.invocation);
   assert.equal(result.operation.phase, 'ready'); assert.equal(f.applyCount, 1);

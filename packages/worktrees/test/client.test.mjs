@@ -133,7 +133,8 @@ test('quiet RPC bridge sends exact channel, endpoint, original actor/request and
 });
 
 test('quiet RPC bridge declares and resolves the actual traced Connection root dependency', async () => {
-  const declaration = /inject: (\[[^\n]+\]),\n\s*\/\/ Export pure/u.exec(source);
+  // Windows checkouts use CRLF, so the separator before the following comment is matched loosely.
+  const declaration = /inject: (\[[^\n]+\]),\r?\n\s*\/\/ Export pure/u.exec(source);
   assert.ok(declaration, 'the actual returned Client plugin injection declaration is inspected');
   const declared = vm.runInNewContext(declaration[1]);
   assert.ok(declared.includes('connection'));

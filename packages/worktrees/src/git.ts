@@ -322,7 +322,16 @@ export class GitOperations {
     }
     const registration = nul((await this.run(repositoryRoot, ['worktree', 'list', '--porcelain', '-z'], signal)).stdout);
     const roots = registration.filter(value => value.startsWith('worktree ')).map(value => value.slice(9));
-    if (roots.filter(value => value === info.root).length !== 1) fail('CHECKOUT_IDENTITY_CHANGED', 'The checkout is not uniquely registered with its source repository.');
+    // Git reports these machine-formatted, so a raw comparison against the canonical
+    // root fails wherever the two forms differ: Windows mixes separators and may
+    // report a short name, and a symlinked ancestor appears in one form only. Match
+    // canonically, and leave an entry that cannot be resolved unmatched rather than
+    // turning a stale registration into a failure to enumerate.
+    const matches = await Promise.all(roots.map(async value => {
+      const canonical = await realpath(value).catch(() => undefined);
+      return canonical === undefined ? value === info.root : canonical === info.root;
+    }));
+    if (matches.filter(Boolean).length !== 1) fail('CHECKOUT_IDENTITY_CHANGED', 'The checkout is not uniquely registered with its source repository.');
   }
 
   async verify(record: WorktreeRecord, signal?: AbortSignal): Promise<CheckoutState> {

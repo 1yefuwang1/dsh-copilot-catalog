@@ -24,6 +24,13 @@
   the in-app browser where the Host lists directories, and path entry only when
   neither is reachable. Path entry stays the pre-probe placeholder and is
   promoted once the capability answer arrives, never overriding a user choice.
+- Compare worktree registrations canonically when verifying a checkout: Git reports
+  `worktree list` in machine format, so a raw string comparison against the
+  canonical root failed on Windows, where separators and short names differ. An
+  entry that cannot be resolved now stays unmatched instead of turning a stale
+  registration into a failure to enumerate.
+- Use the platform separator in fixture ownership assertions and accept CRLF when
+  parsing the checked-out client bundle, so the suites can pass on Windows.
 - Test fixtures create their owned directories under one canonical temporary root.
   macOS resolves `/var` through a symlink to `/private/var` and Windows can return
   short or differently-cased names, so fixtures that mixed `os.tmpdir()` with
