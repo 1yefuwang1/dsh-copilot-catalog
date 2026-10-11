@@ -1,6 +1,6 @@
 {
   "name": "@1yefuwang1/dsh-worktrees",
-  "version": "0.2.14",
+  "version": "0.2.17",
   "description": "Multi-folder projects with Local and isolated Git worktree threads, freshly fetched remote branches and guarded local handoff.",
   "type": "module",
   "main": "./dist/index.js",
@@ -28,6 +28,11 @@
     "check:secrets": "node ../../scripts/check-secrets.mjs"
   },
   "license": "MIT",
+  "devDependencies": {
+    "jsdom": "^30.1.2",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
   "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" },
   "repository": {
     "type": "git",

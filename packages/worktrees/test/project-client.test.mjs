@@ -13,8 +13,9 @@ const nativePrimitives = await readFile(resolve(dirname(peerRequire.resolve('@de
 const nativeStateCss = await readFile(resolve(dirname(peerRequire.resolve('@deepseek-ai/dsh-client-ui-primitives/package.json')), 'lib/StateDot.module.css'), 'utf8');
 
 const source = await readFile(new URL('../client.js', import.meta.url), 'utf8');
-// Execute real protocol/coordinator helpers only. There is no React stub,
-// DOM, renderer, app double, or screenshot substitute in these tests.
+// Execute real protocol/coordinator helpers, plus one guarded render of the real
+// ProjectEditor against a minimal hook stub. No DOM, app double or screenshot
+// substitute is used; the render test exists to catch state/wiring defects.
 const start = source.indexOf('    class WorktreeError extends Error');
 const end = source.indexOf('    function Icon(', start);
 const helpers = vm.runInNewContext(`(() => { const NS = 'worktrees.ui', PANEL = 'dsh-worktrees', VIEW_SWITCH = PANEL + '-projects-view'; ${source.slice(start, end)}; return {
@@ -23,7 +24,7 @@ const helpers = vm.runInNewContext(`(() => { const NS = 'worktrees.ui', PANEL = 
   visibleProjectRows, projectRowState, projectSessionTime, createProjectStore, projectSlotName, projectChildren,
   projectSlots, mirrorProjectSlot, createSidebarMode, sidebarViewLabel, registerSidebarViewSwitch,
   appendProjectFolders, toggleProjectFolder, projectFolderName, createFolderScanner, createProjectSubmitter,
-  projectMainFolder, draftMainFolder, chooseConversationFolder,
+  projectMainFolder, draftMainFolder, chooseConversationFolder, nativeFolderPicker, addModesFor, matchingAddMode, preferredAddMode, browseSupported, settleFirst,
 }; })()`, { AbortController, crypto: webcrypto });
 const success = data => ({ ok: true, value: { v: 1, ok: true, data } });
 const projectId = '12345678-1234-4234-8234-123456789abc';
@@ -43,6 +44,7 @@ function observable(initial) {
 }
 async function settle() { for (let i = 0; i < 20; ++i) await Promise.resolve(); }
 function invalid(fn) { assert.throws(fn, error => error.kind === 'decode'); }
+
 
 test('main-folder DTO validation and legacy fallback keep current conversation ownership separate', () => {
   const selected = { ...project, mainFolderId: 'folder-b' }, data = { ...metadata, projects: [selected] };
@@ -721,12 +723,23 @@ test('project dialog declares the compact reference layout and a separately stag
   assert.match(editor, /className: 'dsh-wt-project-dialog', compact: true/);
   assert.ok(editor.includes("'createProject'"));
   for (const key of ['projectName', 'sourceFolders', 'localFolders', 'add', 'cancel']) assert.ok(editor.includes("t('" + key + "')"), key);
+  // The add dropdown labels must state the interaction and never share one label.
+  const addSelect = editor.slice(editor.indexOf("className: 'dsh-wt-source-select'")).split('\n')[0];
+  const optionLabels = Object.fromEntries([...addSelect.matchAll(/h\('option', \{ value: '([a-z]+)' \}, t\('([a-zA-Z]+)'\)\)/g)].map(match => [match[1], match[2]]));
+  assert.deepEqual({ ...optionLabels }, { browse: 'localFolders', path: 'enterFolderPath', native: 'chooseDirectory' });
+  assert.equal(new Set(Object.values(optionLabels)).size, 3);
+  for (const value of Object.keys(optionLabels)) assert.ok(addSelect.includes(`value: '${value}' }, t(`), value);
   assert.match(editor, /h\(FolderRows, \{ folders, remove, disabled: busy, t \}\)/);
   assert.match(editor, /existing: folders, picked: add, close: closeBrowser/);
   assert.match(editor, /appendProjectFolders\(currentFolders\.current, paths\)/);
-  assert.match(editor, /submitter\.current\.pending \|\| picker\.current \|\| browsing\.current \|\| confirming\.current/);
-  assert.match(editor, /const dismiss = \(\) => \{ if \(!submitter\.current\.pending && !picker\.current && !confirming\.current\) close\(\)/);
-  assert.ok(editor.indexOf('picker.current = true;') < editor.indexOf('await ctx.uiWorkspace.pickDirectory()'));
+  assert.match(editor, /submitter\.current\.pending \|\| picking\.current \|\| browsing\.current \|\| confirming\.current/);
+  assert.match(editor, /const dismiss = \(\) => \{ if \(!submitter\.current\.pending && !picking\.current && !confirming\.current\) close\(\)/);
+  // The helper hands back a bare callable, so the editor must call it, must refuse a
+  // missing picker, and must not test a `.pick` property that can never be there.
+  assert.match(editor, /const \[picker\] = React\.useState\(\(\) => nativeFolderPicker\(ctx\)\)/);
+  assert.match(editor, /if \(typeof picker !== 'function'\) throw new WorktreeError\('folderPickerUnavailable'/);
+  assert.ok(editor.indexOf('picking.current = true;') < editor.indexOf('await picker()'));
+  assert.doesNotMatch(editor, /picker\.pick/);
   assert.match(editor, /if \(lifetime\.current && selected\) add\(\[selected\]\)/);
   assert.doesNotMatch(editor, /setFlow|setBrowser\(true\)[^\n]*catch|remote\.commands|fetch\(/);
   assert.match(browser, /type: 'checkbox', checked/); assert.match(browser, /'aria-label': t\('selectFolder'\) \+ ' ' \+ path/);
@@ -740,6 +753,110 @@ test('project dialog declares the compact reference layout and a separately stag
   const allowed = new Set(['border-l1', 'border-l2', 'bg-layer-1', 'bg-layer-2', 'bg-overlay', 'label-primary', 'label-secondary', 'brand-primary', 'state-error-primary']);
   for (const match of styling.matchAll(/var\(--dsw-alias-([^)]*)\)/g)) assert.ok(allowed.has(match[1]), match[1]);
   assert.doesNotMatch(styling, /#[0-9a-f]{3,8}\b|rgba?\(/i);
+});
+
+test('each add entry follows the picker capability the session actually composes', async () => {
+  // Each session is a separate global realm; the Host composes either the native
+  // chooser (pick only) or the in-app browser (list only), never both.
+  const classError = (() => {
+    const from = source.indexOf('    class WorktreeError extends Error');
+    const to = source.indexOf('    }', from) + '    }'.length;
+    return source.slice(from, to);
+  })();
+  const helpersSource = ['addModesFor', 'matchingAddMode', 'nativeFolderPicker', 'browseSupported', 'settleFirst'].map(name => `const ${name} = ${helpers[name].toString()};`).join('\n') + `\n${classError}`;
+  const session = (sandbox) => vm.runInNewContext(`(() => { ${helpersSource}
+    return (async () => {
+      const ctx = globalThis.__ctx;
+      const picker = nativeFolderPicker(ctx);
+      const browse = await browseSupported(ctx.uiWorkspace);
+      const modes = addModesFor({ picker, browse });
+      return { modes: modes.join(','), pick: picker ? await picker() : null };
+    })(); })()`, { AbortController, ...sandbox });
+  const unbrowseable = async () => { throw new Error('directory picker unavailable'); };
+  const never = () => new Promise(() => {});
+
+  // Desktop: the bridge answers, so the Host verb must not be asked at all — asking
+  // both at once is what opened two OS dialogs.
+  let hostAsks = 0;
+  const desktop = await session({
+    __ctx: { uiWorkspace: { pickDirectory: async () => { hostAsks += 1; return '/host/folder'; }, listDirectory: unbrowseable, createDirectory: unbrowseable } },
+    __DSH_DIRECTORY_PICKER__: { pick: async () => '/desktop/folder' },
+  });
+  assert.equal(desktop.modes, 'path,native');
+  assert.equal(desktop.pick, '/desktop/folder');
+  assert.equal(hostAsks, 0, 'the second source stays untouched while the first answers');
+
+  // A session with no bridge falls back to the Host verb.
+  const server = await session({ __ctx: { uiWorkspace: { pickDirectory: async () => '/host/folder', listDirectory: unbrowseable } } });
+  assert.equal(server.modes, 'path,native');
+  assert.equal(server.pick, '/host/folder');
+
+  // A cancelled first source is an answer, not a handover: the second dialog must
+  // not open behind the operator's back.
+  let hostAsksAfterCancel = 0;
+  const cancelledFirst = await session({
+    __ctx: { uiWorkspace: { pickDirectory: async () => { hostAsksAfterCancel += 1; return '/host/folder'; }, listDirectory: unbrowseable } },
+    __DSH_DIRECTORY_PICKER__: { pick: async () => null },
+  });
+  assert.equal(cancelledFirst.pick, null);
+  assert.equal(hostAsksAfterCancel, 0, 'a cancellation never falls through to the next source');
+
+  // A failing first source does hand over.
+  const handover = await session({ __ctx: { uiWorkspace: { pickDirectory: async () => '/host/folder', listDirectory: unbrowseable } }, __DSH_DIRECTORY_PICKER__: { pick: async () => { throw new Error('bridge rejected'); } } });
+  assert.equal(handover.pick, '/host/folder');
+  const syncThrow = await session({ __ctx: { uiWorkspace: { pickDirectory: async () => '/host/folder', listDirectory: unbrowseable } }, __DSH_DIRECTORY_PICKER__: { pick: () => { throw new Error('bridge exploded'); } } });
+  assert.equal(syncThrow.pick, '/host/folder');
+
+  // Remote/SSH or a Host that composed the browse backend: listing works too.
+  const remote = await session({ __ctx: { uiWorkspace: { pickDirectory: async () => '/host/folder', listDirectory: async () => ({ path: '/home' }) } } });
+  assert.equal(remote.modes, 'path,native,browse');
+  assert.equal(remote.pick, '/host/folder');
+
+  // Both dialogs cancelled: a null pick, not an error.
+  const cancelled = await session({ __ctx: { uiWorkspace: { pickDirectory: async () => null, listDirectory: unbrowseable } }, __DSH_DIRECTORY_PICKER__: { pick: async () => null } });
+  assert.equal(cancelled.pick, null);
+
+  // No picker at all: only path entry remains.
+  const bare = await session({ __ctx: { uiWorkspace: { listDirectory: unbrowseable } } });
+  assert.equal(bare.modes, 'path');
+  assert.equal(bare.pick, null);
+
+  // A non-callable pickDirectory is not a picker.
+  const broken = await session({ __ctx: { uiWorkspace: { pickDirectory: 'not-a-function', listDirectory: async () => ({}) } } });
+  assert.equal(broken.modes, 'path,browse');
+  assert.equal(broken.pick, null);
+
+  const onProbe = helpers.matchingAddMode;
+  const desktopModes = desktop.modes.split(','), bareModes = bare.modes.split(',');
+  assert.equal(onProbe('path', desktopModes), 'path', 'an explicit choice survives the probe');
+  assert.equal(onProbe('browse', desktopModes), 'native', 'a dead browse default lands on the chooser');
+  assert.equal(onProbe('browse', bareModes), 'path', 'a dead browse default lands on path entry');
+});
+
+test('the add default is the entry this session can serve, never one that needs typing', () => {
+  const preferred = helpers.preferredAddMode, matching = helpers.matchingAddMode, modesFor = helpers.addModesFor;
+  // Desktop: system chooser present, no Host listing.
+  const desktop = modesFor({ picker: () => '/x', browse: false });
+  assert.equal(desktop.join(','), 'path,native');
+  assert.equal(preferred(desktop), 'native');
+  // A browse-composed session, a bare session and a session with no chooser at all.
+  assert.equal(preferred(modesFor({ picker: () => '/x', browse: true })), 'native');
+  assert.equal(preferred(modesFor({ picker: undefined, browse: true })), 'browse');
+  assert.equal(preferred(modesFor({ picker: undefined, browse: false })), 'path');
+  // An entry that disappears falls back to the chooser, then to path entry.
+  assert.equal(matching('browse', ['path', 'native']), 'native');
+  assert.equal(matching('browse', ['path']), 'path');
+  assert.equal(matching('path', desktop), 'path', 'an explicit choice is never overwritten');
+
+  // The dialog must promote its pre-probe placeholder to that default once, and
+  // must render every entry from the resolved capability set.
+  const editor = source.slice(source.indexOf('    function ProjectEditor('), source.indexOf('    function ThreadRow('));
+  assert.match(editor, /if \(capabilities\.ready && mode === 'path'\) return preferredAddMode\(capabilities\.modes\)/);
+  assert.match(editor, /capabilities\.modes\.includes\('browse'\) && h\('option', \{ value: 'browse' \}/);
+  assert.match(editor, /capabilities\.modes\.includes\('native'\) && h\('option', \{ value: 'native' \}/);
+  assert.match(editor, /capabilities\.modes\.includes\('path'\) && h\('option', \{ value: 'path' \}/);
+  assert.match(editor, /disabled: !capabilities\.ready \|\| busy \|\| folders\.length >= 32/);
+  assert.match(editor, /disabled: busy \|\| folders\.length >= 32 \|\| \(addMode === 'path' && !absolutePath\(path\.trim\(\)\)\)/);
 });
 
 test('project UI requires the main for multi-folder creation and preserves per-conversation folder overrides', () => {

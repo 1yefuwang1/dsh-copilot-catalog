@@ -1,7 +1,7 @@
 # @1yefuwang1/dsh-worktrees
 
 Multi-folder projects with Local and isolated Git worktree threads for DeepSeek
-Harness. This experimental Host + Web Client package is **`0.2.14`**; new releases
+Harness. This experimental Host + Web Client package is **`0.2.17`**; new releases
 use staged npm publishing with maintainer review/2FA. It does not require Copilot, the
 catalog plugin, or the search plugin. The scoped name avoids collision with the
 unrelated npm package `dsh-worktrees`; stable tool, command and metadata names are
@@ -43,8 +43,16 @@ native Workspace membership, a working-directory change or a permission grant.
   navigation. Repeat Add to extend the list; each selected folder shows its name,
   full path and a remove action. A project supports **1–32 folders**; duplicate
   picks are ignored and over-limit batches are refused without dropping entries.
-  The source dropdown also offers manual absolute paths and the optional native
-  system chooser (one folder per pick). Use **Cancel** to discard unsaved edits;
+  The source dropdown names each interaction — **Browse for folders** (the in-app
+  multi-select dialog), **Choose a folder…** (the system dialog, one folder per
+  pick) and **Enter a folder path** — and offers each only where the session's
+  composed directory picker can serve it. A loopback desktop composes the system
+  chooser only, so it gets **Choose a folder…** and path entry; the in-app browser
+  appears where the Host lists directories (remote, SSH or browse-composed
+  sessions). Since the picker choice is composed at boot, it is not a setting. The dropdown
+  defaults to that share — the system chooser on desktop, the in-app browser where
+  the Host lists directories, and path entry only when neither exists.
+  Use **Cancel** to discard unsaved edits;
   saving/native picking blocks dismissal until it settles, and Host refusals preserve the
   draft. The same folder-list design is used by **Manage project**. Removal edits
   membership only, never deletes files; ownership/use restrictions remain Host-
@@ -334,7 +342,7 @@ After the staged release is approved and appears on npm, install the scoped
 package (the similarly named unscoped package is unrelated):
 
 ```sh
-dsh plugin --profile <profile> add @1yefuwang1/dsh-worktrees@0.2.14
+dsh plugin --profile <profile> add @1yefuwang1/dsh-worktrees@0.2.17
 ```
 
 For local development or while release approval is pending, build explicitly from

@@ -1,5 +1,52 @@
 # @1yefuwang1/dsh-worktrees changelog
 
+## 0.2.17 — Folder entries follow the composed picker, with a working default
+
+- Stop offering an add interaction the session cannot serve. The Host composes
+  either the system chooser (loopback desktop: `pick` only) or the in-app browser
+  (remote, SSH or browse-composed sessions: `listDirectory`/`createDirectory`
+  only), and the other verb set fails with `directory-picker/unavailable`. The
+  dialog now probes listing once and shows **Browse for folders** only when the
+  in-app browser can actually list Host folders.
+- Keep **Choose a folder…** for a session with any reachable chooser (desktop
+  bridge or `uiWorkspace.pickDirectory`) and **Enter a folder path** everywhere, so
+  project creation stays possible in every composition, including desktop where
+  multi-folder projects are built by repeating the system dialog or pasting paths.
+- Fall back deterministically when a selected entry disappears: to the system
+  chooser when there is one, otherwise to path entry.
+- Ask one dialog source at a time for the native entry: the shell bridge first,
+  `uiWorkspace.pickDirectory` only when the bridge is absent or fails. A cancelled
+  dialog is an answer and is never handed to the second source, so cancelling opens
+  no follow-up dialog, while a broken bridge still falls through to a working Host
+  verb. A source that never settles stays with the operator to dismiss — the client
+  bundle is timer-free by contract, so no deadline can be imposed.
+- Default to the entry that needs no typing: the system chooser where one exists,
+  the in-app browser where the Host lists directories, and path entry only when
+  neither is reachable. Path entry stays the pre-probe placeholder and is
+  promoted once the capability answer arrives, never overriding a user choice.
+
+## 0.2.16 — Clearer folder-entry labels
+
+- Rename the three Add entries so each states its interaction: **Browse for
+  folders** (in-app multi-select), **Choose a folder…** (one folder from the
+  system dialog) and **Enter a folder path**, in English and Chinese. The
+  resource keys are unchanged, so only the visible text moves.
+- Lock the mapping with coverage that reads the rendered options and fails when a
+  value is missing, renamed or labelled like another entry.
+
+## 0.2.15 — Capability-aware folder chooser
+
+- Resolve the native add option from the picker that really exists in the current
+  session instead of a fixed dropdown entry: the desktop shell's renderer bridge
+  first, then the Host directory-picker plugin's `uiWorkspace.pickDirectory`.
+  Hide the option entirely when neither is present, and fall back to browsing if
+  it disappears while selected.
+- Keep the in-app browser and the manual absolute-path entry available in every
+  session, including desktop, where the native option previously failed with a
+  picker error.
+- Add regression coverage for desktop, browser, missing and non-callable picker
+  sources plus the unavailable-mode fallback.
+
 ## 0.2.14 — Native sidebar view switch
 
 - Move the view switch from the footer into native sidebar navigation, between

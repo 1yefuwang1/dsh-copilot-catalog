@@ -14,12 +14,12 @@ window.__ModuleLoader__.load({
       searchProjects: 'Search projects and sessions', closeSearch: 'Close search', viewOptions: 'View options',
       switchProjectsView: 'Switch to Projects View', switchWorkspaceView: 'Switch to Workspace View',
       'time.now': 'now', 'time.minutes': '{n}min', 'time.hours': '{n}h', 'time.days': '{n}d', 'time.months': '{n}mo', 'time.years': '{n}y', 'date.ymd': '{y}-{m}-{d}', lastActive: 'Last active {time}',
-      projects: 'Projects', folderView: 'Folder view', newProject: 'New project', editProject: 'Manage project', projectName: 'Project name', project: 'Project', folders: 'Folders', folder: 'Folder', addFolder: 'Add folder', chooseDirectory: 'Choose directory', browse: 'Browse folders', absolutePath: 'Absolute Host directory path', save: 'Save', newThread: 'New thread', threadMode: 'Thread mode', threadActions: 'Thread actions', threadDetails: 'Thread details', unassigned: 'Other threads', showMore: 'Show {n} more sessions', showLess: 'Show less', filterThreads: 'Search threads or projects', allThreads: 'All threads', archivedOnly: 'Archived only', hideArchived: 'Hide archived', untitled: 'Untitled', blankThread: 'New thread', collapse: 'Collapse project', expand: 'Expand project', waiting: 'Waiting for interaction', done: 'Finished, not yet viewed', localThread: 'Local thread', worktreeThread: 'Worktree thread', draftWarning: 'This draft contains text or attachments. Keep it in this thread before choosing another project or folder.', chooseFolder: 'Choose a folder', createFolder: 'Create folder', folderName: 'Folder name', chooseThisFolder: 'Use this folder', noProjects: 'Add a project to organize your threads.',
+      projects: 'Projects', folderView: 'Folder view', newProject: 'New project', editProject: 'Manage project', projectName: 'Project name', project: 'Project', folders: 'Folders', folder: 'Folder', addFolder: 'Add folder', chooseDirectory: 'Choose a folder…', browse: 'Browse folders', absolutePath: 'Absolute Host directory path', save: 'Save', newThread: 'New thread', threadMode: 'Thread mode', threadActions: 'Thread actions', threadDetails: 'Thread details', unassigned: 'Other threads', showMore: 'Show {n} more sessions', showLess: 'Show less', filterThreads: 'Search threads or projects', allThreads: 'All threads', archivedOnly: 'Archived only', hideArchived: 'Hide archived', untitled: 'Untitled', blankThread: 'New thread', collapse: 'Collapse project', expand: 'Expand project', waiting: 'Waiting for interaction', done: 'Finished, not yet viewed', localThread: 'Local thread', worktreeThread: 'Worktree thread', draftWarning: 'This draft contains text or attachments. Keep it in this thread before choosing another project or folder.', chooseFolder: 'Choose a folder', createFolder: 'Create folder', folderName: 'Folder name', chooseThisFolder: 'Use this folder', noProjects: 'Add a project to organize your threads.',
       repoUnavailable: 'Worktree mode is unavailable or unverified for this folder. Choose Local to continue.',
       projectChanged: 'The project or selected folder changed. Choose Local or keep the current folder before selecting New worktree again.', keepCurrentFolder: 'Keep current folder',
       removeProject: 'Remove project', removeProjectConfirm: 'Remove this project?', removeProjectHelp: 'Only the project metadata will be removed. All folders, files, conversations and worktrees will be kept. Conversations remain available under Other threads and in Folder view.',
       mainFolder: 'Main folder', main: 'Main', chooseMainFolder: 'Select the main folder', mainFolderRequired: 'Choose a main folder from the project source folders.', mainFolderHelp: 'Default for new conversations. You can choose another folder before sending.', conversationFolder: 'Conversation folder',
-      createProject: 'Create project', sourceFolders: 'Source folders', localFolders: 'Add a folder on this computer', enterFolderPath: 'Enter a folder path', add: 'Add', cancel: 'Cancel', selectedFolders: 'Selected folders', selectFolder: 'Select folder', folderLimit: 'A project can contain at most 32 folders.', invalidFolder: 'Enter a valid absolute Host folder path.', alreadyAdded: 'Already added', multiFolderHelp: 'Select multiple folders using the checkboxes. Selections are kept as you browse.', hostFolderHelp: 'Folders are on the Host computer; adding them does not move files.', noSubfolders: 'No subfolders.', directoryTruncated: 'This listing is truncated. Enter a path to browse other folders.',
+      createProject: 'Create project', sourceFolders: 'Source folders', localFolders: 'Browse for folders', enterFolderPath: 'Enter a folder path', checkingFolderOptions: 'Checking available folder options…', browseUnavailable: 'This session cannot list Host folders. Use Choose a folder… or enter an absolute path.', folderPickerUnavailable: 'The native folder chooser is unavailable here. Browse folders or enter an absolute Host folder path instead.', add: 'Add', cancel: 'Cancel', selectedFolders: 'Selected folders', selectFolder: 'Select folder', folderLimit: 'A project can contain at most 32 folders.', invalidFolder: 'Enter a valid absolute Host folder path.', alreadyAdded: 'Already added', multiFolderHelp: 'Select multiple folders using the checkboxes. Selections are kept as you browse.', hostFolderHelp: 'Folders are on the Host computer; adding them does not move files.', noSubfolders: 'No subfolders.', directoryTruncated: 'This listing is truncated. Enter a path to browse other folders.',
       rootFolder: 'Worktree root folder', rootSummary: 'Choose where new worktrees are created.', rootHelp: 'Absolute folder path on the Host, outside your source repositories. Changes apply to new worktrees only; existing directories and in-flight creates are not moved.', rootReset: 'Reset to inherited default', rootSaved: 'Saved. New worktrees will use this location.', rootUnavailable: 'Host-backed settings are unavailable for this entry.', rootInvalid: 'Enter a valid absolute Host folder path.', rootConflict: 'The setting changed or the Host refused the write. Your draft is preserved; reopen this page to read the latest value.',
       pinned: 'Pinned', title: 'Worktrees', local: 'Local', new: 'New worktree', remote: 'Remote', branch: 'Remote base branch',
       setupProgress: 'Preparing worktree', preparingMessage: 'Preparing your first message…', fetchingLatest: 'Fetching latest remote branch…', creatingWorktree: 'Creating worktree…', namingBranch: 'Generating and applying branch name…', openingConversation: 'Opening worktree conversation…', setupReady: 'Worktree ready', stagingAttachments: 'Preparing attachments for this worktree…', startingConversation: 'Starting normal conversation…', setupFailed: 'Worktree preparation failed', cancelSetup: 'Cancel setup', unsupported: 'This native composer version is not supported by the guarded adapter.', filesLost: 'A draft attachment is no longer available.', upload: 'Attachment upload failed', uncertain: 'Prompt admission is uncertain. Open the created conversation before trying again.',
@@ -49,12 +49,12 @@ window.__ModuleLoader__.load({
       searchProjects: '搜索项目和会话', closeSearch: '关闭搜索', viewOptions: '视图选项',
       switchProjectsView: '切换到项目视图', switchWorkspaceView: '切换到工作区视图',
       'time.now': '刚刚', 'time.minutes': '{n}分钟', 'time.hours': '{n}小时', 'time.days': '{n}天', 'time.months': '{n}个月', 'time.years': '{n}年', 'date.ymd': '{y}年{m}月{d}日', lastActive: '最后活跃于 {time}',
-      projects: '项目', folderView: '文件夹视图', newProject: '新建项目', editProject: '管理项目', projectName: '项目名称', project: '项目', folders: '文件夹', folder: '文件夹', addFolder: '添加文件夹', chooseDirectory: '选择目录', browse: '浏览文件夹', absolutePath: '主机绝对目录路径', save: '保存', newThread: '新建对话', threadMode: '对话模式', threadActions: '对话操作', threadDetails: '对话详情', unassigned: '其他对话', showMore: '展开其余 {n} 个会话', showLess: '收起', filterThreads: '搜索对话或项目', allThreads: '所有对话', archivedOnly: '仅已归档', hideArchived: '隐藏已归档', untitled: '未命名', blankThread: '新对话', collapse: '收起项目', expand: '展开项目', waiting: '等待交互', done: '已完成，尚未查看', localThread: '本地对话', worktreeThread: '工作树对话', draftWarning: '此草稿包含文字或附件。请先保留当前对话，再选择其他项目或文件夹。', chooseFolder: '选择文件夹', createFolder: '创建文件夹', folderName: '文件夹名称', chooseThisFolder: '使用此文件夹', noProjects: '添加项目以组织您的对话。',
+      projects: '项目', folderView: '文件夹视图', newProject: '新建项目', editProject: '管理项目', projectName: '项目名称', project: '项目', folders: '文件夹', folder: '文件夹', addFolder: '添加文件夹', chooseDirectory: '选择文件夹…', browse: '浏览文件夹', absolutePath: '主机绝对目录路径', save: '保存', newThread: '新建对话', threadMode: '对话模式', threadActions: '对话操作', threadDetails: '对话详情', unassigned: '其他对话', showMore: '展开其余 {n} 个会话', showLess: '收起', filterThreads: '搜索对话或项目', allThreads: '所有对话', archivedOnly: '仅已归档', hideArchived: '隐藏已归档', untitled: '未命名', blankThread: '新对话', collapse: '收起项目', expand: '展开项目', waiting: '等待交互', done: '已完成，尚未查看', localThread: '本地对话', worktreeThread: '工作树对话', draftWarning: '此草稿包含文字或附件。请先保留当前对话，再选择其他项目或文件夹。', chooseFolder: '选择文件夹', createFolder: '创建文件夹', folderName: '文件夹名称', chooseThisFolder: '使用此文件夹', noProjects: '添加项目以组织您的对话。',
       repoUnavailable: '此文件夹的工作树模式不可用或尚未验证，请选择本地模式继续。',
       projectChanged: '项目或选定文件夹已更改，请先选择本地模式或保留当前文件夹，再重新选择新建工作树。', keepCurrentFolder: '保留当前文件夹',
       removeProject: '移除项目', removeProjectConfirm: '移除此项目？', removeProjectHelp: '仅移除项目元数据，所有文件夹、文件、对话和工作树都会保留。对话仍可在“其他对话”和“文件夹视图”中访问。',
       mainFolder: '主文件夹', main: '主目录', chooseMainFolder: '选择主文件夹', mainFolderRequired: '请从项目源文件夹中选择一个主文件夹。', mainFolderHelp: '新对话默认使用此文件夹，发送前仍可选择其他文件夹。', conversationFolder: '对话文件夹',
-      createProject: '创建项目', sourceFolders: '源文件夹', localFolders: '添加此计算机上的文件夹', enterFolderPath: '输入文件夹路径', add: '添加', cancel: '取消', selectedFolders: '已选文件夹', selectFolder: '选择文件夹', folderLimit: '一个项目最多可包含 32 个文件夹。', invalidFolder: '请输入有效的主机绝对文件夹路径。', alreadyAdded: '已添加', multiFolderHelp: '使用复选框选择多个文件夹，浏览其他目录时会保留已选项。', hostFolderHelp: '文件夹位于主机计算机上；添加不会移动文件。', noSubfolders: '没有子文件夹。', directoryTruncated: '目录列表已截断，请输入路径浏览其他文件夹。',
+      createProject: '创建项目', sourceFolders: '源文件夹', localFolders: '浏览文件夹', enterFolderPath: '输入文件夹路径', checkingFolderOptions: '正在检查可用的文件夹选项…', browseUnavailable: '此会话无法列出主机文件夹。请使用“选择文件夹…”或输入绝对路径。', folderPickerUnavailable: '此处无法使用系统文件夹选择器。请改用浏览文件夹或输入主机绝对文件夹路径。', add: '添加', cancel: '取消', selectedFolders: '已选文件夹', selectFolder: '选择文件夹', folderLimit: '一个项目最多可包含 32 个文件夹。', invalidFolder: '请输入有效的主机绝对文件夹路径。', alreadyAdded: '已添加', multiFolderHelp: '使用复选框选择多个文件夹，浏览其他目录时会保留已选项。', hostFolderHelp: '文件夹位于主机计算机上；添加不会移动文件。', noSubfolders: '没有子文件夹。', directoryTruncated: '目录列表已截断，请输入路径浏览其他文件夹。',
       rootFolder: '工作树根目录', rootSummary: '选择新工作树的创建位置。', rootHelp: '主机上的绝对目录路径，需位于源仓库之外。仅影响新工作树，已有目录和进行中的创建不会移动。', rootReset: '恢复继承的默认值', rootSaved: '已保存，新工作树将使用此位置。', rootUnavailable: '此条目的主机设置不可用。', rootInvalid: '请输入有效的主机绝对目录路径。', rootConflict: '设置已更改或主机拒绝了保存，草稿已保留。请重新打开页面读取最新值。',
       pinned: '已固定', title: '工作树', local: '本地', new: '新工作树', remote: '远程', branch: '远程基础分支', search: '搜索远程分支',
       setupProgress: '正在准备工作树', preparingMessage: '正在准备第一条消息…', fetchingLatest: '正在获取最新远程分支…', creatingWorktree: '正在创建工作树…', namingBranch: '正在生成并应用分支名称…', openingConversation: '正在打开工作树对话…', setupReady: '工作树已就绪', stagingAttachments: '正在为工作树准备附件…', startingConversation: '正在开始正常对话…', setupFailed: '工作树准备失败', cancelSetup: '取消准备', unsupported: '该输入区版本不受受保护适配器支持。', filesLost: '草稿附件已不可用。', upload: '附件上传失败', uncertain: '消息发送结果不确定，请先打开创建的对话检查。',
@@ -230,8 +230,63 @@ window.__ModuleLoader__.load({
       const separator = /^[A-Za-z]:[\\/]|^\\\\/.test(path) ? /[\\/]/ : /\//;
       return path.split(separator).filter(Boolean).at(-1) || path;
     }
-    function createFolderScanner(uiWorkspace, publish) {
-      let active, generation = 0, disposed = false;
+    // Two independent sources can serve one native folder pick:
+    //   * the shell bridge `__DSH_DIRECTORY_PICKER__.pick` (desktop shell dialog), and
+    //   * the Host-backed `uiWorkspace.pickDirectory` (server session dialog).
+    // Contract, chosen because asking both at once opens two dialogs when both work:
+    // the first source decides. A path wins; null is the operator cancelling *that*
+    // dialog and is returned as-is, never handed to the next source; only a failure —
+    // including a synchronous throw — falls through to the next source. A first
+    // source that never settles cannot be escaped without a deadline or an explicit
+    // capability probe, so that case stays with the operator to dismiss.
+    function settleFirst(pickers) {
+      return new Promise((resolve, reject) => {
+        if (!pickers.length) { reject(new WorktreeError('folderPickerUnavailable', 'no-directory-picker')); return; }
+        let index = 0, firstError;
+        const attempt = () => {
+          if (index >= pickers.length) { reject(firstError); return; }
+          const pick = pickers[index]; index += 1;
+          let call;
+          // A synchronous throw from one source must not abort the next.
+          try { call = pick(); }
+          catch (error) { firstError = firstError ?? error; attempt(); return; }
+          Promise.resolve(call).then(value => {
+            // A cancellation is an answer: it must not open a second dialog.
+            if (typeof value === 'string' && value) resolve(value); else resolve(null);
+          }, error => { firstError = firstError ?? error; attempt(); });
+        };
+        attempt();
+      });
+    }
+    function nativeFolderPicker(ctx) {
+      const bridge = globalThis.__DSH_DIRECTORY_PICKER__;
+      const pickers = [];
+      if (typeof bridge?.pick === 'function') pickers.push(() => bridge.pick());
+      if (typeof ctx.uiWorkspace?.pickDirectory === 'function') pickers.push(() => ctx.uiWorkspace.pickDirectory());
+      return pickers.length ? () => settleFirst(pickers) : undefined;
+    }
+    function addModesFor({ picker, browse }) {
+      return ['path', picker && 'native', browse && 'browse'].filter(Boolean);
+    }
+    function matchingAddMode(mode, modes) {
+      if (!modes.length || modes.includes(mode)) return mode;
+      return modes.includes('native') ? 'native' : modes.includes('browse') ? 'browse' : 'path';
+    }
+    /** Entry to select while nothing has been chosen yet: the least typing for this session. */
+    function preferredAddMode(modes) {
+      return modes.includes('native') ? 'native' : modes.includes('browse') ? 'browse' : 'path';
+    }
+    // The composed picker advertises both verbs, so availability is learned by
+    // asking: one bounded probe (no path = the Host home) decides whether this
+    // session can serve the in-app browser at all.
+    async function browseSupported(uiWorkspace) {
+      if (typeof uiWorkspace?.listDirectory !== 'function') return false;
+      const controller = new AbortController();
+      try { await uiWorkspace.listDirectory(undefined, controller.signal); return true; }
+      catch { return false; }
+      finally { controller.abort(); }
+    }
+    function createFolderScanner(uiWorkspace, publish) {      let active, generation = 0, disposed = false;
       return {
         async scan(path) {
           if (disposed) return;
@@ -1003,11 +1058,30 @@ window.__ModuleLoader__.load({
     }
     function ProjectEditor({ project, runtime: ctx, projects, t, close, returnFocus, fallbackFocus }) {
       const [title, setTitle] = React.useState(project?.title || ''), [folders, setFolders] = React.useState(project?.folders.map(folder => folder.path) || []), [path, setPath] = React.useState(''), [mainFolder, setMainFolder] = React.useState(projectMainFolder(project)?.path || '');
-      const [busy, setBusy] = React.useState(false), [error, setError] = React.useState(''), [browser, setBrowser] = React.useState(false), [addMode, setAddMode] = React.useState('browse'), [confirmRemoval, setConfirmRemoval] = React.useState(false);
-      const lifetime = React.useRef(true), currentFolders = React.useRef(folders), picker = React.useRef(false), browsing = React.useRef(false), confirming = React.useRef(false), submitter = React.useRef(null), heading = React.useId(), nameInput = React.useRef(null), removeTrigger = React.useRef(null);
+      const [busy, setBusy] = React.useState(false), [error, setError] = React.useState(''), [browser, setBrowser] = React.useState(false), [confirmRemoval, setConfirmRemoval] = React.useState(false);
+      // Optimistic first paint: path entry works everywhere, so the two optional
+      // entries appear only once the session confirms it can serve them.
+      const [picker] = React.useState(() => nativeFolderPicker(ctx));
+      const [capabilities, setCapabilities] = React.useState({ modes: ['path'], ready: false });
+      const [addMode, setAddMode] = React.useState(() => matchingAddMode('path', ['path']));
+      const lifetime = React.useRef(true), currentFolders = React.useRef(folders), picking = React.useRef(false), browsing = React.useRef(false), confirming = React.useRef(false), submitter = React.useRef(null), heading = React.useId(), nameInput = React.useRef(null), removeTrigger = React.useRef(null);
       if (!submitter.current) submitter.current = createProjectSubmitter(projects, project?.id, project?.id || crypto.randomUUID());
       React.useEffect(() => { lifetime.current = true; return () => { lifetime.current = false; }; }, []);
-      const dismiss = () => { if (!submitter.current.pending && !picker.current && !confirming.current) close(); };
+      React.useEffect(() => {
+        let live = true;
+        browseSupported(ctx.uiWorkspace).then(browse => { if (live) setCapabilities({ modes: addModesFor({ picker, browse }), ready: true }); });
+        return () => { live = false; };
+      }, [ctx, picker]);
+      // Path entry is the only entry safe before the probe answers, so the probe
+      // promotes its own placeholder to this session's picker — but never over a
+      // choice the user already made.
+      React.useEffect(() => {
+        setAddMode(mode => {
+          if (capabilities.ready && mode === 'path') return preferredAddMode(capabilities.modes);
+          return matchingAddMode(mode, capabilities.modes);
+        });
+      }, [capabilities]);
+      const dismiss = () => { if (!submitter.current.pending && !picking.current && !confirming.current) close(); };
       const primary = draftMainFolder(folders, mainFolder);
       function closeBrowser() { browsing.current = false; setBrowser(false); }
       function add(paths) {
@@ -1015,20 +1089,28 @@ window.__ModuleLoader__.load({
         try { const next = appendProjectFolders(currentFolders.current, paths); currentFolders.current = next; setFolders(next); setPath(''); closeBrowser(); setError(''); }
         catch (failure) { setError(report(t, failure)); }
       }
-      function remove(path) { if (submitter.current.pending || picker.current || browsing.current || confirming.current) return; currentFolders.current = currentFolders.current.filter(value => value !== path); setFolders(currentFolders.current); if (mainFolder === path) setMainFolder(''); setError(''); }
+      function remove(path) { if (submitter.current.pending || picking.current || browsing.current || confirming.current) return; currentFolders.current = currentFolders.current.filter(value => value !== path); setFolders(currentFolders.current); if (mainFolder === path) setMainFolder(''); setError(''); }
       async function choose() {
-        if (submitter.current.pending || picker.current || browsing.current || confirming.current || currentFolders.current.length >= 32) return;
+        if (submitter.current.pending || picking.current || browsing.current || confirming.current || currentFolders.current.length >= 32) return;
         setError('');
-        if (addMode === 'path') { add([path.trim()]); return; }
-        if (addMode === 'browse') { browsing.current = true; setBrowser(true); return; }
-        // The optional native chooser returns one folder or null, never a batch.
-        picker.current = true; setBusy(true);
-        try { const selected = await ctx.uiWorkspace.pickDirectory(); if (lifetime.current && selected) add([selected]); }
+        // `void choose()` discards the returned promise, so every refusal a user can
+        // trigger has to surface here; a synchronous throw must not vanish.
+        try {
+          if (addMode === 'path') { add([path.trim()]); return; }
+          if (addMode === 'browse') {
+            if (!capabilities.modes.includes('browse')) throw new WorktreeError('browseUnavailable', 'no-browse-capability');
+            browsing.current = true; setBrowser(true); return;
+          }
+          if (typeof picker !== 'function') throw new WorktreeError('folderPickerUnavailable', 'no-directory-picker');
+          // The native chooser returns one folder or null, never a batch.
+          picking.current = true; setBusy(true);
+          try { const selected = await picker(); if (lifetime.current && selected) add([selected]); }
+          finally { picking.current = false; if (lifetime.current) setBusy(false); }
+        }
         catch (failure) { if (lifetime.current) setError(report(t, failure)); }
-        finally { picker.current = false; if (lifetime.current) setBusy(false); }
       }
       async function save(event) {
-        event.preventDefault(); if (submitter.current.pending || picker.current || browsing.current || confirming.current || !title.trim() || !currentFolders.current.length) return;
+        event.preventDefault(); if (submitter.current.pending || picking.current || browsing.current || confirming.current || !title.trim() || !currentFolders.current.length) return;
         if (!draftMainFolder(currentFolders.current, mainFolder)) { setError(t('mainFolderRequired')); return; }
         setBusy(true); setError('');
         try { await submitter.current.submit(title, currentFolders.current, mainFolder); if (lifetime.current) close(); }
@@ -1036,12 +1118,12 @@ window.__ModuleLoader__.load({
         finally { if (lifetime.current) setBusy(false); }
       }
       function beginRemoval() {
-        if (!project || submitter.current.pending || picker.current || browsing.current || confirming.current) return;
+        if (!project || submitter.current.pending || picking.current || browsing.current || confirming.current) return;
         confirming.current = true; setError(''); setConfirmRemoval(true);
       }
       function dismissRemoval() { if (!submitter.current.pending) { confirming.current = false; setConfirmRemoval(false); setError(''); } }
       async function removeProject() {
-        if (!confirming.current || submitter.current.pending || picker.current || browsing.current) return;
+        if (!confirming.current || submitter.current.pending || picking.current || browsing.current) return;
         setBusy(true); setError('');
         try { await submitter.current.remove(); if (lifetime.current) close(); }
         catch (failure) { if (lifetime.current) setError(report(t, failure)); }
@@ -1051,7 +1133,8 @@ window.__ModuleLoader__.load({
         h('form', { onSubmit: save, 'aria-busy': busy }, h('label', { className: 'dsh-wt-project-name' }, h(FolderIcon), h('input', { required: true, ref: nameInput, maxLength: 120, placeholder: t('projectName'), 'aria-label': t('projectName'), value: title, disabled: busy, onChange: event => setTitle(event.target.value) })),
           h('div', { className: 'dsh-wt-source-heading' }, h('span', { id: heading }, t('sourceFolders')), folders.length > 0 && h('span', { className: 'dsh-wt-source-count', 'aria-live': 'polite' }, folders.length + ' / 32')),
           h('section', { className: 'dsh-wt-source-card', 'aria-labelledby': heading, 'data-filled': !!folders.length }, folders.length > 0 && h(FolderRows, { folders, remove, disabled: busy, t }),
-            h('div', { className: 'dsh-wt-source-add' }, h('select', { className: 'dsh-wt-source-select', 'aria-label': t('addFolder'), value: addMode, disabled: busy || folders.length >= 32, onChange: event => { setAddMode(event.target.value); setError(''); } }, h('option', { value: 'browse' }, t('localFolders')), h('option', { value: 'native' }, t('chooseDirectory')), h('option', { value: 'path' }, t('enterFolderPath'))),
+            h('div', { className: 'dsh-wt-source-add' }, h('select', { className: 'dsh-wt-source-select', 'aria-label': t('addFolder'), value: addMode, disabled: !capabilities.ready || busy || folders.length >= 32, onChange: event => { setAddMode(event.target.value); setError(''); } }, capabilities.modes.includes('browse') && h('option', { value: 'browse' }, t('localFolders')), capabilities.modes.includes('native') && h('option', { value: 'native' }, t('chooseDirectory')), capabilities.modes.includes('path') && h('option', { value: 'path' }, t('enterFolderPath'))),
+              !capabilities.ready && h('p', { role: 'status', className: 'dsh-wt-muted' }, t('checkingFolderOptions')),
               addMode === 'path' && h('label', { className: 'dsh-wt-project-path' }, h('input', { value: path, autoFocus: true, placeholder: t('absolutePath'), 'aria-label': t('absolutePath'), disabled: busy || folders.length >= 32, onChange: event => setPath(event.target.value), onKeyDown: event => { if (event.key === 'Enter' && !event.nativeEvent?.isComposing) { event.preventDefault(); void choose(); } } })),
               h(Button, { className: 'dsh-wt-add-pill', disabled: busy || folders.length >= 32 || (addMode === 'path' && !absolutePath(path.trim())), onClick: () => { void choose(); } }, h(FolderIcon, { plus: true }), t('add')))),
           folders.length > 1 && h('label', { className: 'dsh-wt-main-folder' }, t('mainFolder'), h('select', { required: true, value: primary, disabled: busy, title: primary, onChange: event => { setMainFolder(event.target.value); setError(''); } }, h('option', { value: '', disabled: true }, t('chooseMainFolder')), ...folders.map(folder => h('option', { key: folder, value: folder }, projectFolderName(folder) + ' · ' + folder))), h('small', null, t('mainFolderHelp'))),

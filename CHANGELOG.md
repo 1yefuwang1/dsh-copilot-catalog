@@ -1,5 +1,29 @@
 # Monorepo changelog
 
+## @1yefuwang1/dsh-worktrees 0.2.17
+
+- Offer each Add folder entry only where the composed directory picker can serve
+  it: **Browse for folders** requires a Host that lists directories, **Choose a
+  folder…** requires a reachable system chooser, and path entry always works. The
+  desktop composition (system chooser only) no longer shows a browser entry that
+  fails with `directory-picker/unavailable`.
+- Default the add dropdown to that session share: the system chooser on desktop,
+  the in-app browser where the Host lists directories, and path entry only when
+  neither exists, so the first thing offered is never a disabled Add button.
+
+## @1yefuwang1/dsh-worktrees 0.2.16
+
+- Relabel the Add folder entries as **Browse for folders**, **Choose a folder…**
+  and **Enter a folder path** in both dictionaries, so the multi-select browser and
+  the one-folder system dialog no longer read like the same action.
+
+## @1yefuwang1/dsh-worktrees 0.2.15
+
+- Offer the native add option only where the session really has a picker (desktop
+  shell bridge or Host `uiWorkspace.pickDirectory`), so the desktop project dialog
+  no longer shows a control that fails; browsing and absolute-path entry stay
+  available everywhere.
+
 ## @1yefuwang1/dsh-worktrees 0.2.14
 
 - Move the Projects/Workspace view switch into native sidebar navigation between
@@ -44,4 +68,4 @@ Package history and versions are independent:
 
 - [Catalog changelog](packages/catalog/CHANGELOG.md) — `0.2.2` GHE Cloud endpoint support; earlier versions previously published.
 - [Search changelog](<packages/search/CHANGELOG.md>) — `0.1.2` GHE Cloud endpoint support; `0.1.1` first public native-search release and streaming compatibility fix.
-- [Worktrees changelog](<packages/worktrees/CHANGELOG.md>) — `@1yefuwang1/dsh-worktrees@0.2.14`; staged release requires maintainer approval before npm availability.
+- [Worktrees changelog](<packages/worktrees/CHANGELOG.md>) — `@1yefuwang1/dsh-worktrees@0.2.17`; staged release requires maintainer approval before npm availability.
