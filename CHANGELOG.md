@@ -1,5 +1,17 @@
 # Monorepo changelog
 
+## @1yefuwang1/dsh-worktrees 0.2.18
+
+- Align Local/New worktree controls, native menu colors and the search field with
+  the surrounding UI, including non-Git Local-only folders.
+- Default to the current local branch; choose local committed branches without
+  fetching or retain freshly fetched remote branches, with explicit commit fences.
+- Search complete cached branch generations without requests on keystrokes;
+  select and dismiss automatically, while Refresh preserves the open picker,
+  search and selection. Add real React interaction and CSS-cascade regressions.
+- Retain existing permissions, native draft, cancellation and source-checkout
+  defenses. Raise only the worktree package's bounded size ceiling to 575,000 bytes.
+
 ## @1yefuwang1/dsh-worktrees 0.2.17
 
 - Offer each Add folder entry only where the composed directory picker can serve
@@ -68,4 +80,4 @@ Package history and versions are independent:
 
 - [Catalog changelog](packages/catalog/CHANGELOG.md) — `0.2.2` GHE Cloud endpoint support; earlier versions previously published.
 - [Search changelog](<packages/search/CHANGELOG.md>) — `0.1.2` GHE Cloud endpoint support; `0.1.1` first public native-search release and streaming compatibility fix.
-- [Worktrees changelog](<packages/worktrees/CHANGELOG.md>) — `@1yefuwang1/dsh-worktrees@0.2.17`; staged release requires maintainer approval before npm availability.
+- [Worktrees changelog](<packages/worktrees/CHANGELOG.md>) — `@1yefuwang1/dsh-worktrees@0.2.18`; staged release requires maintainer approval before npm availability.

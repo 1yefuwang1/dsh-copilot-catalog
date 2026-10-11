@@ -3,7 +3,7 @@
 A **pnpm monorepo with three independently installable DeepSeek Harness plugins**.
 Host halves use strict TypeScript/ESM with declarations; the worktree package also
 contains a persistent plain-JS Web Client. The worktree plugin is packaged as
-`@1yefuwang1/dsh-worktrees@0.2.17`; npm availability follows maintainer approval
+`@1yefuwang1/dsh-worktrees@0.2.18`; npm availability follows maintainer approval
 of the staged release.
 
 | Package | Purpose | DSH behavior |
@@ -163,7 +163,7 @@ A release selects **one package**, never the root or multiple packages at once:
 The tag must match its leaf version and repository identity. Catalog is currently
 `0.2.2`, adding GHE Cloud endpoint support; published versions cannot be republished. Search is currently
 `0.1.2`, adding GHE Cloud endpoint support alongside the Copilot stream-ID compatibility fix.
-Worktrees is `@1yefuwang1/dsh-worktrees@0.2.17`, offering each folder-entry interaction only where the session's composed directory picker can serve it — the in-app multi-select browser needs a Host that lists directories, the system chooser needs a reachable picker, and path entry always works, so the desktop dialog no longer shows a failing or ambiguous option. It retains persistent multi-folder projects, metadata-only project removal, native-aligned project browsing and activity indicators, first-Send lazy worktree creation, staged progress and guarded Local handoff. Version `0.2.13` is already published; `0.2.14` through `0.2.17` become available after staged-release approval. The unrelated unscoped npm name is not an alias for this plugin.
+Worktrees is `@1yefuwang1/dsh-worktrees@0.2.18`, adding theme-aligned Local/New worktree controls and local or remote starting branches. The current local branch is the default; local worktree creation does not fetch, while remote creation keeps the fresh-fetch path. Branch search filters cached lists, selection dismisses automatically, and Refresh keeps the picker open. It retains capability-aware folder entry, persistent multi-folder projects, metadata-only removal, native-aligned browsing, first-Send setup, staged progress and guarded Local handoff. Version `0.2.14` is published; `0.2.18` becomes available after staged-release approval. The unrelated unscoped npm name is not an alias for this plugin.
 
 The [release workflow](.github/workflows/publish.yml) installs/verifies with pnpm,
 then uses native `pnpm stage publish` to stage **only the selected leaf** through

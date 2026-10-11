@@ -1,6 +1,6 @@
 # @1yefuwang1/dsh-worktrees changelog
 
-## Unreleased — Theme-aligned conversation controls and local starting branches
+## 0.2.18 — Theme-aligned conversation controls and local starting branches
 
 - Replace the native Local/New worktree dropdown and the mismatched Local-only
   button with the same compact, theme-aware menu control.
