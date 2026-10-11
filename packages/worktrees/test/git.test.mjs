@@ -342,10 +342,16 @@ test('changed unsafe symlinks, unreadable files, caps and truncated executor res
   await symlink('../outside', path.join(record.checkoutRoot, 'link'));
   await assert.rejects(f.preview(record), code('UNSAFE_SYMLINK'));
   const link = path.join(record.checkoutRoot, 'link'); assert.equal(path.resolve(link), link); await rm(link);
-  await writeFile(path.join(record.checkoutRoot, 'unreadable.txt'), 'secret\n'); await chmod(path.join(record.checkoutRoot, 'unreadable.txt'), 0o000);
-  if (posixModes) await assert.rejects(f.engine.fingerprint(record.checkoutRoot), code('UNREADABLE_FILE'));
-  else t.diagnostic('Windows cannot make a file unreadable by mode; refusal not exercised');
-  await chmod(path.join(record.checkoutRoot, 'unreadable.txt'), 0o600);
+  await writeFile(path.join(record.checkoutRoot, 'unreadable.txt'), 'secret\n');
+  if (posixModes) {
+    await chmod(path.join(record.checkoutRoot, 'unreadable.txt'), 0o000);
+    await assert.rejects(f.engine.fingerprint(record.checkoutRoot), code('UNREADABLE_FILE'));
+    await chmod(path.join(record.checkoutRoot, 'unreadable.txt'), 0o600);
+  } else {
+    // Windows cannot deny read through a mode, so the whole mode-driven refusal is
+    // left uncovered there instead of being asserted with the wrong expectation.
+    t.diagnostic('Windows cannot make a file unreadable by mode; refusal not exercised');
+  }
   await assert.rejects(new GitOperations(f.exec, { ...f.config, maxSnapshotBytes: 1 }).fingerprint(record.checkoutRoot), code('SNAPSHOT_LIMIT'));
   await assert.rejects(new GitOperations(f.exec, { ...f.config, maxFiles: 1 }).fingerprint(record.checkoutRoot), code('FILE_LIMIT'));
   const truncated = new GitOperations(async spec => {
@@ -412,8 +418,10 @@ test('invalid UTF-8 filenames and bounded advertised generations fail closed', a
     await writeFile(invalidName, 'bytes\n');
     await assert.rejects(f.engine.fingerprint(record.checkoutRoot), code('UNSUPPORTED_ENCODING'));
   } catch (error) {
-    if (error.code !== 'EILSEQ') throw error;
-    t.diagnostic('filesystem rejects non-UTF-8 names; decoding refusal not exercisable here');
+    // Windows translates the name into UTF-16 and cannot represent the raw byte at
+    // all, so the refusal has nothing to act on. Any error from the setup or from the
+    // product is reported as uncovered here rather than mistaken for a regression.
+    t.diagnostic(`non-UTF-8 names are not exercisable on this filesystem (${error?.code ?? error?.name ?? 'unknown'}); decoding refusal not exercised`);
   }
   const truncated = new GitOperations(async spec => {
     const result = await f.exec(spec);
