@@ -24,10 +24,13 @@
   the in-app browser where the Host lists directories, and path entry only when
   neither is reachable. Path entry stays the pre-probe placeholder and is
   promoted once the capability answer arrives, never overriding a user choice.
-- Use portable fixture names (no newline in a filename, which Windows rejects) and
-  pin `core.autocrlf=false` in the fixture repositories so line endings cannot
-  depend on the machine's git configuration. A freshly cloned target now asserts it
-  reads clean with the same command the engine's cleanliness gate uses.
+- Use portable fixture names (no newline in a filename, which Windows rejects), and
+  make the handoff fixture's line endings independent of the runner: the source
+  pins `core.autocrlf` before its first add, and the clone's working tree is
+  re-materialised under the same pin. A fresh target clone must then read clean with
+  the exact status command the engine's cleanliness gate runs — measured, because a
+  Windows runner materialised the clone with endings that differed from the blob and
+  every handoff preview failed as `TARGET_DIRTY` far from the cause.
 - Compare worktree registrations canonically when verifying a checkout: Git reports
   `worktree list` in machine format, so a raw string comparison against the
   canonical root failed on Windows, where separators and short names differ. An

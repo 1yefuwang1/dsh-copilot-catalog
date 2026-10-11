@@ -52,14 +52,21 @@ async function fixture(t, caps = {}) {
   await mkdir(seed); await git(seed, 'init', '-b', 'topic/full/name');
   await mkdir(path.join(seed, 'project')); await writeFile(path.join(seed, 'project', 'file.txt'), 'base\n');
   await writeFile(path.join(seed, '.gitignore'), 'ignored-*\n');
+  // The source pins the setting before its first add, so the blob cannot inherit a
+  // CRLF store from the machine's git configuration.
+  await git(seed, 'config', 'core.autocrlf', 'false');
   await git(seed, 'add', '.'); await git(seed, 'commit', '-m', 'base');
+  // Line endings must not depend on the machine's git config. A Windows runner can
+  // materialise the clone with endings that differ from the committed blob, and a
+  // freshly cloned target then reads as modified — which the engine's cleanliness
+  // gate correctly refuses, far away from the cause. Pin the setting for the source
+  // before cloning, and re-materialise the clone's working tree so the fixture is
+  // clean by construction. This is the exact status command the gate runs.
   await git(root, 'clone', '--bare', seed, remote); await git(root, 'clone', remote, local);
-  // Line endings must not depend on the machine's git config: a runner with
-  // autocrlf would materialise every fixture file differently from the commit.
-  for (const repository of [seed, remote, local]) await git(repository, 'config', 'core.autocrlf', 'false');
-  // A freshly cloned target must read clean before any test touches it. This is the
-  // exact command the engine's cleanliness gate runs, so a platform that makes
-  // a new clone look dirty fails here with the paths instead of far downstream.
+  for (const repository of [remote, local]) await git(repository, 'config', 'core.autocrlf', 'false');
+  await rm(path.join(local, '.gitignore'), { force: true }); await rm(path.join(local, 'project'), { recursive: true, force: true });
+  await git(local, 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignore-submodules=none');
+  await git(local, 'checkout', '--', '.');
   const cloneStatus = (await git(local, 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignore-submodules=none')).toString();
   assert.equal(cloneStatus, '', `a fresh target clone is not clean: ${cloneStatus.slice(0, 600)}`);
   await git(seed, 'remote', 'add', 'origin', remote);
