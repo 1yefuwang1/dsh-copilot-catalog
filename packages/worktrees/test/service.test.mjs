@@ -9,6 +9,7 @@ import { FirstMessageNamer } from '../dist/first-message.js';
 import { WorktreeError } from '../dist/errors.js';
 import { hashValue } from '../dist/schema.js';
 import { worktreeDomain } from '../dist/store.js';
+import { renderWorktreeContext } from '../dist/context.js';
 import { tempDirectory, tmpBase } from './helpers.mjs';
 
 const state = { head: 'a'.repeat(40), branch: null, dirty: false, changes: 0, untracked: 0 };
@@ -79,12 +80,13 @@ async function fixture(t, options = {}) {
     async discover(path) { calls.push(['discover', path]); const record = [...store.worktrees.map.values()].find(r => path === r.checkoutRoot || path.startsWith(`${r.checkoutRoot}${sep}`)); return record ? { ...repository, root: record.checkoutRoot, projectSubdir: path === record.checkoutRoot ? '' : 'project' } : { ...repository, projectSubdir: path === repo ? '' : 'project' }; },
     async remotes() { return [{ name: 'origin', identity: remoteIdentity }]; },
     async branches() { calls.push(['branches']); if (options.branchesFailure) throw new WorktreeError('GIT_FAILED', 'advertisement unavailable'); return { remote: 'origin', remoteIdentity, defaultBranch: 'main', branches: Array.from({ length: 123 }, (_, index) => ({ name: `branch-${String(index).padStart(3, '0')}`, oid: state.head })).reverse(), observedAt: 42 }; },
+    async localBranches() { calls.push(['localBranches']); if (options.branchesFailure) throw new WorktreeError('GIT_FAILED', 'local discovery unavailable'); return { branchSource: 'local', currentBranch: 'main', defaultBranch: 'main', branches: Array.from({ length: 123 }, (_, index) => ({ name: `branch-${String(index).padStart(3, '0')}`, oid: state.head })).reverse(), observedAt: 42 }; },
     async create(input) {
-      calls.push(['create', input]); fetchCount++;
+      calls.push(['create', input]); if (input.branchSource !== 'local') fetchCount++;
       assert.equal(store.operations.get(input.id), undefined);
       assert.equal(store.worktrees.get(input.id).state, 'creating');
-      assert.equal(store.operations.get(store.worktrees.get(input.id).operationId).phase, 'fetching');
-      input.onProgress?.('fetching');
+      assert.equal(store.operations.get(store.worktrees.get(input.id).operationId).phase, input.branchSource === 'local' ? 'planned' : 'fetching');
+      if (input.branchSource !== 'local') input.onProgress?.('fetching');
       if (options.create) return options.create(input);
       input.onProgress?.('creating');
       await mkdir(resolve(input.destination, 'project'), { recursive: true });
@@ -330,6 +332,83 @@ test('branch advertisements use sorted bounded pages and reject stale remote ide
   f.remoteIdentity = 'new-identity';
   await assert.rejects(f.controller.execute({ action: 'branches', remote: 'origin', remoteIdentity: first.remoteIdentity, cursor: first.nextCursor }, f.invocation), errorCode('REMOTE_CHANGED'));
   await assert.rejects(f.controller.execute({ action: 'branches', remote: 'origin', cursor: first.nextCursor }, f.invocation), errorCode('STALE_CURSOR'));
+});
+
+test('local create requires no remote, retains explicit source metadata and exact pinned replay', async t => {
+  const f = await fixture(t), stages = [];
+  f.git.remotes = async () => { throw Error('local creation must never inspect remote configuration'); };
+  const request = { action: 'create', operationId: randomUUID(), branchSource: 'local', localBranch: 'topic/full/name', localOid: state.head, settingsHash: 'settings-1' };
+  const result = await f.controller.execute(request, { ...f.invocation, onProgress: progress => stages.push(progress.stage) });
+  assert.equal(result.worktree.branchSource, 'local'); assert.equal(result.worktree.localBranch, request.localBranch);
+  assert.equal(result.worktree.remote, 'local'); assert.equal(result.worktree.remoteBranch, request.localBranch);
+  assert.equal(result.worktree.remoteIdentity, hashValue(resolve(f.repo, '.git')));
+  assert.deepEqual(worktreeDomain.tables.worktrees.valueSchema.parse(result.worktree), result.worktree);
+  assert.deepEqual(stages, ['creating', 'opening', 'ready']); assert.equal(f.fetchCount, 0);
+  assert.deepEqual(f.events.filter(event => event.name === 'operation').map(event => event.value.phase), ['planned', 'checkout-created', 'session-created', 'ready']);
+  assert.match(renderWorktreeContext(result.worktree), /Local base branch/u); assert.match(renderWorktreeContext(result.worktree), /pinned without fetching/u);
+  const legacy = { ...result.worktree }; delete legacy.branchSource; delete legacy.localBranch;
+  assert.deepEqual(worktreeDomain.tables.worktrees.valueSchema.parse(legacy), legacy);
+  assert.match(renderWorktreeContext(legacy), /Fetched base branch/u, 'sentinel alone never determines source mode');
+  const input = f.calls.find(([kind]) => kind === 'create')[1];
+  assert.equal(input.localBranch, request.localBranch); assert.equal(input.localOid, state.head); assert.equal(input.remote, undefined);
+  assert.deepEqual(await f.controller.execute(request, f.invocation), result);
+  assert.equal(f.calls.filter(([kind]) => kind === 'create').length, 1);
+  await assert.rejects(f.controller.execute({ ...request, localOid: 'b'.repeat(40) }, f.invocation), errorCode('OPERATION_REUSED'));
+  f.policy.set(f.actor.id, 'workspace-write');
+  await assert.rejects(f.controller.execute({ ...request, operationId: randomUUID() }, f.invocation), errorCode('FULL_ACCESS_REQUIRED'));
+  f.policy.set(f.actor.id, 'danger-full-access'); f.plans.set(f.actor.id, { active: false, pending: true });
+  await assert.rejects(f.controller.execute({ ...request, operationId: randomUUID() }, { ...f.invocation, origin: 'tool' }), errorCode('PLAN_MODE'));
+});
+
+test('local HEAD creation from a managed source resolves that checkout while preserving original project metadata', async t => {
+  let localFolder, projectId = randomUUID();
+  const projects = {
+    folderForPath: path => ({ projectId, folderId: 'folder', path: localFolder ?? path }),
+    resolveFolder: () => ({ id: 'folder', path: localFolder }),
+    selectionForWorktree: () => ({ projectId, folderId: 'folder', path: localFolder }),
+    bindingFor: () => undefined, async recordThread() {},
+  };
+  const f = await fixture(t, { projects }); localFolder = resolve(f.repo, 'project');
+  const first = await f.controller.execute(f.request(), f.invocation);
+  const child = f.agents.get(first.sessionId), originalDiscover = f.git.discover;
+  f.git.discover = async path => { const repository = await originalDiscover(path); return repository.root === first.worktree.checkoutRoot ? { ...repository, branch: null } : repository; };
+  const second = await f.controller.execute({ action: 'create', branchSource: 'local', localBranch: 'HEAD', localOid: state.head, operationId: randomUUID() }, { ...f.invocation, agent: child });
+  const input = f.calls.filter(([kind]) => kind === 'create').at(-1)[1];
+  assert.equal(input.repository.root, first.worktree.checkoutRoot); assert.equal(input.repository.branch, null);
+  assert.equal(second.worktree.repoRoot, f.repo); assert.equal(second.worktree.commonDir, first.worktree.commonDir);
+  assert.equal(second.worktree.projectId, projectId); assert.equal(second.worktree.folderId, 'folder');
+});
+
+test('local branch generations paginate without remotes and cannot mix source, query or checkout cursors', async t => {
+  const f = await fixture(t), request = { action: 'branches', branchSource: 'local', limit: 50 };
+  f.git.remotes = async () => { throw Error('local branch reads must never inspect remotes'); };
+  const first = await f.controller.execute(request, f.invocation);
+  assert.equal(first.branchSource, 'local'); assert.equal(first.currentBranch, 'main'); assert.equal(first.defaultBranch, 'main'); assert.equal(first.remote, undefined);
+  assert.equal(first.items[0].name, 'branch-000'); assert.equal(first.items.length, 50);
+  const second = await f.controller.execute({ ...request, cursor: first.nextCursor }, f.invocation);
+  assert.equal(second.items[0].name, 'branch-050'); assert.equal(second.observedAt, first.observedAt);
+  assert.equal(f.calls.filter(([kind]) => kind === 'localBranches').length, 1);
+  await assert.rejects(f.controller.execute({ ...request, cursor: first.nextCursor, query: 'different' }, f.invocation), errorCode('STALE_CURSOR'));
+  f.git.remotes = async () => [{ name: 'origin', identity: 'opaque-remote' }];
+  await assert.rejects(f.controller.execute({ action: 'branches', remote: 'origin', cursor: first.nextCursor }, f.invocation), errorCode('STALE_CURSOR'));
+  await f.controller.execute({ action: 'branches', remote: 'origin' }, f.invocation);
+  await assert.rejects(f.controller.execute({ ...request, cursor: first.nextCursor }, f.invocation), errorCode('STALE_CURSOR'));
+  const refreshed = await f.controller.execute(request, f.invocation);
+  f.git.localBranches = async () => { throw new WorktreeError('GIT_FAILED', 'local read failed'); };
+  await assert.rejects(f.controller.execute(request, f.invocation), errorCode('GIT_FAILED'));
+  await assert.rejects(f.controller.execute({ ...request, cursor: refreshed.nextCursor }, f.invocation), errorCode('STALE_CURSOR'));
+});
+
+test('local source requests reject ambiguous fields and invalid or missing selection pins before effects', async t => {
+  const f = await fixture(t);
+  const valid = { action: 'create', operationId: randomUUID(), branchSource: 'local', localBranch: 'main' };
+  for (const invalid of [
+    { ...valid, remote: 'origin' }, { ...valid, remoteIdentity: 'opaque' }, { ...valid, remoteBranch: 'main' },
+    { ...valid, localOid: 'HEAD' }, { ...valid, localOid: 'a'.repeat(39) }, { ...valid, localBranch: 'HEAD' },
+    { ...valid, branchSource: 'remote' }, { ...valid, branchSource: undefined },
+    { action: 'branches', branchSource: 'local', remote: 'origin' }, { action: 'branches', branchSource: 'local', localBranch: 'main' },
+  ]) await assert.rejects(f.controller.execute(invalid, f.invocation), errorCode('INVALID_REQUEST'));
+  assert.equal(f.calls.length, 0); assert.equal(f.store.operations.map.size, 0);
 });
 
 test('failed branch refresh does not offer cached fallback', async t => {

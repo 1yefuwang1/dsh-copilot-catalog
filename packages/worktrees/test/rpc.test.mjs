@@ -59,6 +59,7 @@ async function fixture(t) {
   const git = {
     async discover() { return repository; }, async remotes() { return [{ name: 'origin', identity: 'opaque' }]; },
     async branches() { return { remote: 'origin', remoteIdentity: 'opaque', defaultBranch: 'main', branches: [{ name: 'main', oid: record.baseOid }], observedAt: 1 }; },
+    async localBranches() { return { branchSource: 'local', currentBranch: 'main', defaultBranch: 'main', branches: [{ name: 'main', oid: record.baseOid }], observedAt: 1 }; },
     async verify() { return { head: record.baseOid, branch: null, dirty: false, changes: 0, untracked: 0 }; },
     async createBranch(_record, name) { return { head: record.baseOid, branch: name, dirty: false, changes: 0, untracked: 0 }; },
   };
@@ -89,6 +90,21 @@ test('UI list/status/branches directly invoke the same caller-owned controller w
   assert.ok(f.gitCalls.every(value => value.actor === f.source)); assert.equal(f.events.length, 0); assert.deepEqual(f.source.inbox, { nextTurn: [], nextStep: [] });
   outerCode(await f.connection.dispatch({}, { endpoint: 'session/list' }), 'FALLBACK');
   outerCode(await f.connection.dispatch({}, { endpoint: `${WORKTREE_RPC_ENDPOINT}/other` }), 'FALLBACK');
+});
+
+test('UI local branch RPC requires no remote and rejects mixed source selectors before actor lookup', async t => {
+  const f = await fixture(t);
+  f.git.remotes = async () => { throw Error('local-only repository must not inspect remotes'); };
+  const response = await f.connection.dispatch(f.payload({ action: 'branches', branchSource: 'local' }));
+  assert.deepEqual(response, { ok: true, value: { v: 1, ok: true, data: { branchSource: 'local', currentBranch: 'main', defaultBranch: 'main', items: [{ name: 'main', oid: f.record.baseOid }], observedAt: 1 } } });
+  assert.deepEqual(f.gitCalls.map(call => call.name), ['discover', 'localBranches']);
+  const lookups = f.lookups.length;
+  for (const request of [
+    { action: 'branches', branchSource: 'local', remote: 'origin' },
+    { action: 'create', branchSource: 'local', localBranch: 'HEAD', operationId: randomUUID() },
+    { action: 'create', branchSource: 'local', localBranch: 'main', localOid: 'HEAD', operationId: randomUUID() },
+  ]) outerCode(await f.connection.dispatch(f.payload(request)), 'INVALID_RPC_REQUEST');
+  assert.equal(f.lookups.length, lookups); assert.equal(f.events.length, 0);
 });
 
 test('wrong operator or forged context is refused before Actor lookup; missing Actor has no Host fallback', async t => {

@@ -49,8 +49,16 @@ export interface RepositoryInfo {
   head: string;
   branch: string | null;
 }
+export type BranchSource = 'local' | 'remote';
 export interface RemoteInfo { name: string; identity: string }
 export interface RemoteBranch { name: string; oid: string }
+export interface LocalBranches {
+  branchSource: 'local';
+  currentBranch: string | null;
+  defaultBranch: string | null;
+  branches: RemoteBranch[];
+  observedAt: number;
+}
 export interface RemoteBranches {
   remote: string;
   remoteIdentity: string;
@@ -73,18 +81,30 @@ export interface WorktreeSetupProgress {
   readonly worktreeId?: string;
 }
 
-export interface CreateCheckoutInput {
+export type CreateCheckoutInput = {
   id: string;
   repository: RepositoryInfo;
   destination: string;
-  remote: string;
-  remoteIdentity: string;
-  remoteBranch: string;
   baseRef: string;
   signal?: AbortSignal;
   /** Observer failures are ignored; never used to authorize or change Git effects. */
   onProgress?: (stage: 'fetching' | 'creating') => void;
-}
+} & ({
+  branchSource: 'local';
+  localBranch: string;
+  localOid?: string;
+  remote?: never;
+  remoteIdentity?: never;
+  remoteBranch?: never;
+} | {
+  /** Omission preserves freshly fetched remote behavior. */
+  branchSource?: 'remote';
+  remote: string;
+  remoteIdentity: string;
+  remoteBranch: string;
+  localBranch?: never;
+  localOid?: never;
+});
 export interface CreatedCheckout {
   checkoutRoot: string;
   effectiveCwd: string;
@@ -147,6 +167,9 @@ export interface WorktreeRecord {
   remote: string;
   remoteIdentity: string;
   remoteBranch: string;
+  /** Absent on legacy records means remote, never inferred from remote's value. */
+  branchSource?: BranchSource;
+  localBranch?: string;
   baseOid: string;
   baseRef: string;
   fetchedAt: number;
@@ -205,6 +228,9 @@ export interface WorktreeRequest {
   repoPath?: string;
   id?: string;
   operationId?: string;
+  branchSource?: BranchSource;
+  localBranch?: string;
+  localOid?: string;
   remote?: string;
   remoteIdentity?: string;
   remoteBranch?: string;

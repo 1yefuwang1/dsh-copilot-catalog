@@ -24,7 +24,8 @@ const blank = { blank: true, subagent: null, openState: 'open', removed: false, 
 const record = { id: 'tree-1', operationId: 'op-1', effectiveCwd: '/repo/worktree', remote: 'upstream', remoteBranch: 'feature/example', baseOid: 'abc123', sessionIds: ['session-1'], branch: null, protected: false, archived: false, state: 'ready' };
 const op = { id: 'op-1', phase: 'ready', error: null };
 const status = { settingsHash: 'settings-1', repository: { root: '/repo', head: 'abc123', branch: 'develop' }, remotes: [{ name: 'upstream', identity: 'remote-1' }], defaults: { remote: 'upstream', branch: 'main' } };
-const branches = { remote: 'upstream', remoteIdentity: 'remote-1', defaultBranch: 'develop', items: [{ name: 'main', oid: 'main-oid' }, { name: 'feature/example', oid: 'feature-oid' }], observedAt: 1234 };
+const branches = { branchSource: 'remote', remote: 'upstream', remoteIdentity: 'remote-1', defaultBranch: 'develop', items: [{ name: 'main', oid: 'main-oid' }, { name: 'feature/example', oid: 'feature-oid' }], observedAt: 1234 };
+const localBranches = { branchSource: 'local', currentBranch: 'develop', defaultBranch: 'develop', items: [{ name: 'develop', oid: 'develop-oid' }, { name: 'main', oid: 'local-main-oid' }, { name: 'feature/local', oid: 'local-feature-oid' }], observedAt: 4321 };
 const preview = { id: 'preview-1', worktreeId: 'tree-1', sourceSessionId: 'session-1', targetRoot: '/repo', baseOid: 'abc123', patchPath: '/repo/snapshot.patch', patchHash: 'patch-1', bytes: 15, files: [{ path: 'file.txt', status: 'M', binary: false }] };
 const ownedContext = { project: { id: '12345678-1234-4234-8234-123456789abc', title: 'Two folders', folders: [{ id: 'folder-api', path: '/repo/services/api', title: 'API' }] }, folder: { id: 'folder-api', path: '/repo/services/api', title: 'API' }, binding: { sessionId: 'source', projectId: '12345678-1234-4234-8234-123456789abc', folderId: 'folder-api', mode: 'local', effectiveCwd: '/repo/services/api' } };
 
@@ -290,7 +291,7 @@ test('lazy native mode preserves composer, commands and editor; no custom messag
   assert.match(source, /name: 'conversation.input.dock'.*SetupProgress/);
   assert.doesNotMatch(source, /FirstPrompt|NewThreadDialog|ProjectHero|composerSelection|name: 'conversation.composer'|name: 'conversation.composer.bar'|name: 'conversation.hero.workspace'/);
   assert.doesNotMatch(source, /setDraft\(|addAttachments\(|removeAttachment\(|createDrafts\(|\.deps\s*=/);
-  assert.match(source, /flow.select\(sessionId, event.target.value\)/);
+  assert.match(source, /onChange: mode => flow.select\(sessionId, mode\)/);
   assert.match(source, /conversation.sendSession\(target.session, text, ids, mode, signal\)/);
   assert.match(source, /const flow = createWorktreeFlow/);
   assert.doesNotMatch(source, /setInterval\(|setTimeout\(|document.addEventListener|conversation.send =/);
@@ -405,7 +406,7 @@ function transaction({ deferredSetup = false, setupFailure, deferredUpload = fal
     progressState.terminal = terminal;
     for (const waiter of [...progressWaiters]) if (progressState.revision > waiter.after || terminal) { waiter.cleanup(); waiter.resolve(success(structuredClone(progressState))); progressWaiters = progressWaiters.filter(item => item !== waiter); }
   }
-  function completeSetup(request) { for (const stage of ['fetching', 'creating', 'naming', 'opening', 'ready']) publish(stage, request.operationId); publish(null, request.operationId, true); return setupFailure || success(result); }
+  function completeSetup(request) { for (const stage of [...(request.branchSource === 'remote' ? ['fetching'] : []), 'creating', 'naming', 'opening', 'ready']) publish(stage, request.operationId); publish(null, request.operationId, true); return setupFailure || success(result); }
   const conversation = { blocks: { storeFor: id => blocks.get(id), set(id, value) { const store = blocks.get(id); if (store.getSnapshot()?.reason !== value?.reason) store.publish(value); } }, input: { for: scope => scope === srcBinding.ctx ? srcInput : dstInput }, fileUploads,
     resolveDraftAttachments: ids => ids.map(id => descriptors.get(id)).filter(Boolean),
     rebindDraftFiles(id, ids) { events.push('rebind:' + id); const next = { ...fileUploads.getSnapshot() }; for (const file of ids.filter(id => id.startsWith('file'))) next[file] = { status: (deferredUpload && id === 'target') || (deferredSourceUpload && id === 'source') ? 'uploading' : 'ready', owner: id }; fileUploads.publish(next); },
@@ -432,7 +433,7 @@ function transaction({ deferredSetup = false, setupFailure, deferredUpload = fal
       }
       assert.equal(endpoint, 'dsh-worktrees/execute');
       if (payload.request.action === 'status') return success(payload.request.operationId ? { settingsHash: status.settingsHash, operation: op, sessionId: 'target', worktree: result.worktree } : { ...status, projectPath: '/repo/services/api' });
-      if (payload.request.action === 'branches') return success(branches);
+      if (payload.request.action === 'branches') return success(payload.request.branchSource === 'local' ? localBranches : branches);
       assert.fail('unexpected request');
     } } },
   };
@@ -481,12 +482,12 @@ test('repository availability checks only the actual selected blank folder and c
   assert.equal(f.repository.enabled('other'), false); f.dispose(); assert.equal(f.repository.enabled('source'), false);
 });
 
-test('non-Git, sandbox/transport/decode failures and repositories without remotes never enable worktree mode', async () => {
+test('non-Git, sandbox/transport/decode failures and mismatched folders never enable worktree mode', async () => {
   for (const reply of [
     { ok: true, value: { v: 1, ok: false, error: { code: 'GIT_FAILED', message: 'Not a supported source' } } },
     { ok: true, value: { v: 1, ok: false, error: { code: 'INCOMPLETE_SANDBOX', message: 'Unavailable' } } },
     { ok: false, error: { code: 'gateway/disconnected', message: 'Offline' } },
-    success({ invalid: true }), success({ ...status, remotes: [], projectPath: '/repo/chosen' }), success({ ...status, projectPath: '/different-target' }),
+    success({ invalid: true }), success({ ...status, projectPath: '/different-target' }),
   ]) {
     const f = repositoryFixture({ reply }); await f.repository.ensure('source'); assert.equal(f.repository.enabled('source'), false); assert.equal(f.repository.store.getSnapshot().phase, 'unavailable');
     await f.repository.ensure('source'); assert.equal(f.calls.length, 1, 'negative observations are cached, not polled'); f.dispose();
@@ -595,7 +596,7 @@ test('removed ownership aborts delayed configure and branches and cannot publish
       return original(...args);
     };
     const configuring = run.flow.configure('source'); await settle(); assert.ok(request); run.contextChanged(undefined); assert.equal(request.signal.aborted, true);
-    delayed.resolve(success(stage === 'status' ? { ...status, projectPath: ownedContext.folder.path } : branches)); await configuring;
+    delayed.resolve(success(stage === 'status' ? { ...status, projectPath: ownedContext.folder.path } : localBranches)); await configuring;
     const state = run.flow.store.getSnapshot(); assert.equal(state.status, null); assert.equal(state.branches, null); assert.equal(state.remote, ''); assert.equal(state.branch, ''); assert.equal(state.sourceChanged, true);
     assert.equal((await run.send('not stale preferences')).kind, 'error'); assert.equal(run.admissions.length, 0); assert.equal(run.sourceAdmissions.length, 0); await run.dispose();
   }
@@ -630,8 +631,8 @@ test('fresh configure/Send status rejection replaces an older positive observati
   config.ctx.connection.rpc.call = async () => ({ ok: true, value: { v: 1, ok: false, error: { code: 'GIT_FAILED', message: 'Source no longer valid' } } });
   await config.flow.configure('source'); assert.equal(config.repositories.enabled('source'), false); assert.equal(config.flow.store.getSnapshot().mode, 'new'); assert.equal(config.flow.store.getSnapshot().branches, null); await config.dispose();
   const run = transaction(); run.select('new');
-  run.ctx.connection.rpc.call = async (_channel, _endpoint, payload) => { run.calls.push({ payload }); return success({ ...status, remotes: [] }); };
-  const outcome = await run.send('no remote source'); assert.equal(outcome.kind, 'error'); assert.equal(run.repositories.enabled('source'), false); assert.equal(run.flow.store.getSnapshot().mode, 'new');
+  run.ctx.connection.rpc.call = async (_channel, _endpoint, payload) => { run.calls.push({ payload }); return { ok: true, value: { v: 1, ok: false, error: { code: 'GIT_FAILED', message: 'Source stopped being a Git repository' } } }; };
+  const outcome = await run.send('invalidated Git source'); assert.equal(outcome.kind, 'error'); assert.equal(run.repositories.enabled('source'), false); assert.equal(run.flow.store.getSnapshot().mode, 'new');
   assert.equal(run.calls.length, 1); assert.equal(run.admissions.length, 0); assert.equal(run.sourceAdmissions.length, 0); run.select('local'); assert.equal((await run.send('explicit Local')).kind, 'success'); await run.dispose();
 });
 
@@ -642,13 +643,15 @@ test('accepted worktree Send survives eligibility revocation during deferred des
   assert.equal(revoked, true); assert.equal(run.admissions.length, 1); assert.equal(run.sourceAdmissions.length, 0); assert.deepEqual(run.opened, ['target']); stop(); await run.dispose();
 });
 
-test('worktree options and the entire branch fieldset require positive target availability; recovery is explicit Local', () => {
+test('themed worktree mode and branch pickers require positive target availability; Local recovery stays explicit', () => {
   const controls = source.slice(source.indexOf('    function NewWorktreeControls('), source.indexOf('    function SetupProgress('));
   assert.match(controls, /canWorktree = repositories.enabled\(sessionId\), blockedNew = selected && state.mode === 'new' && \(!canWorktree \|\| state.sourceChanged\)/);
-  assert.match(controls, /!blockedNew && \(canWorktree \|\| worktree\) \? h\('select'/);
-  assert.match(controls, /canWorktree && h\('option', \{ value: 'new' \}/);
-  assert.match(controls, /canWorktree && !worktree && options && h\('fieldset'/);
-  assert.match(controls, /onClick: \(\) => flow.select\(sessionId, 'local'\)/);
+  assert.match(controls, /h\(ChoicePicker, \{[^\n]+label: t\('threadMode'\)/);
+  assert.match(controls, /!blockedNew && canWorktree \? \[\{ value: 'new'/);
+  assert.match(controls, /!blockedNew && canWorktree && !worktree && h\(BranchPicker/);
+  assert.match(controls, /\{ value: 'local', label: t\('local'\)/);
+  assert.match(controls, /onChange: mode => flow.select\(sessionId, mode\)/);
+  assert.doesNotMatch(controls, /h\('select', \{[^\n]+threadMode/);
   assert.match(controls, /usePanelInfo\(value => value.activePanelId\)/); assert.match(controls, /return \(\) => repositories.withdraw\(sessionId\)/);
   assert.match(source, /const repositories = createRepositoryAvailability\(ctx, projects\)/);
   assert.match(source, /createWorktreeFlow\(ctx, ctx.locale.bind\(NS\), projects, repositories\)/);
@@ -661,12 +664,16 @@ test('selecting New worktree is side-effect-free even with text, chips or attach
   assert.equal(run.src.getSnapshot().draft, 'keep native rich draft'); await run.dispose(); assert.equal(run.srcInput.deps.defaultSink, run.nativeSink);
 });
 
-test('first native Send strictly fetches, creates and names before exactly one target LLM admission', async () => {
+test('first native Send defaults to the current local branch with no remote discovery before one target admission', async () => {
   const run = transaction(); run.select('new'); const outcome = await run.send('canonical first prompt'); await settle();
   assert.equal(outcome.kind, 'success'); assert.equal(run.sourceAdmissions.length, 0); assert.equal(run.admissions.length, 1);
-  assert.deepEqual(run.events.filter(event => ['fetching', 'creating', 'naming', 'opening', 'ready', 'normal-llm'].includes(event)), ['fetching', 'creating', 'naming', 'opening', 'ready', 'normal-llm']);
+  assert.deepEqual(run.events.filter(event => ['fetching', 'creating', 'naming', 'opening', 'ready', 'normal-llm'].includes(event)), ['creating', 'naming', 'opening', 'ready', 'normal-llm']);
+  assert.equal(run.calls.some(call => call.payload.request?.action === 'branches'), false, 'unconfigured Local creates do not discover remote branches');
   const request = run.calls.find(call => call.endpoint === 'dsh-worktrees/prepare').payload.request;
   assert.equal(request.firstPrompt, 'canonical first prompt'); assert.equal(request.repoPath, '/repo/services/api'); assert.equal(request.sessionMode, 'new'); assert.equal(request.requireBlankSource, true);
+  assert.equal(request.branchSource, 'local'); assert.equal(request.localBranch, 'develop');
+  assert.equal(request.localOid, status.repository.head, 'unconfigured local default is fenced by fresh status OID');
+  for (const field of ['remote', 'remoteIdentity', 'remoteBranch']) assert.equal(Object.hasOwn(request, field), false, field);
   assert.deepEqual(run.opened, ['target']); assert.equal(run.references.find(ref => ref.sessionId === 'source').releases, 1); await run.dispose();
 });
 
@@ -743,7 +750,7 @@ test('adapter native settlement callback runs after native promise reaction rest
   await settle(); assert.equal(retained, false); await lease.close();
 });
 
-test('configuration already pending at native Send cannot change the frozen remote/base intent', async () => {
+test('configuration already pending at native Send cannot change the frozen local default intent', async () => {
   const run = transaction({ deferredSetup: true }); run.select('new');
   const original = run.ctx.connection.rpc.call, delayed = deferred(); let reads = 0;
   run.ctx.connection.rpc.call = async (...args) => {
@@ -754,7 +761,8 @@ test('configuration already pending at native Send cannot change the frozen remo
   const sending = run.send(); await settle();
   const prepare = run.calls.find(call => call.endpoint === 'dsh-worktrees/prepare'); assert.ok(prepare);
   delayed.resolve(success({ ...status, remotes: [{ name: 'late-remote', identity: 'late' }], defaults: { remote: 'late-remote', branch: 'late-branch' } })); await configuring;
-  assert.equal(prepare.payload.request.remote, 'upstream'); assert.equal(prepare.payload.request.remoteBranch, 'main');
+  assert.equal(prepare.payload.request.branchSource, 'local'); assert.equal(prepare.payload.request.localBranch, 'develop'); assert.equal(prepare.payload.request.localOid, status.repository.head);
+  for (const field of ['remote', 'remoteIdentity', 'remoteBranch']) assert.equal(Object.hasOwn(prepare.payload.request, field), false, field);
   run.complete(); await sending; await settle(); await run.dispose();
 });
 
@@ -804,4 +812,157 @@ test('native root-write conflicts and transport failures preserve the original d
   assert.equal(draft, '/typed/root'); assert.equal(state.value.root, '/accepted');
   await assert.rejects(helpers.writeRootFolder({ state, async mutate() { throw Error('offline'); } }, draft, 2), /offline/);
   assert.equal(state.value.root, '/accepted');
+});
+
+function branchFixture({ repository = status, answer } = {}) {
+  const run = transaction({ context: ownedContext }), original = run.ctx.connection.rpc.call, reads = [];
+  run.ctx.connection.rpc.call = (...args) => {
+    const request = args[2].request;
+    if (args[1] === 'dsh-worktrees/execute' && request?.action === 'status' && !request.operationId) {
+      run.calls.push({ endpoint: args[1], payload: args[2], signal: args[3] });
+      return Promise.resolve(success({ ...repository, projectPath: request.repoPath || ownedContext.folder.path }));
+    }
+    if (request?.action === 'branches') {
+      const read = { request, signal: args[3] }; reads.push(read);
+      const data = answer ? answer(request, reads.length) : request.branchSource === 'local' ? localBranches : { ...branches, remote: request.remote, remoteIdentity: request.remoteIdentity };
+      return Promise.resolve(data).then(success);
+    }
+    return original(...args);
+  };
+  return { ...run, reads };
+}
+
+test('repositories without remotes positively cache Git eligibility and configure local-only branches', async () => {
+  const eligibility = repositoryFixture({ reply: success({ ...status, remotes: [], projectPath: '/repo/chosen' }) });
+  await eligibility.repository.ensure('source'); assert.equal(eligibility.repository.enabled('source'), true);
+  await eligibility.repository.ensure('source'); assert.equal(eligibility.calls.length, 1); eligibility.dispose();
+  const run = branchFixture({ repository: { ...status, remotes: [] } }); run.select('new');
+  await run.flow.configure('source'); const state = run.flow.store.getSnapshot();
+  assert.equal(state.branchSource, 'local'); assert.equal(state.remote, ''); assert.equal(state.branch, 'develop'); assert.equal(state.branchOid, 'develop-oid');
+  assert.equal(run.reads.length, 1); assert.equal(run.reads[0].request.branchSource, 'local');
+  run.flow.setBranchSource('source', 'remote'); await settle(); assert.equal(run.reads.length, 1); assert.equal(run.flow.store.getSnapshot().branchSource, 'local');
+  assert.equal((await run.send('offline local repository')).kind, 'success');
+  const request = run.calls.find(call => call.endpoint === 'dsh-worktrees/prepare').payload.request;
+  assert.equal(request.branchSource, 'local'); assert.equal(request.localBranch, 'develop'); assert.equal(request.localOid, 'develop-oid');
+  for (const read of run.reads) for (const field of ['remote', 'remoteIdentity', 'query']) assert.equal(Object.hasOwn(read.request, field), false, field);
+  assert.equal(run.events.includes('fetching'), false); await run.dispose();
+});
+
+test('local branch response validation checks source, current branch, OIDs and generation fields', () => {
+  const request = { action: 'branches', branchSource: 'local' };
+  assert.equal(helpers.validateData(request, localBranches), localBranches);
+  assert.equal(helpers.validateData(request, { ...localBranches, currentBranch: null }).currentBranch, null);
+  for (const changed of [{ branchSource: 'remote' }, { currentBranch: '' }, { currentBranch: undefined }, { observedAt: Infinity }, { items: [{ name: 'main', oid: '' }] }]) {
+    fails(() => helpers.validateData(request, { ...localBranches, ...changed }), 'decode', 'invalid-branches-data');
+  }
+  fails(() => helpers.validateData({ action: 'branches', remote: 'upstream' }, localBranches), 'decode');
+});
+
+test('local cursor generations merge all pages once and UI search preserves selected branch and OID without requests', async () => {
+  const run = branchFixture({ answer(request) {
+    assert.equal(request.branchSource, 'local');
+    return { ...localBranches, items: request.cursor ? [{ name: 'main', oid: 'local-main-oid' }, { name: 'feature/local', oid: 'local-feature-oid' }] : localBranches.items.slice(0, 2), ...(request.cursor ? {} : { nextCursor: 'local-generation-page-2' }) };
+  } }); run.select('new'); await run.flow.configure('source');
+  assert.equal(run.reads.length, 2); assert.equal(Object.hasOwn(run.reads[0].request, 'cursor'), false); assert.equal(run.reads[1].request.cursor, 'local-generation-page-2');
+  assert.equal(run.reads[0].signal, run.reads[1].signal); assert.equal(run.reads[0].request.limit, 100);
+  assert.deepEqual([...run.flow.store.getSnapshot().branches.items].map(item => item.name), ['develop', 'main', 'feature/local']);
+  assert.equal(run.flow.setBranch('feature/local'), true);
+  for (const query of ['MAIN', 'nothing matches', 'feature', '']) {
+    run.flow.setQuery(query); await settle(); const state = run.flow.store.getSnapshot();
+    assert.equal(state.query, query); assert.equal(state.branch, 'feature/local'); assert.equal(state.branchOid, 'local-feature-oid'); assert.equal(state.branches.items.length, 3); assert.equal(run.reads.length, 2);
+  }
+  assert.equal(run.flow.setBranch('not-in-generation'), false); await run.flow.configure('source'); assert.equal(run.reads.length, 2, 'reopening uses the same cached generation');
+  assert.equal((await run.send('selected local base')).kind, 'success');
+  const request = run.calls.find(call => call.endpoint === 'dsh-worktrees/prepare').payload.request;
+  assert.equal(request.localBranch, 'feature/local'); assert.equal(request.localOid, 'local-feature-oid'); assert.equal(Object.hasOwn(request, 'remote'), false); await run.dispose();
+});
+
+test('remote cursor caches are separate per remote and source and prefer the current branch when advertised', async () => {
+  const repository = { ...status, remotes: [...status.remotes, { name: 'origin', identity: 'remote-2' }] };
+  const run = branchFixture({ repository, answer(request) {
+    if (request.branchSource === 'local') return localBranches;
+    return { ...branches, remote: request.remote, remoteIdentity: request.remoteIdentity, items: request.cursor ? [{ name: 'develop', oid: request.remote + '-develop' }, { name: 'feature/remote', oid: request.remote + '-feature' }] : [{ name: 'main', oid: request.remote + '-main' }], ...(request.cursor ? {} : { nextCursor: request.remote + '-page-2' }) };
+  } }); run.select('new'); await run.flow.configure('source'); assert.equal(run.reads.length, 1);
+  run.flow.setBranchSource('source', 'remote'); await settle(); assert.equal(run.reads.length, 3);
+  let state = run.flow.store.getSnapshot(); assert.equal(state.branch, 'develop'); assert.equal(state.branchOid, 'upstream-develop');
+  assert.equal(run.reads[1].request.remote, 'upstream'); assert.equal(run.reads[1].request.remoteIdentity, 'remote-1'); assert.equal(run.reads[2].request.cursor, 'upstream-page-2');
+  run.flow.setBranch('feature/remote'); run.flow.setQuery('no-match'); await settle(); state = run.flow.store.getSnapshot();
+  assert.equal(state.branch, 'feature/remote'); assert.equal(state.branchOid, 'upstream-feature'); assert.equal(run.reads.length, 3);
+  run.flow.setRemote('source', 'origin'); await settle(); assert.equal(run.reads.length, 5); assert.equal(run.reads[3].request.remoteIdentity, 'remote-2'); assert.equal(run.flow.store.getSnapshot().query, '');
+  run.flow.setRemote('source', 'upstream'); await settle(); assert.equal(run.reads.length, 5);
+  run.flow.setBranchSource('source', 'local'); await settle(); assert.equal(run.reads.length, 5); assert.equal(run.flow.store.getSnapshot().branchOid, 'develop-oid');
+  run.flow.setBranchSource('source', 'remote'); await settle(); assert.equal(run.reads.length, 5);
+  await run.flow.loadBranches('source', true); assert.equal(run.reads.length, 7, 'Refresh explicitly downloads a replacement remote generation');
+  assert.ok(run.reads.every(read => !Object.hasOwn(read.request, 'query'))); await run.dispose();
+});
+
+test('explicit remote choice still prepares fetched remote fields and freezes branch selection during search', async () => {
+  const run = branchFixture(); run.select('new'); await run.flow.configure('source');
+  run.flow.setBranchSource('source', 'remote'); await settle(); assert.equal(run.flow.setBranch('feature/example'), true); run.flow.setQuery('not visible');
+  const readCount = run.reads.length; assert.equal((await run.send('remote task')).kind, 'success');
+  assert.equal(run.reads.length, readCount, 'Send reuses advertised remote generation; actual fetch belongs to prepare');
+  const request = run.calls.find(call => call.endpoint === 'dsh-worktrees/prepare').payload.request;
+  assert.equal(request.branchSource, 'remote'); assert.equal(request.remote, 'upstream'); assert.equal(request.remoteIdentity, 'remote-1'); assert.equal(request.remoteBranch, 'feature/example');
+  assert.equal(Object.hasOwn(request, 'localBranch'), false); assert.equal(Object.hasOwn(request, 'localOid'), false);
+  assert.deepEqual(run.events.filter(event => ['fetching', 'creating', 'naming', 'opening', 'ready', 'normal-llm'].includes(event)), ['fetching', 'creating', 'naming', 'opening', 'ready', 'normal-llm']); await run.dispose();
+});
+
+test('unconfigured local default follows fresh current branch and OID rather than cached observer display', async () => {
+  const freshStatus = { ...status, repository: { ...status.repository, branch: 'fresh-current', head: 'fresh-current-oid' } };
+  const run = branchFixture({ repository: freshStatus });
+  run.repositories.store.publish({ available: true, status: { ...status, repository: { ...status.repository, branch: 'old-display', head: 'old-display-oid' } } });
+  run.select('new'); assert.equal(run.flow.store.getSnapshot().branch, 'old-display'); assert.equal(run.flow.store.getSnapshot().branchOid, '');
+  assert.equal((await run.send('fresh local default')).kind, 'success');
+  const request = run.calls.find(call => call.endpoint === 'dsh-worktrees/prepare').payload.request;
+  assert.equal(request.branchSource, 'local'); assert.equal(request.localBranch, 'fresh-current'); assert.equal(request.localOid, 'fresh-current-oid'); assert.equal(run.reads.length, 0); await run.dispose();
+});
+
+test('detached local default carries HEAD and exact fresh status OID without remote discovery', async () => {
+  const run = branchFixture({ repository: { ...status, repository: { ...status.repository, branch: null, head: 'detached-head' }, remotes: [] } }); run.select('new');
+  assert.equal((await run.send('detached local task')).kind, 'success'); const request = run.calls.find(call => call.endpoint === 'dsh-worktrees/prepare').payload.request;
+  assert.equal(request.branchSource, 'local'); assert.equal(request.localBranch, 'HEAD'); assert.equal(request.localOid, 'detached-head'); assert.equal(run.reads.length, 0); await run.dispose();
+});
+
+test('branch pages reject mixed generations and repeating cursors rather than caching partial results', async () => {
+  for (const failure of ['timestamp', 'default', 'cursor']) {
+    const run = branchFixture({ answer(request) {
+      return { ...localBranches, ...(request.cursor && failure === 'timestamp' ? { observedAt: 9999 } : {}), ...(request.cursor && failure === 'default' ? { defaultBranch: 'other' } : {}), ...(!request.cursor || failure === 'cursor' ? { nextCursor: 'same-cursor' } : {}) };
+    } }); run.select('new'); await run.flow.configure('source');
+    assert.equal(run.reads.length, 2); assert.equal(run.flow.store.getSnapshot().branches, null); assert.equal(run.flow.store.getSnapshot().loading, false);
+    assert.match(run.flow.store.getSnapshot().error, failure === 'cursor' ? /repeated-branch-cursor/ : /branch-generation-changed/);
+    await run.flow.configure('source'); assert.equal(run.reads.length, 4, 'failed generations never enter the cache'); await run.dispose();
+  }
+});
+
+test('folder, binding, repository revocation and reconnect invalidate local OIDs and every source cache', async () => {
+  for (const cause of ['folder', 'binding', 'repository', 'reconnect']) {
+    const run = branchFixture(); run.select('new'); await run.flow.configure('source');
+    run.flow.setBranchSource('source', 'remote'); await settle(); run.flow.setBranchSource('source', 'local'); await settle();
+    run.flow.setBranch('feature/local'); run.flow.setQuery('hidden'); const before = run.reads.length;
+    if (cause === 'folder') run.contextChanged({ ...ownedContext, folder: { ...ownedContext.folder, id: 'other-folder', path: '/repo/other' } });
+    if (cause === 'binding') {
+      const old = run.ctx.sessions.binding, replacement = { ...old('source') };
+      run.ctx.sessions.binding = id => id === 'source' ? replacement : old(id);
+      run.ctx.sessions.list.publish({ ...run.ctx.sessions.list.getSnapshot() });
+    }
+    if (cause === 'repository') run.revoke();
+    if (cause === 'reconnect') run.generation.publish({ id: 2 });
+    const state = run.flow.store.getSnapshot(); assert.equal(state.status, null, cause); assert.equal(state.branches, null, cause); assert.equal(state.branch, '', cause); assert.equal(state.branchOid, '', cause + ' must not carry an OID into another current branch');
+    assert.equal(state.query, '', cause + ' must clear source-specific search');
+    if (cause === 'repository') run.repositories.store.publish({ available: true });
+    run.select('new'); await run.flow.configure('source'); assert.equal(run.reads.length, before + 1, cause + ' clears the local cache');
+    run.flow.setBranchSource('source', 'remote'); await settle(); assert.equal(run.reads.length, before + 2, cause + ' clears the remote cache'); await run.dispose();
+  }
+});
+
+test('source invalidation aborts in-flight cursor pages and late generation cannot replace fresh branch data', async () => {
+  const delayed = deferred(); let deferPage = true;
+  const run = branchFixture({ answer(request) {
+    if (request.cursor && deferPage) return delayed.promise;
+    return { ...localBranches, ...(!request.cursor && deferPage ? { nextCursor: 'pending-page' } : {}) };
+  } }); run.select('new'); const configuring = run.flow.configure('source'); await settle(); assert.equal(run.reads.length, 2);
+  run.generation.publish({ id: 2 }); assert.equal(run.reads[1].signal.aborted, true); deferPage = false;
+  await run.flow.configure('source'); const fresh = run.flow.store.getSnapshot().branches;
+  delayed.resolve({ ...localBranches, items: [{ name: 'stale', oid: 'stale-oid' }] }); await configuring;
+  assert.equal(run.flow.store.getSnapshot().branches, fresh); assert.equal(run.flow.store.getSnapshot().branch, 'develop'); assert.equal(run.reads.length, 3); await run.dispose();
 });

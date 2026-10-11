@@ -24,11 +24,15 @@ export function renderWorktreeContext(record: WorktreeRecord, state?: CheckoutSt
     'Mode: isolated linked checkout.',
     `Execution directory: ${quote(record.effectiveCwd)}`,
     `Original local checkout: ${quote(record.repoRoot)}`,
-    `Fetched base branch: ${quote(`${record.remote}/${record.remoteBranch}`)}`,
+    record.branchSource === 'local'
+      ? `Local base branch: ${quote(record.localBranch ?? record.remoteBranch)}`
+      : `Fetched base branch: ${quote(`${record.remote}/${record.remoteBranch}`)}`,
     `Starting commit: ${quote(record.baseOid || 'not established')}`,
     `Checkout last known: ${quote(state === undefined ? 'unknown; inspect status before Git mutations' : state.branch === null ? 'detached HEAD' : state.branch)}`,
     ...(state === undefined ? [] : [`HEAD last known: ${quote(state.head)}`]),
-    'The base is a creation-time fetched snapshot, not continuous synchronization. Git refs and repository metadata remain shared.',
+    record.branchSource === 'local'
+      ? 'The base is a creation-time local commit snapshot pinned without fetching, not continuous synchronization. Git refs and repository metadata remain shared.'
+      : 'The base is a creation-time fetched snapshot, not continuous synchronization. Git refs and repository metadata remain shared.',
     'Work in the current session directory. Preserve the local checkout unless an explicit handoff is requested. Historical paths may refer to an earlier checkout; verify before writing.',
   ].join('\n');
 }

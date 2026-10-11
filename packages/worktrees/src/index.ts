@@ -104,7 +104,7 @@ export async function apply(ctx: Context, config: PluginConfig): Promise<void> {
   });
   ctx.tools.register({
     name: 'git_worktree',
-    description: 'List or create isolated Git worktree threads from a freshly fetched remote branch; preview/export or hand off changes to a clean Local checkout. Cross-root Git mutations require existing full access. Handoff refuses running source/target sessions and never resets or deletes checkouts.',
+    description: 'List or create isolated Git worktree threads from an exact local branch without network access or a freshly fetched remote branch; preview/export or hand off changes to a clean Local checkout. Cross-root Git mutations require existing full access. Handoff refuses running source/target sessions and never resets or deletes checkouts.',
     parameters: parameterSchema,
     output: { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
     isConcurrencySafe: args => {

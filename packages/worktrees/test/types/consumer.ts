@@ -2,7 +2,7 @@ import { Config, apply, GitOperations as RootGitOperations, WorktreeError, Proje
 import { ProjectController, parseProjectRequest, projectParameterSchema, resolveMainFolder, type ProjectRequest, type ProjectThreadBinding, type ProjectSnapshot, type ProjectStartResult, type ProjectRemoveResult } from '@1yefuwang1/dsh-worktrees/projects';
 import { GitOperations } from '@1yefuwang1/dsh-worktrees/git';
 import { NAMING_DEFAULTS, namingConfig, safeSlug } from '@1yefuwang1/dsh-worktrees/naming';
-import type { WorktreeConfig, GitExecutor, GitRunSpec, GitRunResult, RepositoryInfo, RemoteBranches, CheckoutState, CreateCheckoutInput, CreatedCheckout, SnapshotInput, WorktreePreview, WorktreeRecord, SessionSettings, SessionResult, WorktreeRequest, WorktreeAction, OperationRecord, OperationPhase } from '@1yefuwang1/dsh-worktrees/types';
+import type { WorktreeConfig, GitExecutor, GitRunSpec, GitRunResult, RepositoryInfo, RemoteBranches, LocalBranches, BranchSource, CheckoutState, CreateCheckoutInput, CreatedCheckout, SnapshotInput, WorktreePreview, WorktreeRecord, SessionSettings, SessionResult, WorktreeRequest, WorktreeAction, OperationRecord, OperationPhase } from '@1yefuwang1/dsh-worktrees/types';
 import type { Context } from '@deepseek-ai/cordis';
 
 // Compile-only consumer of the exported declarations, never executed against Git.
@@ -32,6 +32,14 @@ const createInput: CreateCheckoutInput = {
   remoteBranch: record.remoteBranch, baseRef: record.baseRef,
 };
 const created: Promise<CreatedCheckout> = git.create(createInput);
+const localSource: BranchSource = 'local';
+const localBranches: Promise<LocalBranches> = git.localBranches(repository.root);
+const localCreateInput: CreateCheckoutInput = { id: record.id, repository, destination: record.checkoutRoot, branchSource: localSource, localBranch: 'main', localOid: repository.head, baseRef: record.baseRef };
+const localCreated: Promise<CreatedCheckout> = git.create(localCreateInput);
+const localRequest: WorktreeRequest = { action: 'create', operationId: operation.id, branchSource: 'local', localBranch: 'HEAD', localOid: repository.head };
+// @ts-expect-error source modes cannot silently mix local selection and remote fetch fields
+const mixedCreateInput: CreateCheckoutInput = { ...localCreateInput, remote: 'origin' };
+void [localBranches, localCreated, localRequest, mixedCreateInput];
 const preview: Promise<WorktreePreview> = git.snapshot(snapshotInput);
 const phase: OperationPhase = operation.phase;
 const action: WorktreeAction = 'create';

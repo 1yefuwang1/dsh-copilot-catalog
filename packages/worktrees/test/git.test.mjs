@@ -114,6 +114,106 @@ test('discover, advertised slash branch and fresh atomic fetch leave Source Loca
   assert.equal(await lstat(path.join(f.local, '.git', 'FETCH_HEAD')).then(() => true, () => false), false);
 });
 
+async function localInput(f, id, localBranch = 'topic/full/name', localOid) {
+  const repository = await f.engine.discover(path.join(f.seed, 'project'));
+  return { id, repository, destination: path.join(f.managed, id), branchSource: 'local', localBranch, ...(localOid === undefined ? {} : { localOid }), baseRef: `refs/dsh-worktrees/${id}/base` };
+}
+
+test('local branch generation and creation work in a repository with no remote and preserve dirty source', async t => {
+  const f = await fixture(t); await f.git(f.seed, 'remote', 'remove', 'origin');
+  await f.git(f.seed, 'branch', 'feature/独立'); await f.git(f.seed, 'tag', 'not-a-branch'); await f.git(f.seed, 'tag', 'topic/full/name');
+  assert.equal((await f.engine.discover(f.seed)).branch, 'topic/full/name', 'tag collision cannot alter the current local branch name');
+  assert.deepEqual(await f.engine.remotes(f.seed), []);
+  const start = f.calls.length;
+  const listed = await f.engine.localBranches(f.seed);
+  assert.equal(listed.branchSource, 'local'); assert.equal(listed.currentBranch, 'topic/full/name'); assert.equal(listed.defaultBranch, 'topic/full/name');
+  assert.deepEqual(listed.branches.map(branch => branch.name), ['feature/独立', 'topic/full/name']);
+  await writeFile(path.join(f.seed, 'project/file.txt'), 'staged source\n'); await f.git(f.seed, 'add', '.');
+  await writeFile(path.join(f.seed, 'project/file.txt'), 'unstaged source\n'); await writeFile(path.join(f.seed, 'untracked'), 'preserve\n');
+  const before = { head: await f.git(f.seed, 'rev-parse', 'HEAD'), index: await readFile(path.join(f.seed, '.git/index')), status: await f.git(f.seed, 'status', '--porcelain=v1', '-z') };
+  const progress = [], input = await localInput(f, 'no-remote', listed.currentBranch, listed.branches.find(branch => branch.name === listed.currentBranch).oid);
+  const created = await f.engine.create({ ...input, onProgress: stage => progress.push(stage) });
+  assert.equal(created.baseOid, before.head.toString().trim()); assert.equal(created.effectiveCwd, path.join(created.checkoutRoot, 'project'));
+  assert.equal(await readFile(path.join(created.checkoutRoot, 'project/file.txt'), 'utf8'), 'base\n'); assert.deepEqual(progress, ['creating']);
+  assert.deepEqual(await f.git(f.seed, 'rev-parse', 'HEAD'), before.head); assert.deepEqual(await readFile(path.join(f.seed, '.git/index')), before.index); assert.deepEqual(await f.git(f.seed, 'status', '--porcelain=v1', '-z'), before.status);
+  const record = { ...created, id: input.id, repoRoot: f.seed, commonDir: input.repository.commonDir, projectSubdir: 'project', remote: 'local', remoteIdentity: 'repository', remoteBranch: input.localBranch, branchSource: 'local', localBranch: input.localBranch };
+  assert.equal((await f.engine.verify(record)).head, created.baseOid);
+  const calls = f.calls.slice(start);
+  assert.equal(calls.some(call => call.args.some(arg => ['fetch', 'ls-remote', 'get-url'].includes(arg))), false);
+  const pin = calls.find(call => call.args.includes('update-ref')); assert.ok(pin.args.includes('--no-deref')); assert.match(pin.stdin, /verify refs\/heads\/topic\/full\/name [a-f0-9]{40}/u); assert.match(pin.stdin, /create refs\/dsh-worktrees\/no-remote\/base/u);
+  assert.equal(await lstat(path.join(f.seed, '.git/FETCH_HEAD')).then(() => true, () => false), false);
+});
+
+test('local exact refs never accept tags, revision expressions, missing branches or moved selection', async t => {
+  const f = await fixture(t); const selected = f.repository.head;
+  await f.git(f.seed, 'tag', 'tag-only');
+  for (const localBranch of ['--force', '../x', 'a\nrefs/heads/x', 'a\rrefs/heads/x', 'x:refs/heads/inject', 'topic/full/name~1', 'topic/full/name^{commit}', 'refs/heads/topic/full/name']) {
+    const input = await localInput(f, `invalid-${f.calls.length}`, localBranch);
+    await assert.rejects(f.engine.create(input), code(localBranch.startsWith('refs/') ? 'LOCAL_BRANCH_NOT_FOUND' : 'INVALID_REF'));
+  }
+  for (const localBranch of ['tag-only', 'missing']) await assert.rejects(f.engine.create(await localInput(f, localBranch, localBranch)), code('LOCAL_BRANCH_NOT_FOUND'));
+  await writeFile(path.join(f.seed, 'project/file.txt'), 'new local commit\n'); await f.git(f.seed, 'add', '.'); await f.git(f.seed, 'commit', '-m', 'advance local');
+  const moved = await localInput(f, 'moved', 'topic/full/name', selected);
+  await assert.rejects(f.engine.create(moved), code('BRANCH_CHANGED'));
+  assert.equal(await lstat(moved.destination).then(() => true, () => false), false);
+  const base = await f.exec({ cwd: f.seed, args: ['show-ref', '--verify', '--quiet', moved.baseRef], allowedExitCodes: [0, 1] }); assert.equal(base.exitCode, 1);
+  const current = await f.engine.create(await localInput(f, 'unpinned-current')); assert.notEqual(current.baseOid, selected);
+});
+
+test('local pinning rejects movement or symbolic replacement between resolution and transaction', async t => {
+  for (const replacement of ['moved', 'symbolic', 'base-symbolic']) {
+    const f = await fixture(t); const input = await localInput(f, `race-${replacement}`);
+    const advanced = (await f.git(f.seed, 'commit-tree', `${f.repository.head}^{tree}`, '-p', f.repository.head, '-m', 'other commit')).toString().trim();
+    let raced = false;
+    const engine = new GitOperations(async spec => {
+      if (spec.args.includes('update-ref') && !raced) {
+        raced = true;
+        if (replacement === 'moved') await f.git(f.seed, 'update-ref', 'refs/heads/topic/full/name', advanced);
+        else if (replacement === 'symbolic') { await f.git(f.seed, 'update-ref', 'refs/heads/other', f.repository.head); await f.git(f.seed, 'symbolic-ref', 'refs/heads/topic/full/name', 'refs/heads/other'); }
+        else await f.git(f.seed, 'symbolic-ref', input.baseRef, 'refs/heads/topic/full/name');
+      }
+      return f.exec(spec);
+    }, f.config);
+    await assert.rejects(engine.create(input), code('BRANCH_CHANGED')); assert.equal(raced, true);
+    assert.equal(await lstat(input.destination).then(() => true, () => false), false);
+    assert.equal((await f.git(f.seed, 'rev-parse', 'refs/heads/topic/full/name')).toString().trim(), replacement === 'moved' ? advanced : f.repository.head);
+  }
+});
+
+test('detached local HEAD appears as pinned default and never silently follows a later attached HEAD', async t => {
+  const f = await fixture(t); await f.git(f.seed, 'checkout', '--detach');
+  const listed = await f.engine.localBranches(f.seed);
+  assert.equal(listed.currentBranch, null); assert.equal(listed.defaultBranch, 'HEAD'); assert.equal(listed.branches.find(branch => branch.name === 'HEAD').oid, f.repository.head);
+  const input = await localInput(f, 'detached-local', 'HEAD', f.repository.head);
+  const created = await f.engine.create(input); assert.equal(created.baseOid, f.repository.head); assert.equal((await f.engine.status(f.seed)).branch, null);
+  await assert.rejects(f.engine.create({ ...await localInput(f, 'missing-head-pin', 'HEAD') }), code('INVALID_REF'));
+  await f.git(f.seed, 'checkout', 'topic/full/name');
+  await assert.rejects(f.engine.create(await localInput(f, 'attached-head', 'HEAD', f.repository.head)), code('BRANCH_CHANGED'));
+});
+
+test('local generation is bounded and rejects truncated, symbolic and noncommit refs', async t => {
+  const f = await fixture(t); await f.git(f.seed, 'branch', 'other');
+  await assert.rejects(new GitOperations(f.exec, { ...f.config, maxFiles: 1 }).localBranches(f.seed), code('REF_LIMIT'));
+  const truncated = new GitOperations(async spec => { const result = await f.exec(spec); return spec.args.includes('for-each-ref') ? { ...result, stdout: result.stdout.subarray(0, -1) } : result; }, f.config);
+  await assert.rejects(truncated.localBranches(f.seed), code('TRUNCATED_OUTPUT'));
+  await f.git(f.seed, 'symbolic-ref', 'refs/heads/alias', 'refs/heads/other');
+  await assert.rejects(f.engine.localBranches(f.seed), code('UNSUPPORTED_REF'));
+  await assert.rejects(f.engine.create(await localInput(f, 'symbolic-local', 'alias')), code('UNSUPPORTED_REF'));
+});
+
+test('local creation retains path, attribute and live cancellation defenses without fetch', async t => {
+  const f = await fixture(t), input = await localInput(f, 'local-defenses');
+  await assert.rejects(f.engine.create({ ...input, destination: path.join(f.seed, 'nested') }), code('UNSAFE_PATH'));
+  await assert.rejects(f.engine.create({ ...input, localOid: 'HEAD' }), code('INVALID_REF'));
+  await writeFile(path.join(f.seed, '.gitattributes'), '*.txt filter=hostile\n'); await f.git(f.seed, 'add', '.gitattributes'); await f.git(f.seed, 'commit', '-m', 'unsupported local attributes');
+  await assert.rejects(f.engine.create(input), code('UNSUPPORTED_ATTRIBUTES'));
+  const abort = new AbortController(); let pinned = false;
+  const cancelled = new GitOperations(async spec => { const result = await f.exec(spec); if (spec.args.includes('update-ref')) { pinned = true; abort.abort(); } return result; }, f.config);
+  await assert.rejects(cancelled.create({ ...await localInput(f, 'local-cancelled'), signal: abort.signal }), code('CANCELLED')); assert.equal(pinned, true);
+  assert.equal(await lstat(path.join(f.managed, 'local-cancelled')).then(() => true, () => false), false);
+  assert.equal(f.calls.some(call => call.args.includes('fetch')), false);
+});
+
 test('read-only Git source discovery rejects ordinary directories, accepts repo subfolders and linked worktrees, and performs no remote/setup work', async t => {
   const f = await fixture(t); const linked = await f.create('read-only-probe');
   const plain = path.join(f.root, 'ordinary-folder'); await mkdir(plain);

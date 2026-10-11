@@ -21,9 +21,10 @@ window.__ModuleLoader__.load({
       mainFolder: 'Main folder', main: 'Main', chooseMainFolder: 'Select the main folder', mainFolderRequired: 'Choose a main folder from the project source folders.', mainFolderHelp: 'Default for new conversations. You can choose another folder before sending.', conversationFolder: 'Conversation folder',
       createProject: 'Create project', sourceFolders: 'Source folders', localFolders: 'Browse for folders', enterFolderPath: 'Enter a folder path', checkingFolderOptions: 'Checking available folder options…', browseUnavailable: 'This session cannot list Host folders. Use Choose a folder… or enter an absolute path.', folderPickerUnavailable: 'The native folder chooser is unavailable here. Browse folders or enter an absolute Host folder path instead.', add: 'Add', cancel: 'Cancel', selectedFolders: 'Selected folders', selectFolder: 'Select folder', folderLimit: 'A project can contain at most 32 folders.', invalidFolder: 'Enter a valid absolute Host folder path.', alreadyAdded: 'Already added', multiFolderHelp: 'Select multiple folders using the checkboxes. Selections are kept as you browse.', hostFolderHelp: 'Folders are on the Host computer; adding them does not move files.', noSubfolders: 'No subfolders.', directoryTruncated: 'This listing is truncated. Enter a path to browse other folders.',
       rootFolder: 'Worktree root folder', rootSummary: 'Choose where new worktrees are created.', rootHelp: 'Absolute folder path on the Host, outside your source repositories. Changes apply to new worktrees only; existing directories and in-flight creates are not moved.', rootReset: 'Reset to inherited default', rootSaved: 'Saved. New worktrees will use this location.', rootUnavailable: 'Host-backed settings are unavailable for this entry.', rootInvalid: 'Enter a valid absolute Host folder path.', rootConflict: 'The setting changed or the Host refused the write. Your draft is preserved; reopen this page to read the latest value.',
-      pinned: 'Pinned', title: 'Worktrees', local: 'Local', new: 'New worktree', remote: 'Remote', branch: 'Remote base branch',
+      pinned: 'Pinned', title: 'Worktrees', local: 'Local', new: 'New worktree', remote: 'Remote', branch: 'Starting branch',
+      localBranches: 'Local branches', remoteBranches: 'Remote branches', currentBranch: 'Current branch', localBranchHelp: 'Start from a local commit. No remote fetch.', remoteBranchHelp: 'Start from the latest remote commit. Fetches when the worktree is created.', noBranches: 'No matching branches.', noRemotes: 'No remotes configured.', branchSource: 'Branch source',
       setupProgress: 'Preparing worktree', preparingMessage: 'Preparing your first message…', fetchingLatest: 'Fetching latest remote branch…', creatingWorktree: 'Creating worktree…', namingBranch: 'Generating and applying branch name…', openingConversation: 'Opening worktree conversation…', setupReady: 'Worktree ready', stagingAttachments: 'Preparing attachments for this worktree…', startingConversation: 'Starting normal conversation…', setupFailed: 'Worktree preparation failed', cancelSetup: 'Cancel setup', unsupported: 'This native composer version is not supported by the guarded adapter.', filesLost: 'A draft attachment is no longer available.', upload: 'Attachment upload failed', uncertain: 'Prompt admission is uncertain. Open the created conversation before trying again.',
-      search: 'Search remote branches', select: 'Base branch', refresh: 'Refresh', more: 'Load more', close: 'Close', open: 'Open conversation', remove: 'Remove', creatingWorktree: 'Creating worktree…',
+      search: 'Search branches', select: 'Choose branch', refresh: 'Refresh', more: 'Load more', close: 'Close', open: 'Open conversation', remove: 'Remove', creatingWorktree: 'Creating worktree…',
       createBranch: 'Create branch here', branchName: 'New branch name', protect: 'Protect', unprotect: 'Unprotect',
       archive: 'Archive (retain files)', restore: 'Restore', archived: 'Archived', includeArchived: 'Include archived',
       preview: 'Preview handoff', export: 'Export patch', apply: 'Apply to Local and continue',
@@ -56,9 +57,10 @@ window.__ModuleLoader__.load({
       mainFolder: '主文件夹', main: '主目录', chooseMainFolder: '选择主文件夹', mainFolderRequired: '请从项目源文件夹中选择一个主文件夹。', mainFolderHelp: '新对话默认使用此文件夹，发送前仍可选择其他文件夹。', conversationFolder: '对话文件夹',
       createProject: '创建项目', sourceFolders: '源文件夹', localFolders: '浏览文件夹', enterFolderPath: '输入文件夹路径', checkingFolderOptions: '正在检查可用的文件夹选项…', browseUnavailable: '此会话无法列出主机文件夹。请使用“选择文件夹…”或输入绝对路径。', folderPickerUnavailable: '此处无法使用系统文件夹选择器。请改用浏览文件夹或输入主机绝对文件夹路径。', add: '添加', cancel: '取消', selectedFolders: '已选文件夹', selectFolder: '选择文件夹', folderLimit: '一个项目最多可包含 32 个文件夹。', invalidFolder: '请输入有效的主机绝对文件夹路径。', alreadyAdded: '已添加', multiFolderHelp: '使用复选框选择多个文件夹，浏览其他目录时会保留已选项。', hostFolderHelp: '文件夹位于主机计算机上；添加不会移动文件。', noSubfolders: '没有子文件夹。', directoryTruncated: '目录列表已截断，请输入路径浏览其他文件夹。',
       rootFolder: '工作树根目录', rootSummary: '选择新工作树的创建位置。', rootHelp: '主机上的绝对目录路径，需位于源仓库之外。仅影响新工作树，已有目录和进行中的创建不会移动。', rootReset: '恢复继承的默认值', rootSaved: '已保存，新工作树将使用此位置。', rootUnavailable: '此条目的主机设置不可用。', rootInvalid: '请输入有效的主机绝对目录路径。', rootConflict: '设置已更改或主机拒绝了保存，草稿已保留。请重新打开页面读取最新值。',
-      pinned: '已固定', title: '工作树', local: '本地', new: '新工作树', remote: '远程', branch: '远程基础分支', search: '搜索远程分支',
+      pinned: '已固定', title: '工作树', local: '本地', new: '新工作树', remote: '远程', branch: '起始分支', search: '搜索分支',
+      localBranches: '本地分支', remoteBranches: '远程分支', currentBranch: '当前分支', localBranchHelp: '从本地提交开始，不获取远程更新。', remoteBranchHelp: '从最新远程提交开始，创建工作树时获取更新。', noBranches: '没有匹配的分支。', noRemotes: '未配置远程仓库。', branchSource: '分支来源',
       setupProgress: '正在准备工作树', preparingMessage: '正在准备第一条消息…', fetchingLatest: '正在获取最新远程分支…', creatingWorktree: '正在创建工作树…', namingBranch: '正在生成并应用分支名称…', openingConversation: '正在打开工作树对话…', setupReady: '工作树已就绪', stagingAttachments: '正在为工作树准备附件…', startingConversation: '正在开始正常对话…', setupFailed: '工作树准备失败', cancelSetup: '取消准备', unsupported: '该输入区版本不受受保护适配器支持。', filesLost: '草稿附件已不可用。', upload: '附件上传失败', uncertain: '消息发送结果不确定，请先打开创建的对话检查。',
-      select: '基础分支', refresh: '刷新', more: '加载更多', close: '关闭', open: '打开对话', remove: '移除', creatingWorktree: '正在创建工作树…', createBranch: '在此创建分支', branchName: '新分支名称',
+      select: '选择分支', refresh: '刷新', more: '加载更多', close: '关闭', open: '打开对话', remove: '移除', creatingWorktree: '正在创建工作树…', createBranch: '在此创建分支', branchName: '新分支名称',
       protect: '保护', unprotect: '取消保护', archive: '归档（保留文件）', restore: '恢复', archived: '已归档',
       includeArchived: '包含已归档', preview: '预览交接', export: '导出补丁', apply: '应用到本地并继续',
       previewTitle: '审阅本地交接', original: '原始本地检出', target: '本地目标路径',
@@ -103,7 +105,7 @@ window.__ModuleLoader__.load({
 .dsh-wt-project-dialog .dsh-wt-main-folder{display:flex;flex-direction:column;align-items:stretch;gap:6px;margin-top:12px;font-size:13px}.dsh-wt-main-folder select{width:100%;min-width:0;border-color:var(--dsw-alias-border-l2)}.dsh-wt-main-folder small{color:var(--dsw-alias-label-secondary);font-size:12px}.dsh-wt-create-controls .dsh-wt-conversation-folder{max-width:180px}
 .dsh-wt-folder-picker{width:min(640px,calc(100vw - 32px))}.dsh-wt-picker-path{display:flex;gap:8px;align-items:flex-end}.dsh-wt-picker-path label{flex:1;min-width:0}.dsh-wt-picker-crumbs{margin:12px 0;gap:4px}.dsh-wt-picker-entries{list-style:none;padding:0;margin:8px 0;max-height:240px;overflow:auto}.dsh-wt-picker-entries li,.dsh-wt-picker-current{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px}.dsh-wt-picker-entries li:hover{background:var(--dsw-alias-bg-layer-2)}.dsh-wt-picker-check{flex-shrink:0}.dsh-wt-picker-check input{accent-color:var(--dsw-alias-brand-primary)}.dsh-wt-picker-entries .dsh-wt-picker-open{border:0;flex:1;min-width:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dsh-wt-picker-current{border:1px solid var(--dsw-alias-border-l1)}.dsh-wt-picker-selected{margin-top:12px}.dsh-wt-picker-selected .dsh-wt-source-list{max-height:128px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px}.dsh-wt-picker-selected h3{font-size:13px}.dsh-wt-picker-create{margin-top:12px}.dsh-wt-picker-create summary{cursor:pointer;color:var(--dsw-alias-label-secondary);font-size:13px}.dsh-wt-picker-create form{display:flex;align-items:flex-end;gap:8px;margin-top:8px}
 .dsh-wt-progress{padding:10px 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1);font-size:12px}.dsh-wt-progress ol{margin:8px 0;padding-left:18px;display:flex;flex-direction:column;gap:5px}.dsh-wt-progress li{color:var(--dsw-alias-label-secondary)}.dsh-wt-progress li[data-active=true]{font-weight:600;color:var(--dsw-alias-label-primary)}
-.dsh-wt-create-controls{position:relative;font-size:12px}.dsh-wt-create-controls select{max-width:160px;min-height:28px}.dsh-wt-base-options{position:absolute;bottom:calc(100% + 8px);left:0;z-index:20;min-width:240px;max-width:360px;padding:12px;display:flex;flex-direction:column;gap:8px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-overlay)}.dsh-wt-create-error{max-width:360px;font-size:12px;color:var(--dsw-alias-state-error-primary)}
+.dsh-wt-create-controls{position:relative;font-size:13px;gap:4px}.dsh-wt-create-controls select{max-width:160px;min-height:28px}.dsh-wt-create-controls .dsh-wt-control{display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:4px 8px;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px}.dsh-wt-create-controls .dsh-wt-control:hover:not(:disabled),.dsh-wt-create-controls .dsh-wt-control[aria-expanded=true]{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.dsh-wt-control-text{max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dsh-wt-control svg{flex:none}.dsh-wt-choice{position:relative;display:inline-flex}.dsh-wt-choice-menu,.dsh-wt-base-options{position:absolute;bottom:calc(100% + 6px);left:0;z-index:100;box-sizing:border-box;padding:4px;border:0;border-radius:10px;background:var(--dsw-specific-menu,var(--dsw-alias-bg-layer-2));color:var(--dsw-alias-label-primary);--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-elevation-prominent)}.dsh-wt-choice-menu{min-width:168px;max-width:360px}.dsh-wt-create-controls .dsh-wt-choice-item,.dsh-wt-create-controls .dsh-wt-branch-item{display:flex;align-items:center;gap:8px;width:100%;min-height:34px;padding:6px 8px;border:0;border-radius:6px;text-align:left;font-size:13px;line-height:20px;background:transparent;color:var(--dsw-alias-label-primary)}.dsh-wt-create-controls :is(.dsh-wt-choice-item,.dsh-wt-branch-item):is(:hover,:focus-visible):not(:disabled){background:var(--dsw-alias-interactive-bg-hover);outline:none}.dsh-wt-choice-check{display:inline-flex;align-items:center;justify-content:center;width:16px;flex:none}.dsh-wt-base-options{width:min(340px,calc(100vw - 32px));padding:10px;display:flex;flex-direction:column;gap:8px}.dsh-wt-branch-heading{font-size:13px;font-weight:600}.dsh-wt-branch-sources{display:flex;gap:4px;padding:3px;border-radius:8px;background:var(--dsw-alias-interactive-bg-hover)}.dsh-wt-create-controls .dsh-wt-branch-sources button{flex:1;border:0;min-height:28px;padding:4px 8px;border-radius:6px;font-size:12px;color:var(--dsw-alias-label-secondary);background:transparent}.dsh-wt-create-controls .dsh-wt-branch-sources button[aria-checked=true]{background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);box-shadow:var(--dsw-elevation-soft)}.dsh-wt-create-controls .dsh-wt-branch-search{display:flex;align-items:center;flex-wrap:nowrap;gap:6px;min-height:32px;padding:0 8px;box-sizing:border-box;border:.5px solid var(--dsw-alias-border-l4);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary)}.dsh-wt-branch-search:focus-within{border-color:var(--dsw-alias-state-business-primary)}.dsh-wt-branch-search svg{flex:none}.dsh-wt-create-controls .dsh-wt-branch-search input[type=search]{flex:1;width:0;min-width:0;max-width:none;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;outline:none;appearance:none;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary)}.dsh-wt-create-controls .dsh-wt-branch-search input[type=search]::placeholder{color:var(--dsw-alias-label-secondary)}.dsh-wt-branch-list{max-height:240px;overflow:auto}.dsh-wt-branch-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dsh-wt-branch-badge{flex:none;color:var(--dsw-alias-label-secondary);font-size:11px}.dsh-wt-branch-help{font-size:12px;color:var(--dsw-alias-label-secondary)}.dsh-wt-create-error{max-width:360px;font-size:12px;color:var(--dsw-alias-state-error-primary)}.dsh-wt-create-controls button:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}.dsh-wt-create-controls .dsh-wt-branch-search input[type=search]:focus-visible,.dsh-wt-create-controls :is(.dsh-wt-choice-item,.dsh-wt-branch-item):focus-visible{outline:none}
 .dsh-wt-projects{min-height:0;display:flex;flex-direction:column;gap:6px;padding:8px;width:100%;box-sizing:border-box;font-size:13px}.dsh-wt-projects-header{display:flex;align-items:center;justify-content:space-between;padding:4px}.dsh-wt-project-list{min-height:0;overflow:auto}.dsh-wt-project-head{display:flex;align-items:center;gap:4px;margin-top:8px}.dsh-wt-project-head>button:first-child{flex:1;min-width:0;text-align:left;display:flex;align-items:center;gap:7px}.dsh-wt-projects button{border:0;padding:4px 6px}.dsh-wt-project-title,.dsh-wt-thread-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.dsh-wt-project-title{font-weight:600}.dsh-wt-thread{border-radius:7px;position:relative}.dsh-wt-thread[aria-selected=true]{background:var(--dsw-alias-interactive-bg-hover)}.dsh-wt-thread-main{display:flex;align-items:center;gap:5px;min-height:32px;padding-left:12px}.dsh-wt-thread-main>button:first-child{display:flex;align-items:center;gap:6px;flex:1;min-width:0;text-align:left}.dsh-wt-thread-title{flex:1}.dsh-wt-thread-main:hover .dsh-wt-thread-title{overflow:auto;text-overflow:clip}.dsh-wt-thread-actions{display:flex;align-items:center;opacity:0}.dsh-wt-thread:is(:hover,:focus-within) .dsh-wt-thread-actions{opacity:1}.dsh-wt-thread-actions button{min-width:24px}.dsh-wt-thread-leading{width:16px;display:inline-flex;flex-shrink:0}.dsh-wt-thread-status{font-size:11px;color:var(--dsw-alias-state-business-primary)}.dsh-wt-thread-pending{color:var(--dsw-alias-state-warning-primary)}.dsh-wt-thread-archived{opacity:.65}.dsh-wt-branch-chip{display:inline-flex;align-items:center;justify-content:center;width:16px;flex-shrink:0;color:var(--dsw-alias-label-secondary)}.dsh-wt-thread-hover{padding:8px;border:1px solid var(--dsw-alias-border-l3);border-radius:6px;background:var(--dsw-alias-bg-layer-2)}.dsh-wt-project-menu{display:flex;flex-direction:column;align-items:stretch}.dsh-wt-project-menu button{text-align:left}.dsh-wt-project-picker{display:flex;align-items:center;gap:4px;max-width:100%}.dsh-wt-project-picker select{max-width:190px}.dsh-wt-folder-list{padding:0;list-style:none}.dsh-wt-folder-list li{display:flex;align-items:center;gap:8px;padding:4px 0;overflow-wrap:anywhere}.dsh-wt-folder-list code{flex:1}.dsh-wt-folder-browser{max-height:45vh;overflow:auto}.dsh-wt-folder-browser button{display:block;width:100%;text-align:left}.dsh-wt-dialog::backdrop{background:var(--dsw-alias-bg-mask-1)}.dsh-wt-details{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px}.dsh-wt-details dd{margin:0;overflow-wrap:anywhere}
 /* Sidebar cell metrics follow the native Folder view; dialogs keep their own rules. */
 .dsh-wt-projects{font-family:inherit;font-size:14px;font-weight:400;line-height:20px;gap:4px}.dsh-wt-projects-header{height:36px;box-sizing:border-box;padding:0 4px;margin:2px 0 4px;color:var(--dsw-alias-label-secondary)}.dsh-wt-projects-header strong{font-weight:inherit}.dsh-wt-projects-header>button{width:28px;height:28px;min-height:28px;padding:0}.dsh-wt-project-list{padding-bottom:16px}.dsh-wt-project-group+.dsh-wt-project-group{margin-top:4px}
@@ -151,7 +153,7 @@ window.__ModuleLoader__.load({
         else if (request.id) valid = valid && record(data.worktree) && (data.status === null || (typeof data.status?.dirty === 'boolean' && string(data.status.head)));
         else valid = valid && string(data.repository?.root) && string(data.repository.head) && (data.repository.branch === null || typeof data.repository.branch === 'string') && Array.isArray(data.remotes) && data.remotes.every(item => string(item?.name) && string(item.identity));
       } else if (request.action === 'branches') {
-        valid = data && data.remote === request.remote && string(data.remoteIdentity) && (!request.remoteIdentity || data.remoteIdentity === request.remoteIdentity) && Array.isArray(data.items) && data.items.every(item => string(item?.name) && string(item.oid)) && Number.isFinite(data.observedAt) && (data.defaultBranch === null || typeof data.defaultBranch === 'string') && (!data.nextCursor || string(data.nextCursor));
+        valid = data && (request.branchSource === 'local' ? data.branchSource === 'local' && (data.currentBranch === null || string(data.currentBranch)) : data.branchSource !== 'local' && data.remote === request.remote && string(data.remoteIdentity) && (!request.remoteIdentity || data.remoteIdentity === request.remoteIdentity)) && Array.isArray(data.items) && data.items.every(item => string(item?.name) && string(item.oid)) && Number.isFinite(data.observedAt) && (data.defaultBranch === null || typeof data.defaultBranch === 'string') && (!data.nextCursor || string(data.nextCursor));
       } else if (request.action === 'list') valid = data && Array.isArray(data.items) && data.items.every(record) && (!data.nextCursor || string(data.nextCursor));
       else if (['create', 'start', 'handoff'].includes(request.action)) valid = data && string(data.sessionId) && string(data.workspaceId) && string(data.settingsHash) && record(data.worktree) && operation(data.operation);
       else if (request.action === 'preview') valid = data && string(data.id) && data.worktreeId === request.id && string(data.sourceSessionId) && string(data.targetRoot) && string(data.baseOid) && string(data.patchHash) && string(data.patchPath) && Number.isFinite(data.bytes) && Array.isArray(data.files) && data.files.every(file => string(file?.path) && typeof file.status === 'string' && typeof file.binary === 'boolean');
@@ -657,7 +659,7 @@ window.__ModuleLoader__.load({
     }
     function createRepositoryAvailability(ctx, projects) {
       const listeners = new Set(); let disposed = false, started = false, observedSession, active, version = 0, stopBinding = () => {}, queued = false, connectionId = ctx.connection.generation.getSnapshot()?.id;
-      let state = { target: null, phase: 'idle', available: false };
+      let state = { target: null, phase: 'idle', available: false, status: null };
       const publish = patch => { if (disposed) return; state = { ...state, ...patch }; for (const listener of [...listeners]) listener(); };
       const store = { getSnapshot: () => state, subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener); } };
       function target(sessionId) {
@@ -668,7 +670,7 @@ window.__ModuleLoader__.load({
         return { sessionId, binding, connection: connection.id, project, path: project?.path };
       }
       const same = (left, right) => !!left && !!right && left.sessionId === right.sessionId && left.binding === right.binding && left.connection === right.connection && sameProject(left.project, right.project);
-      function reset() { active?.controller.abort(); active = undefined; ++version; stopBinding(); stopBinding = () => {}; publish({ target: null, phase: 'idle', available: false }); }
+      function reset() { active?.controller.abort(); active = undefined; ++version; stopBinding(); stopBinding = () => {}; publish({ target: null, phase: 'idle', available: false, status: null }); }
       function schedule() { if (!started || queued || disposed) return; queued = true; void Promise.resolve().then(() => { queued = false; if (!disposed) void ensure(projectActor(ctx.sessions.list.getSnapshot())); }); }
       function changed() { const current = target(projectActor(ctx.sessions.list.getSnapshot())); if (state.target && !same(current, state.target)) reset(); if (current && !state.target) schedule(); }
       function ensure(sessionId) {
@@ -685,7 +687,7 @@ window.__ModuleLoader__.load({
             // Read-only local discovery through the existing caller-authorized status operation.
             const data = await requestHost(ctx, sessionId, { action: 'status', ...(next.path ? { repoPath: next.path } : {}) }, controller.signal);
             if (next.path && data.projectPath !== next.path) throw new WorktreeError('decode', 'repository-target-mismatch');
-            if (!disposed && !controller.signal.aborted && seq === version && same(target(sessionId), next)) publish({ phase: data.remotes.length ? 'ready' : 'unavailable', available: data.remotes.length > 0 });
+            if (!disposed && !controller.signal.aborted && seq === version && same(target(sessionId), next)) publish({ phase: 'ready', available: true, status: data });
           } catch { if (!disposed && !controller.signal.aborted && seq === version && same(target(sessionId), next)) publish({ phase: 'unavailable', available: false }); }
           finally { if (active === operation) active = undefined; }
         });
@@ -702,7 +704,8 @@ window.__ModuleLoader__.load({
     }
     function createWorktreeFlow(ctx, t, projects, repositories) {
       const conversation = ctx.get('conversation'), listeners = new Set(), leases = new Map(), operations = new Set(), restaged = new Set();
-      let state = { sessionId: undefined, mode: 'local', sourceChanged: false, busy: false, loading: false, error: '', status: null, remote: '', branch: '', branches: null, query: '', steps: [], phase: '', op: null };
+      let state = { sessionId: undefined, mode: 'local', sourceChanged: false, busy: false, loading: false, error: '', status: null, branchSource: 'local', remote: '', branch: '', branchOid: '', branches: null, query: '', steps: [], phase: '', op: null };
+      const branchCache = new Map();
       let query, selectedSource, generation = 0, disposed = false;
       const publish = patch => { if (disposed) return; state = { ...state, ...patch }; for (const listener of [...listeners]) listener(); };
       const store = { getSnapshot: () => state, subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener); } };
@@ -713,7 +716,6 @@ window.__ModuleLoader__.load({
         try {
           const data = await requestHost(ctx, sessionId, { action: 'status', ...(project ? { repoPath: project.path } : {}) }, signal);
           if (project && data.projectPath !== project.path) throw new WorktreeError('decode', 'repository-target-mismatch');
-          if (!data.remotes.length) throw new WorktreeError('noRemote', 'no-remote');
           return data;
         } catch (error) { if (!signal.aborted) repositories?.unavailable(sessionId, binding, project); throw error; }
       }
@@ -742,8 +744,8 @@ window.__ModuleLoader__.load({
         const captured = source(sessionId); requireIntent(sessionId, captured); if (captured.binding !== binding) throw new WorktreeError('changed', 'binding-changed');
         const old = state.op;
         if (old && !old.retryable) throw new WorktreeError('recovery', 'check-created-conversation-before-retry');
-        const intent = Object.freeze({ remote: state.remote, branch: state.branch, branches: state.branches && Object.freeze({ ...state.branches, items: Object.freeze(state.branches.items.map(item => Object.freeze({ ...item }))) }) });
-        query?.abort(); ++generation;
+        const intent = Object.freeze({ branchSource: state.branchSource, branchOid: state.branchOid, remote: state.remote, branch: state.branch, branches: state.branches && Object.freeze({ ...state.branches, items: Object.freeze(state.branches.items.map(item => Object.freeze({ ...item }))) }) });
+        query?.abort(); ++generation; branchCache.clear();
         const navigation = ctx.layout.beginNavigation();
         const op = { ...captured, intent, mode: 'new', id: old?.id || crypto.randomUUID(), sessionId, controller, signal, navigation, result: old?.result || null, request: old?.request || null, retryable: false, admission: 'none', reference: null, sourceReference: null, staged: false, cleanup: () => {} };
         op.sourceReference = ctx.sessions.retain(sessionId, { source: 'controllerOperation' });
@@ -767,15 +769,22 @@ window.__ModuleLoader__.load({
         try {
           check(op);
           if (!text.trim() && !ids.length) { publish({ busy: false, phase: '', op: null }); return { kind: 'success' }; }
-          publish({ phase: 'fetching' });
+          publish({ phase: op.intent.branchSource === 'local' ? 'creating' : 'fetching' });
           if (!op.result) {
             const status = await repositoryStatus(op.sessionId, op.binding, op.project, signal); check(op);
-            const remote = op.intent.remote || (status.remotes.some(item => item.name === status.defaults?.remote) ? status.defaults.remote : status.remotes[0]?.name || '');
-            if (!remote) throw new WorktreeError('noRemote', 'no-remote');
-            const identity = status.remotes.find(item => item.name === remote)?.identity;
-            const advertised = op.intent.branches && op.intent.remote === remote ? op.intent.branches : await requestHost(ctx, op.sessionId, { action: 'branches', repoPath: projectPath(status, op.project), remote, remoteIdentity: identity, limit: 100 }, signal); check(op);
-            const branch = op.intent.branch || advertisedDefault(advertised, status.defaults?.branch); if (!branch) throw new WorktreeError('noRemote', 'select-remote-base');
-            op.request = Object.freeze({ action: 'create', operationId: op.id, repoPath: projectPath(status, op.project), remote, remoteIdentity: advertised.remoteIdentity, remoteBranch: branch, sourceSessionId: op.sessionId, sessionMode: 'new', requireBlankSource: true, settingsHash: status.settingsHash, firstPrompt: text, ...(op.project ? { projectId: op.project.projectId, folderId: op.project.folderId } : {}) });
+            let startingBranch;
+            if (op.intent.branchSource === 'local') {
+              const branch = op.intent.branchOid ? op.intent.branch : status.repository.branch || 'HEAD';
+              startingBranch = { branchSource: 'local', localBranch: branch, localOid: op.intent.branchOid || status.repository.head };
+            } else {
+              const remote = op.intent.remote || (status.remotes.some(item => item.name === status.defaults?.remote) ? status.defaults.remote : status.remotes[0]?.name || '');
+              if (!remote) throw new WorktreeError('noRemote', 'no-remote');
+              const identity = status.remotes.find(item => item.name === remote)?.identity;
+              const advertised = op.intent.branches && op.intent.remote === remote ? op.intent.branches : await requestHost(ctx, op.sessionId, { action: 'branches', repoPath: projectPath(status, op.project), remote, remoteIdentity: identity, limit: 100 }, signal); check(op);
+              const branch = op.intent.branch || advertisedDefault(advertised, status.repository.branch || status.defaults?.branch); if (!branch) throw new WorktreeError('noRemote', 'select-remote-branch');
+              startingBranch = { branchSource: 'remote', remote, remoteIdentity: advertised.remoteIdentity, remoteBranch: branch };
+            }
+            op.request = Object.freeze({ action: 'create', operationId: op.id, repoPath: projectPath(status, op.project), ...startingBranch, sourceSessionId: op.sessionId, sessionMode: 'new', requireBlankSource: true, settingsHash: status.settingsHash, firstPrompt: text, ...(op.project ? { projectId: op.project.projectId, folderId: op.project.folderId } : {}) });
             op.result = await prepareWorktree(ctx, op.sessionId, op.request, signal, steps => publish({ steps, phase: steps.at(-1)?.stage || 'fetching' })); check(op);
           } else if (op.request?.firstPrompt !== text) throw new WorktreeError('changed', 'retry-message-changed');
           const result = op.result;
@@ -832,36 +841,55 @@ window.__ModuleLoader__.load({
           }
           if (mode === 'local') { for (const lease of leases.values()) lease.cancelNew(); }
           const changed = state.sessionId !== sessionId || state.sourceChanged || selectedSource?.binding !== current.binding || !sameProject(selectedSource?.project, current.project);
-          if (changed) { query?.abort(); ++generation; }
+          if (changed) { query?.abort(); ++generation; branchCache.clear(); }
           selectedSource = { sessionId, binding: current.binding, project: current.project };
-          publish({ sessionId, mode, sourceChanged: false, error: '', ...(changed ? { status: null, branches: null, branch: '', remote: '', ...(state.sessionId === sessionId ? {} : { op: null, steps: [], phase: '' }) } : {}) });
+          const observed = repositories.store.getSnapshot().status;
+          publish({ sessionId, mode, sourceChanged: false, error: '', ...(changed ? { status: null, branches: null, branchSource: 'local', branch: observed?.repository.branch || '', branchOid: '', remote: '', query: '', ...(state.sessionId === sessionId ? {} : { op: null, steps: [], phase: '' }) } : {}) });
         } catch (error) { publish({ sessionId, mode: latchedNew ? 'new' : 'local', error: report(t, error) }); }
       }
-      async function loadBranches(sessionId, text = '', more = false) {
-        if (disposed || state.busy || state.sessionId !== sessionId || !state.status || !state.remote || (more && !state.branches?.nextCursor)) return;
+      async function loadBranches(sessionId, refresh = false) {
+        if (disposed || state.busy || state.sessionId !== sessionId || !state.status || (state.branchSource === 'remote' && !state.remote)) return;
         let current;
         try { current = source(sessionId); requireRepository(sessionId); requireIntent(sessionId, current); } catch (error) { publish({ error: report(t, error) }); return; }
-        query?.abort(); query = new AbortController(); const controller = query, seq = ++generation, before = state.branches, remote = state.remote, project = current.project;
-        publish({ loading: true, query: text, ...(more ? {} : { branches: null, branch: '' }) });
+        query?.abort(); query = new AbortController(); const controller = query, seq = ++generation, remote = state.remote, branchSource = state.branchSource, project = current.project;
+        const key = branchSource === 'local' ? 'local' : 'remote:' + remote, cached = !refresh && branchCache.get(key);
+        const choose = branches => {
+          const preferred = branchSource === 'local' ? state.status.repository.branch || 'HEAD' : state.status.repository.branch || state.status.defaults?.branch;
+          const branch = branches.items.some(item => item.name === state.branch) ? state.branch : advertisedDefault(branches, preferred);
+          publish({ branches, branch, branchOid: branches.items.find(item => item.name === branch)?.oid || '', loading: false });
+        };
+        if (cached) { choose(cached); return; }
+        publish({ loading: true, error: '', branches: null });
         try {
-          const data = await requestHost(ctx, sessionId, { action: 'branches', repoPath: projectPath(state.status, project), remote, remoteIdentity: state.status.remotes.find(item => item.name === remote)?.identity, query: text, ...(more ? { cursor: before.nextCursor } : {}), limit: 100 }, controller.signal);
-          if (disposed || controller.signal.aborted || seq !== generation) return; checkSource(sessionId, current);
-          const names = new Set(more ? before.items.map(item => item.name) : []), branches = { ...data, items: [...(more ? before.items : []), ...data.items.filter(item => !names.has(item.name))] };
-          publish({ branches, branch: more ? state.branch : text ? '' : advertisedDefault(branches, state.status.defaults?.branch), loading: false });
+          // Download one bounded generation, following its cursors. Search only
+          // filters these items; it never triggers discovery or remote fetches.
+          let branches, cursor; const cursors = new Set();
+          do {
+            const data = await requestHost(ctx, sessionId, { action: 'branches', repoPath: projectPath(state.status, project), ...(branchSource === 'local' ? { branchSource: 'local' } : { remote, remoteIdentity: state.status.remotes.find(item => item.name === remote)?.identity }), ...(cursor ? { cursor } : {}), limit: 100 }, controller.signal);
+            if (disposed || controller.signal.aborted || seq !== generation) return; checkSource(sessionId, current);
+            if (branches && (data.observedAt !== branches.observedAt || data.defaultBranch !== branches.defaultBranch)) throw new WorktreeError('decode', 'branch-generation-changed');
+            const names = new Set(branches?.items.map(item => item.name) || []);
+            branches = { ...data, items: [...(branches?.items || []), ...data.items.filter(item => !names.has(item.name))] };
+            cursor = data.nextCursor;
+            if (cursor && cursors.has(cursor)) throw new WorktreeError('decode', 'repeated-branch-cursor');
+            if (cursor) cursors.add(cursor);
+          } while (cursor);
+          branchCache.set(key, branches); choose(branches);
         } catch (error) { if (!controller.signal.aborted && seq === generation) publish({ loading: false, error: report(t, error) }); }
       }
       async function configure(sessionId) {
-        if (disposed || state.busy) return;
+        if (disposed || state.busy || state.loading) return;
         let current;
         try { current = source(sessionId); requireRepository(sessionId); requireIntent(sessionId, current); } catch (error) { publish({ error: report(t, error) }); return; }
+        if (state.sessionId === sessionId && state.status) { await loadBranches(sessionId); return; }
         query?.abort(); query = new AbortController(); const controller = query, seq = ++generation, project = current.project;
         if (state.sessionId !== sessionId || state.mode !== 'new') selectedSource = { sessionId, binding: current.binding, project };
-        publish({ sessionId, loading: true, status: null, branches: null, branch: '', remote: '', error: '', ...(state.sessionId === sessionId ? {} : { mode: 'local', sourceChanged: false, op: null, steps: [], phase: '' }) });
+        publish({ sessionId, loading: true, status: null, branches: null, branchSource: 'local', branch: '', branchOid: '', remote: '', query: '', error: '', ...(state.sessionId === sessionId ? {} : { mode: 'local', sourceChanged: false, op: null, steps: [], phase: '' }) });
         try {
           const status = await repositoryStatus(sessionId, current.binding, project, controller.signal);
           if (disposed || controller.signal.aborted || seq !== generation) return; checkSource(sessionId, current);
           const remote = status.remotes.some(item => item.name === status.defaults?.remote) ? status.defaults.remote : status.remotes[0]?.name || '';
-          publish({ status, remote, loading: false }); if (remote) await loadBranches(sessionId);
+          publish({ status, remote, branch: status.repository.branch || 'HEAD', loading: false }); await loadBranches(sessionId);
         } catch (error) { if (!controller.signal.aborted && seq === generation) publish({ loading: false, error: report(t, error) }); }
       }
       async function reconcile(sessionId) {
@@ -875,28 +903,30 @@ window.__ModuleLoader__.load({
       }
       const repositoryChanged = repositories?.store.subscribe(() => {
         if (!state.sessionId || repositoryAllowed(state.sessionId)) return;
-        query?.abort(); ++generation;
+        query?.abort(); ++generation; branchCache.clear();
         if (state.mode === 'new') for (const lease of leases.values()) lease.cancelNew();
-        publish({ loading: false, status: null, branches: null, remote: '', branch: '', ...(state.mode === 'new' ? { error: t('repoUnavailable') } : {}) });
+        publish({ loading: false, status: null, branches: null, remote: '', branch: '', branchOid: '', query: '', ...(state.mode === 'new' ? { error: t('repoUnavailable') } : {}) });
       });
       function selectionChanged() {
         if (!selectedSource || state.sessionId !== selectedSource.sessionId || (state.mode === 'new' && state.sourceChanged)) return;
         const binding = ctx.sessions.binding(state.sessionId), project = captureProject(projects.context(state.sessionId));
         if (binding === selectedSource.binding && sameProject(project, selectedSource.project)) return;
-        query?.abort(); ++generation;
+        query?.abort(); ++generation; branchCache.clear();
         if (state.mode === 'new') for (const lease of leases.values()) lease.cancelNew();
         else selectedSource = { sessionId: state.sessionId, binding, project };
-        publish({ loading: false, status: null, branches: null, query: '', remote: '', branch: '', ...(state.mode === 'new' ? { sourceChanged: true, error: t('projectChanged') } : {}) });
+        publish({ loading: false, status: null, branches: null, query: '', remote: '', branch: '', branchOid: '', ...(state.mode === 'new' ? { sourceChanged: true, error: t('projectChanged') } : {}) });
       }
       const projectChanged = projects.store.subscribe(selectionChanged);
       const unselect = ctx.sessions.list.subscribe(() => { for (const op of operations) if (!op.committing && projectActor(ctx.sessions.list.getSnapshot()) !== op.sessionId) op.controller.abort(); selectionChanged(); });
-      const reconnect = ctx.connection.generation.subscribe(() => { query?.abort(); ++generation; for (const lease of leases.values()) lease.cancelNew(); publish({ loading: false, status: null, branches: null, branch: '', remote: '' }); });
+      const reconnect = ctx.connection.generation.subscribe(() => { query?.abort(); ++generation; branchCache.clear(); for (const lease of leases.values()) lease.cancelNew(); publish({ loading: false, status: null, branches: null, branch: '', branchOid: '', query: '', remote: '' }); });
       return { store, observe, select, configure, loadBranches, reconcile,
         cancel() { for (const lease of leases.values()) lease.cancelNew(); },
-        setRemote(sessionId, remote) { if (!state.busy && !state.sourceChanged && state.sessionId === sessionId && repositoryAllowed(sessionId) && state.status?.remotes.some(item => item.name === remote)) { publish({ remote, query: '' }); void loadBranches(sessionId); } },
-        setBranch(branch) { if (!state.busy && !state.sourceChanged && repositoryAllowed(state.sessionId) && state.branches?.items.some(item => item.name === branch)) publish({ branch }); },
+        setRemote(sessionId, remote) { if (!state.busy && !state.sourceChanged && state.sessionId === sessionId && repositoryAllowed(sessionId) && state.status?.remotes.some(item => item.name === remote)) { publish({ remote, query: '', branch: '', branchOid: '', branches: null }); void loadBranches(sessionId); } },
+        setBranchSource(sessionId, branchSource) { if (!state.busy && !state.sourceChanged && state.sessionId === sessionId && repositoryAllowed(sessionId) && ['local', 'remote'].includes(branchSource) && (branchSource === 'local' || state.remote)) { publish({ branchSource, branch: '', branchOid: '', branches: null, query: '' }); void loadBranches(sessionId); } },
+        setQuery(query) { if (!state.busy) publish({ query }); },
+        setBranch(branch) { const item = state.branches?.items.find(item => item.name === branch); if (!state.busy && !state.loading && !state.sourceChanged && repositoryAllowed(state.sessionId) && item) { publish({ branch, branchOid: item.oid }); return true; } return false; },
         openTarget(sessionId) { const op = state.sessionId === sessionId && state.op; if (op?.result?.sessionId) ctx.uiWorkspace.openSession(op.result.sessionId); },
-        async dispose() { disposed = true; query?.abort(); ++generation; repositoryChanged?.(); projectChanged(); unselect(); reconnect(); for (const op of operations) op.controller.abort(); await Promise.allSettled([...leases.values()].map(lease => lease.close())); for (const lease of leases.values()) lease.stopScope?.(); leases.clear(); selectedSource = undefined; },
+        async dispose() { disposed = true; query?.abort(); ++generation; branchCache.clear(); repositoryChanged?.(); projectChanged(); unselect(); reconnect(); for (const op of operations) op.controller.abort(); await Promise.allSettled([...leases.values()].map(lease => lease.close())); for (const lease of leases.values()) lease.stopScope?.(); leases.clear(); selectedSource = undefined; },
       };
     }
     const projectSlotName = key => PANEL + '.projects.' + key;
@@ -1215,13 +1245,51 @@ window.__ModuleLoader__.load({
         h('div', { className: 'dsh-wt-project-list', role: 'tree', 'aria-label': t('projects') }, ...groups.map(group => h(ProjectGroup, { key: group.project?.id || 'unassigned', group, selectedId, runtime: ctx, metadata, renderSlot, t, searching: !!query.trim(), onManage: openEditor, now }))),
         !metadata.projects.length && !metadata.loading && h('p', { className: 'dsh-wt-muted' }, t('noProjects')), editor && h(ProjectEditor, { key: editor.project?.id || 'new-project', project: editor.project, projects, runtime: ctx, t, close: () => setEditor(null), returnFocus: editorTrigger, fallbackFocus: newProjectTrigger }));
     }
+    function ChevronIcon() { return h('svg', { width: 12, height: 12, viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: 1.4, 'aria-hidden': true }, h('path', { d: 'm4 6 4 4 4-4' })); }
+    function menuKeys(event) {
+      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+      const items = [...event.currentTarget.querySelectorAll('[role^=menuitem]:not(:disabled)')]; if (!items.length) return;
+      event.preventDefault(); const at = items.indexOf(event.target);
+      items[event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (at + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus();
+    }
+    function ChoicePicker({ label, value, items, disabled, onChange, icon }) {
+      const [open, setOpen] = React.useState(false), root = React.useRef(null), trigger = React.useRef(null), id = React.useId();
+      React.useEffect(() => { if (!open) return; const menu = root.current.querySelector('[role=menu]'); (menu?.querySelector('[aria-checked=true]:not(:disabled)') || menu?.querySelector('[role=menuitemradio]:not(:disabled)'))?.focus(); }, [open]);
+      const dismiss = () => { setOpen(false); trigger.current?.focus(); }, current = items.find(item => item.value === value), selectable = items.filter(item => !item.disabled).length > 1;
+      return h('div', { ref: root, className: 'dsh-wt-choice', onBlur: event => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }, onKeyDown: event => { if (event.key === 'Escape' && open) { event.preventDefault(); event.stopPropagation(); dismiss(); } } },
+        h(Button, { ref: trigger, className: 'dsh-wt-control', disabled, 'aria-label': label, 'aria-haspopup': selectable ? 'menu' : undefined, 'aria-expanded': selectable ? open : undefined, 'aria-controls': open ? id : undefined, title: current?.title, onClick: () => selectable ? setOpen(!open) : onChange(value) }, icon, h('span', { className: 'dsh-wt-control-text' }, current?.label || label), selectable && h(ChevronIcon)),
+        open && h('div', { id, role: 'menu', 'aria-label': label, className: 'dsh-wt-choice-menu', onKeyDown: menuKeys }, ...items.map(item => h(Button, { key: item.value, role: 'menuitemradio', 'aria-checked': value === item.value, disabled: item.disabled, className: 'dsh-wt-choice-item', title: item.title, onClick: () => { onChange(item.value); dismiss(); } }, h('span', { className: 'dsh-wt-choice-check', 'aria-hidden': true }, value === item.value ? '✓' : ''), item.label))));
+    }
+    function BranchPicker({ state, sessionId, flow, disabled, t, currentBranch }) {
+      const [open, setOpen] = React.useState(false), root = React.useRef(null), trigger = React.useRef(null), search = React.useRef(null), id = React.useId();
+      const selected = state.sessionId === sessionId, local = !selected || state.branchSource === 'local', branch = selected ? state.branch || (local ? currentBranch : '') : currentBranch;
+      const label = branch ? (local ? branch : state.remote + '/' + branch) : t('select');
+      const dismiss = () => { setOpen(false); trigger.current?.focus(); };
+      const matches = (selected && state.branches?.items || []).filter(item => item.name.toLocaleLowerCase().includes((state.query || '').toLocaleLowerCase()));
+      React.useEffect(() => { if (open) search.current?.focus(); }, [open]);
+      function refreshBranches() {
+        if (disabled || state.loading || !selected || !state.status) return;
+        // Keep focus on a stable enabled child before Refresh becomes disabled.
+        // Otherwise Chromium can emit blur(null), which is not an outside action.
+        search.current?.focus(); void flow.loadBranches(sessionId, true);
+      }
+      return h('div', { ref: root, className: 'dsh-wt-choice', onBlur: event => { if (event.currentTarget.contains(event.relatedTarget)) return; if (!event.relatedTarget && !disabled && flow.store.getSnapshot().loading) { search.current?.focus(); return; } setOpen(false); }, onKeyDown: event => { if (event.key === 'Escape' && open) { event.preventDefault(); event.stopPropagation(); dismiss(); } } },
+        h(Button, { ref: trigger, className: 'dsh-wt-control', disabled, 'aria-expanded': open, 'aria-haspopup': 'dialog', 'aria-controls': open ? id : undefined, 'aria-label': t('branch') + ': ' + label, title: t(local ? 'localBranchHelp' : 'remoteBranchHelp'), onClick: () => { setOpen(!open); if (!open) void flow.configure(sessionId); } }, h(Icon, { size: 14 }), h('span', { className: 'dsh-wt-control-text' }, label), h(ChevronIcon)),
+        open && h('div', { id, role: 'dialog', 'aria-label': t('branch'), className: 'dsh-wt-base-options' },
+          h('div', { className: 'dsh-wt-row dsh-wt-between' }, h('span', { className: 'dsh-wt-branch-heading' }, t('branch')), h(Button, { className: 'dsh-wt-control', disabled: disabled || state.loading || !selected || !state.status, onClick: refreshBranches }, t('refresh'))),
+          h('div', { role: 'radiogroup', 'aria-label': t('branchSource'), className: 'dsh-wt-branch-sources' }, ...['local', 'remote'].map(source => h(Button, { key: source, role: 'radio', 'aria-checked': local === (source === 'local'), disabled: disabled || !state.status || (source === 'remote' && !state.status.remotes.length), onClick: () => flow.setBranchSource(sessionId, source) }, t(source === 'local' ? 'localBranches' : 'remoteBranches')))),
+          !local && state.status?.remotes.length > 1 && h(ChoicePicker, { label: t('remote'), value: state.remote, disabled, items: state.status.remotes.map(item => ({ value: item.name, label: item.name })), onChange: remote => flow.setRemote(sessionId, remote) }),
+          h('label', { className: 'dsh-wt-branch-search' }, h(SidebarToolbarIcon, { kind: 'search', size: 14 }), h('input', { ref: search, type: 'search', placeholder: t('search'), 'aria-label': t('search'), value: selected ? state.query : '', disabled, onChange: event => flow.setQuery(event.target.value), onKeyDown: event => { if (event.key === 'ArrowDown') { event.preventDefault(); root.current.querySelector('[role=menuitemradio]:not(:disabled)')?.focus(); } } })),
+          h('div', { role: 'menu', 'aria-label': t(local ? 'localBranches' : 'remoteBranches'), className: 'dsh-wt-branch-list', 'aria-busy': state.loading, onKeyDown: menuKeys }, state.loading ? h('div', { role: 'status', className: 'dsh-wt-branch-help' }, t('loading')) : matches.length ? matches.map(item => h(Button, { key: item.name, role: 'menuitemradio', 'aria-checked': branch === item.name, disabled, className: 'dsh-wt-branch-item', title: item.name, onClick: () => { if (flow.setBranch(item.name)) dismiss(); } }, h('span', { className: 'dsh-wt-choice-check', 'aria-hidden': true }, branch === item.name ? '✓' : ''), h('span', { className: 'dsh-wt-branch-name' }, item.name === 'HEAD' && local ? t('detached') + ' · HEAD' : item.name), local && item.name === (state.status?.repository.branch || 'HEAD') && h('span', { className: 'dsh-wt-branch-badge' }, t('currentBranch')))) : h('div', { className: 'dsh-wt-branch-help', role: 'status' }, t('noBranches'))),
+          h('div', { className: 'dsh-wt-branch-help' }, t(local ? 'localBranchHelp' : 'remoteBranchHelp'))));
+    }
     function NewWorktreeControls({ sessionId, flow, projects, repositories, runtime: ctx, t, useSession, useInput, usePanelInfo, useWorkspaces }) {
       const snapshot = useSession(value => value), empty = useInput(inputEmpty), ready = sourceEligible(snapshot), panel = usePanelInfo(value => value.activePanelId), workspaces = useWorkspaces(value => value);
       const state = React.useSyncExternalStore(flow.store.subscribe, flow.store.getSnapshot);
       React.useSyncExternalStore(repositories.store.subscribe, repositories.store.getSnapshot);
       const metadata = React.useSyncExternalStore(projects.store.subscribe, projects.store.getSnapshot), context = projects.context(sessionId);
-      const [options, setOptions] = React.useState(false), [folderError, setFolderError] = React.useState('');
-      React.useEffect(() => { setOptions(false); if (panel || !snapshot.blank || snapshot.subagent !== null) return; try { flow.observe(sessionId); } catch { /* New mode reports the guarded ABI refusal. */ } void repositories.ensure(sessionId); return () => repositories.withdraw(sessionId); }, [flow, repositories, sessionId, ready, panel, snapshot.blank, snapshot.subagent, snapshot.openState, snapshot.removed, context?.project.id, context?.folder.id, context?.folder.path]);
+      const [folderError, setFolderError] = React.useState('');
+      React.useEffect(() => { if (panel || !snapshot.blank || snapshot.subagent !== null) return; try { flow.observe(sessionId); } catch { /* New mode reports the guarded ABI refusal. */ } void repositories.ensure(sessionId); return () => repositories.withdraw(sessionId); }, [flow, repositories, sessionId, ready, panel, snapshot.blank, snapshot.subagent, snapshot.openState, snapshot.removed, context?.project.id, context?.folder.id, context?.folder.path]);
       if (panel || !snapshot.blank || snapshot.subagent !== null) return null;
       const backing = projectBacking(metadata, workspaces, sessionId), worktree = backing.mode === 'worktree', record = backing.record;
       const selected = state.sessionId === sessionId, busy = selected && state.busy, main = projectMainFolder(context?.project), canWorktree = repositories.enabled(sessionId), blockedNew = selected && state.mode === 'new' && (!canWorktree || state.sourceChanged);
@@ -1229,19 +1297,13 @@ window.__ModuleLoader__.load({
         context?.project.folders.length > 1 && h('select', { className: 'dsh-wt-conversation-folder', 'aria-label': t('conversationFolder'), value: context.folder.id, disabled: busy || !empty || !sourceEligible(snapshot), title: !empty ? t('draftWarning') : context.folder.path,
           onChange: event => { setFolderError(''); try { chooseConversationFolder(ctx, projects, flow, sessionId, event.target.value); } catch (failure) { setFolderError(report(t, failure)); } } }, ...context.project.folders.map(folder => h('option', { key: folder.id, value: folder.id, title: folder.path }, folder.title + (folder.id === main?.id ? ' · ' + t('main') : '')))),
         folderError && h('span', { className: 'dsh-wt-create-error', role: 'alert' }, folderError),
-        !blockedNew && (canWorktree || worktree) ? h('select', { 'aria-label': t('threadMode'), value: canWorktree && selected && state.mode === 'new' ? 'new' : worktree ? 'worktree' : 'local', disabled: busy || !sourceEligible(snapshot),
-          onChange: event => { setOptions(false); flow.select(sessionId, event.target.value); } },
-          h('option', { value: 'local', disabled: worktree && !context?.folder }, t('local')),
-          worktree && h('option', { value: 'worktree' }, t('worktreeThread')),
-          canWorktree && h('option', { value: 'new' }, t('new'))) : h(Button, { 'aria-label': t(worktree && !context ? 'keepCurrentFolder' : 'local'), 'aria-pressed': !selected || state.mode === 'local', disabled: busy || !sourceEligible(snapshot), onClick: () => flow.select(sessionId, 'local') }, t(worktree && !context ? 'keepCurrentFolder' : 'local')),
+        h(ChoicePicker, { key: sessionId + ':' + (blockedNew ? 'blocked' : canWorktree ? 'git' : 'local'), label: t('threadMode'), value: !blockedNew && canWorktree && selected && state.mode === 'new' ? 'new' : worktree ? 'worktree' : 'local', disabled: busy || !sourceEligible(snapshot), icon: h(FolderIcon, { size: 14 }), items: [
+          { value: 'local', label: t('local'), disabled: worktree && !context?.folder },
+          ...(worktree ? [{ value: 'worktree', label: t('worktreeThread') }] : []),
+          ...(!blockedNew && canWorktree ? [{ value: 'new', label: t('new') }] : []),
+        ], onChange: mode => flow.select(sessionId, mode) }),
         worktree && h('span', { className: 'dsh-wt-muted', title: backing.effectiveCwd }, record?.branch || t('worktreeThread')),
-        !blockedNew && canWorktree && !worktree && h(Button, { disabled: busy || !sourceEligible(snapshot), 'aria-expanded': options, 'aria-label': t('branch'), onClick: () => { setOptions(value => !value); if (!options) void flow.configure(sessionId); } }, selected && state.branch ? state.remote + '/' + state.branch : t('select')),
-        !blockedNew && canWorktree && !worktree && options && h('fieldset', { className: 'dsh-wt-base-options', onKeyDown: event => { if (event.key === 'Escape') { event.stopPropagation(); setOptions(false); } } }, h('legend', null, t('branch')),
-          selected && state.status?.remotes.length > 1 && h('select', { 'aria-label': t('remote'), disabled: busy || state.loading, value: state.remote, onChange: event => flow.setRemote(sessionId, event.target.value) }, ...state.status.remotes.map(item => h('option', { key: item.name, value: item.name }, item.name))),
-          h('select', { 'aria-label': t('branch'), value: selected ? state.branch : '', disabled: !selected || state.loading || busy, onChange: event => flow.setBranch(event.target.value) }, h('option', { value: '' }, t(state.loading ? 'loading' : 'select')), ...(selected && state.branches?.items || []).map(item => h('option', { key: item.name, value: item.name }, item.name))),
-          h('input', { type: 'search', 'aria-label': t('search'), value: selected ? state.query : '', disabled: !selected || busy || !state.remote, onChange: event => { void flow.loadBranches(sessionId, event.target.value); } }),
-          selected && state.branches?.nextCursor && h(Button, { disabled: state.loading || busy, onClick: () => { void flow.loadBranches(sessionId, state.query, true); } }, t('more')),
-          h(Button, { disabled: busy || state.loading, onClick: () => { void flow.configure(sessionId); } }, t('refresh')), h(Button, { onClick: () => setOptions(false) }, t('close'))),
+        !blockedNew && canWorktree && !worktree && h(BranchPicker, { key: sessionId + ':' + (context?.folder.id || ''), state, sessionId, flow, disabled: busy || !sourceEligible(snapshot), t, currentBranch: repositories.store.getSnapshot().status?.repository.branch || 'HEAD' }),
         selected && state.error && h('span', { className: 'dsh-wt-create-error', role: 'alert' }, state.error,
           state.op && h(React.Fragment, null, ' · ', h('code', null, state.op.id), h(Button, { disabled: state.loading, onClick: () => { void flow.reconcile(sessionId); } }, t('reconcile')), state.op.result?.sessionId && h(Button, { onClick: () => flow.openTarget(sessionId) }, t('open')))));
     }
@@ -1253,7 +1315,7 @@ window.__ModuleLoader__.load({
       const completed = new Set(state.steps.filter(step => step.stage !== failed).map(step => step.stage));
       return h('section', { className: 'dsh-wt dsh-wt-progress', 'aria-label': t('setupProgress'), 'aria-busy': state.busy }, h(Styles),
         h('div', { className: 'dsh-wt-row dsh-wt-between' }, h('strong', { role: 'status', 'aria-live': 'polite' }, t(labels[active] || 'setupProgress')), state.busy && h(Button, { onClick: flow.cancel }, t('cancelSetup'))),
-        h('ol', null, ...['fetching', 'creating', 'naming'].map(stage => h('li', { key: stage, 'data-active': active === stage, 'aria-current': active === stage ? 'step' : undefined }, h('span', { 'aria-hidden': true }, failed === stage ? '× ' : completed.has(stage) && active !== stage ? '✓ ' : active === stage ? '◌ ' : '○ '), t(labels[stage])))),
+        h('ol', null, ...((state.op?.intent.branchSource || state.branchSource) === 'local' ? ['creating', 'naming'] : ['fetching', 'creating', 'naming']).map(stage => h('li', { key: stage, 'data-active': active === stage, 'aria-current': active === stage ? 'step' : undefined }, h('span', { 'aria-hidden': true }, failed === stage ? '× ' : completed.has(stage) && active !== stage ? '✓ ' : active === stage ? '◌ ' : '○ '), t(labels[stage])))),
         state.error && h('p', { role: 'alert', className: 'dsh-wt-error' }, state.error),
         !state.busy && state.op && h('div', { className: 'dsh-wt-row' }, h('code', null, state.op.id), h(Button, { onClick: () => { void flow.reconcile(sessionId); } }, t('reconcile')), state.op.result?.sessionId && h(Button, { onClick: () => flow.openTarget(sessionId) }, t('open'))));
     }

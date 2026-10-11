@@ -1,5 +1,29 @@
 # @1yefuwang1/dsh-worktrees changelog
 
+## Unreleased — Theme-aligned conversation controls and local starting branches
+
+- Replace the native Local/New worktree dropdown and the mismatched Local-only
+  button with the same compact, theme-aware menu control.
+- Default the starting branch to the current local branch (or the detached HEAD
+  commit), display its name, and replace “Base branch” with “Starting branch”.
+- Offer Local and Remote branch sources. Local worktrees pin an exact committed
+  local branch without fetching, including repositories with no configured remote;
+  remote worktrees keep the fresh-fetch creation path.
+- Load one bounded branch generation and search it locally. Keystrokes preserve
+  selection and never rediscover remote branches; source/remote switching reuses
+  loaded lists until explicit Refresh or target/connection invalidation.
+- Select and dismiss immediately on branch click, with Escape/focus dismissal and
+  keyboard navigation instead of a Close button.
+- Preserve source-checkout, permission, cancellation and native-draft guards;
+  refuse moved local selections rather than silently substituting another commit.
+- Use the native desktop menu fill/elevation rather than the light overlay token;
+  match native hover/segment colors and keep the search icon/input on one row.
+  Fence the search reset against generic input/focus rules to avoid double borders.
+- Keep the branch picker open during Refresh: move focus to the stable search
+  field before disabling Refresh, and distinguish loading-related null blur from
+  actual outside focus. Preserve search and selection across local/remote reloads.
+- Add backend, protocol/cache and real React interaction/style-cascade coverage.
+
 ## 0.2.17 — Folder entries follow the composed picker, with a working default
 
 - Stop offering an add interaction the session cannot serve. The Host composes

@@ -112,9 +112,10 @@ canonical execution paths; DSH core and the application shell are not modified.
 ## New Conversation: Local or New worktree
 
 Start a new conversation through the default UI. Its **normal composer** offers
-**New worktree** only after its actual selected folder passes local Git validation
-and has a configured remote. Ordinary non-Git folders, unverified/unsupported
-sources and failed checks show **Local** only, with no remote-branch controls.
+**New worktree** only after its actual selected folder passes local Git validation.
+A configured remote is not required. Ordinary non-Git folders, unverified/unsupported
+sources and failed checks show **Local** only, using the same compact, theme-aware
+control as Git folders and no branch picker.
 Git repository subfolders remain eligible; no `.git`-directory heuristic is used.
 The workspace picker, rich editor, attachments, native Enter/Send and rollback
 stay installed; there is no separate first-message dialog.
@@ -137,11 +138,12 @@ tree support; normal creation checks still apply.
    native keyboard gesture). Native command adjudication and chip serialization
    run first; claimed/handled commands keep their original command path and do
    not provision a checkout.
-3. A full-width progress panel shows **Fetching latest remote branch → Creating
-   worktree → Generating and applying branch name**. The Host freshly fetches the
-   chosen base, creates a random directory/initial local branch, then runs the
-   configured fast auxiliary naming model and renames only that branch. Naming
-   completes before the new conversation receives the prompt.
+3. A full-width progress panel shows **Creating worktree → Generating and applying
+   branch name**, preceded by **Fetching latest remote branch** only for a remote
+   selection. The Host pins the selected local commit without fetching, or freshly
+   fetches the selected remote branch, creates a random directory/initial branch,
+   then runs the configured fast auxiliary naming model and renames only that
+   branch. Naming completes before the new conversation receives the prompt.
 4. After the named checkout and exact blank session are ready, generic file drafts
    are re-uploaded for that exact session (receipts cannot cross sessions). The
    original, natively serialized prompt and ordered attachments are admitted once
@@ -153,10 +155,19 @@ of the normal conversation model. The foreground naming deadline is at most
 15 seconds (or a shorter configured deadline); unavailable or invalid output
 uses a deterministic safe fallback, never another-model retry.
 
-The optional **Base branch** control explicitly reads advertised branches so you
-can choose any configured remote/base before Send. Selecting the worktree mode
-itself does not query Git. `origin`/`main` are preferences, not restrictions. The
-actual checkout always uses a fresh selected-branch fetch; failed fetches never
+The **Starting branch** control displays the current local branch by default,
+not an ambiguous “Base branch” placeholder. Open it to choose **Local branches**
+(no remote access) or **Remote branches**. A detached checkout defaults to its
+current `HEAD` commit. The search filters the complete loaded branch generation
+locally: keystrokes never refetch, change selection or lose its pinned commit.
+Switching back to a previously loaded source/remote reuses that list; **Refresh**
+explicitly loads a new generation. Clicking a branch selects it and dismisses the
+picker immediately. Escape or moving focus outside also dismisses it; there is
+no Close button. Selecting worktree mode itself does not query Git.
+
+Local selection starts from a committed local branch, not uncommitted files; a
+selected commit that moved before creation is refused rather than substituted.
+Remote creation always fetches the selected branch afresh; failed fetches never
 substitute cached commits. Only the selected project folder is isolated.
 
 Progress uses bounded, event-driven wait requests over authenticated Connection
@@ -197,7 +208,7 @@ namingMaxTokens: 256
 
 These are plugin Config fields, not another New Chat form. The first ordinary
 prompt is bounded before branch naming. Inference happens only after successful
-fresh fetch and checkout creation, and the exact generated result is persisted
+local pinning or remote fetch and checkout creation, and the exact generated result is persisted
 before rename; ready same-operation replay does no fetch, inference or creation.
 The foreground deadline is `min(namingTimeoutMs, 15000)`. Disabled/unavailable,
 timed-out or malformed naming yields a safe deterministic branch name and can
@@ -215,7 +226,7 @@ new lazy UI supplies `firstPrompt` and never schedules that background rename.
 
 ## Manager, reminders and guarded Local handoff
 
-The advanced **Worktrees** sidebar panel shows recorded checkouts, fetched bases,
+The advanced **Worktrees** sidebar panel shows recorded checkouts, pinned bases,
 current/last-known branch and dirty state, conversations, protection, archive
 state and errors. The started-conversation header reads cached project/backing
 metadata only; there is no Worktrees button beside the project name in the chat
@@ -245,7 +256,7 @@ For handoff, open a conversation belonging to the chosen worktree first:
 
 1. Stop all writers in both checkouts, including external editors, processes,
    terminals, jobs and other sessions.
-2. Preview the patch relative to the saved fetched base. The default target is
+2. Preview the patch relative to the saved pinned base. The default target is
    the original Local checkout; an optional explicit Local path must pass the
    same repository and identity checks.
 3. Review changed files, binary markers, byte count, base identity and retained
@@ -314,7 +325,7 @@ or applied patch may already be committed when cancellation arrives. Inspect
 **operation status** and the manager before retrying; recovery-required records
 are retained with errors. A successfully committed operation replay with the
 **same immutable request and operation UUID** returns its original session and
-fetched commit, rather than allocating another blank session or fetching again.
+pinned commit, rather than allocating another blank session or fetching again.
 Changed settings, changed request or a new fresh preparation require a new UUID.
 
 The adapter never writes/clears the source draft; native submit machinery owns
@@ -417,14 +428,19 @@ means `list`. IDs and operation/preview IDs are UUIDs. Example read operations:
 ```text
 /worktree status
 /worktree list {"includeArchived":true,"limit":50}
+/worktree branches {"branchSource":"local","query":"feature","limit":50}
 /worktree branches {"remote":"upstream","query":"feature","limit":50}
 ```
 
 Actions: `list`, `status`, `branches`, `create`, `start`, `branch`, `protect`,
 `archive`, `preview`, `export`, `handoff`. `repoPath` defaults to the caller's
-execution directory where supported. `create` requires a new `operationId`,
-remote and remote branch; the UI also captures remote identity/settings hash and
-requires an unchanged blank source. `sessionMode: "new"` starts empty history;
+execution directory where supported. `create` requires a new `operationId` and
+either `branchSource: "local"` with `localBranch` (plus `localOid` to refuse a
+moved selection), or a remote and `remoteBranch` (the backwards-compatible default
+when `branchSource` is omitted). Detached `localBranch: "HEAD"` requires `localOid`.
+Local requests cannot contain remote fields, and vice versa. The UI captures the
+expected local commit or remote identity, settings hash, and requires an unchanged
+blank source. `sessionMode: "new"` starts empty history;
 `"continue"` inherits through a completed turn. `status` can inspect a worktree
 `id` or an `operationId`, not both. `export` consumes a retained `previewId`;
 `handoff` requires that preview and its own operation UUID.

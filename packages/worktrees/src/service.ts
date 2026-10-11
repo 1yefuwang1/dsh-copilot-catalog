@@ -12,7 +12,7 @@ import { SessionBootstrap, type SessionSettings } from './sessions.js';
 import { fallbackName, generateWorktreeName, NAMING_DEFAULTS, NAMING_INPUT_CHARS, namingConfig } from './naming.js';
 import type { WorktreeStore } from './store.js';
 import type { ProjectController } from './projects.js';
-import type { CheckoutState, OperationRecord, RemoteBranches, RepositoryInfo, SessionResult, WorktreeConfig, WorktreePreview, WorktreeRecord, WorktreeRequest, WorktreeSetupProgress } from './types.js';
+import type { CheckoutState, CreateCheckoutInput, LocalBranches, OperationRecord, RemoteBranches, RepositoryInfo, SessionResult, WorktreeConfig, WorktreePreview, WorktreeRecord, WorktreeRequest, WorktreeSetupProgress } from './types.js';
 
 export interface Invocation {
   agent: Agent; origin: 'tool' | 'command' | 'ui'; signal: AbortSignal;
@@ -21,7 +21,7 @@ export interface Invocation {
   /** Internal admission snapshot only; execute always replaces caller-supplied values. */
   capturedRoot?: string;
 }
-type GitApi = Pick<GitOperations, 'discover' | 'remotes' | 'branches' | 'create' | 'verify' | 'status' | 'createBranch' | 'renameBranch' | 'fingerprint' | 'snapshot' | 'apply'>;
+type GitApi = Pick<GitOperations, 'discover' | 'remotes' | 'branches' | 'localBranches' | 'create' | 'verify' | 'status' | 'createBranch' | 'renameBranch' | 'fingerprint' | 'snapshot' | 'apply'>;
 type BootstrapApi = Pick<SessionBootstrap, 'actor' | 'isLive' | 'settings' | 'assertBlank' | 'create' | 'close'>;
 export interface ControllerDependencies {
   git?: (actor: Agent, signal: AbortSignal, guard: () => void) => GitApi;
@@ -37,7 +37,7 @@ interface AgentsCapability { list(): Agent[] }
 interface JobsCapability { list(sessionId?: Agent['id']): { status: string }[] }
 interface TerminalsCapability { hasOwnerActivity(agent: Agent): boolean }
 interface TerminalControllerCapability { list(sessionId: Agent['id']): { state: string }[] }
-interface BranchGeneration { id: string; repository: string; value: RemoteBranches }
+type BranchGeneration = { id: string; repository: string } & ({ branchSource: 'remote'; value: RemoteBranches } | { branchSource: 'local'; value: LocalBranches });
 
 /** Validate before any filesystem/Git/naming effects; legacy plain configs may be relative. */
 export function resolveWorktreeRoot(value: unknown, allowRelative = false): string {
@@ -396,6 +396,21 @@ export class WorktreeController {
     return { repository, projectPath: path, ...(projectBinding === undefined ? {} : { projectBinding }), remotes: await git.remotes(repository.root, invocation.signal), settingsHash: settings.hash, defaults: { remote: this.config.defaultRemote, branch: this.config.defaultBranch }, namingConfig: namingConfig(this.config) };
   }
   private async branches(request: WorktreeRequest, invocation: Invocation, git: GitApi, repository: RepositoryInfo): Promise<unknown> {
+    if (request.branchSource === 'local') {
+      let generation = this.generation;
+      if (request.cursor === undefined) {
+        this.generation = undefined;
+        const value = await git.localBranches(repository.root, invocation.signal);
+        generation = { id: randomUUID(), repository: hashValue([repository.root, repository.commonDir]), branchSource: 'local', value: { ...value, branches: [...value.branches].sort((a, b) => a.name.localeCompare(b.name)) } };
+        this.generation = generation;
+      }
+      // HEAD/default is checkout-specific even when linked checkouts share refs.
+      if (generation === undefined || generation.branchSource !== 'local' || generation.repository !== hashValue([repository.root, repository.commonDir])) throw new WorktreeError('STALE_CURSOR', 'The local branch generation expired. Reload its first page.');
+      const query = request.query ?? '';
+      const items = generation.value.branches.filter(branch => branch.name.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
+      const key = hashValue({ generation: generation.id, query }); const offset = this.cursor(key, request.cursor); const limit = request.limit ?? 50;
+      return { branchSource: 'local', currentBranch: generation.value.currentBranch, defaultBranch: generation.value.defaultBranch, items: items.slice(offset, offset + limit), observedAt: generation.value.observedAt, ...(offset + limit < items.length ? { nextCursor: this.nextCursor(key, offset + limit) } : {}) };
+    }
     const remote = requiredText(request.remote, 'remote');
     const identity = (await git.remotes(repository.root, invocation.signal)).find(r => r.name === remote)?.identity;
     if (identity === undefined) throw new WorktreeError('REMOTE_NOT_FOUND', 'The selected remote is not configured.');
@@ -404,10 +419,10 @@ export class WorktreeController {
     if (request.cursor === undefined) {
       this.generation = undefined;
       const value = await git.branches(repository.root, remote, identity, invocation.signal);
-      generation = { id: randomUUID(), repository: repository.commonDir, value: { ...value, branches: [...value.branches].sort((a, b) => a.name.localeCompare(b.name)) } };
+      generation = { id: randomUUID(), repository: repository.commonDir, branchSource: 'remote', value: { ...value, branches: [...value.branches].sort((a, b) => a.name.localeCompare(b.name)) } };
       this.generation = generation;
     }
-    if (generation === undefined || generation.repository !== repository.commonDir || generation.value.remote !== remote || generation.value.remoteIdentity !== identity) throw new WorktreeError('STALE_CURSOR', 'The branch generation expired. Reload its first page.');
+    if (generation === undefined || generation.branchSource !== 'remote' || generation.repository !== repository.commonDir || generation.value.remote !== remote || generation.value.remoteIdentity !== identity) throw new WorktreeError('STALE_CURSOR', 'The branch generation expired. Reload its first page.');
     const query = request.query ?? '';
     const items = generation.value.branches.filter(branch => branch.name.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
     const key = hashValue({ generation: generation.id, query }); const offset = this.cursor(key, request.cursor); const limit = request.limit ?? 50;
@@ -463,6 +478,9 @@ export class WorktreeController {
     if (request.settingsHash !== undefined && request.settingsHash !== settings.hash) throw new WorktreeError('SETTINGS_CHANGED', 'Source settings changed before preparation.');
     if (request.requireBlankSource === true) await this.bootstrap.assertBlank(source);
     let repository = await git.discover(path, invocation.signal);
+    // Local HEAD is specific to the selected execution checkout, not its logical
+    // original Local folder (which may be attached to a different branch).
+    const selectedRepository = repository;
     let project = this.projectSelection(path, request);
     if (project === undefined && this.dependencies.projects !== undefined) {
       // An explicit agent repoPath may not have had a native Workspace yet.
@@ -494,29 +512,40 @@ export class WorktreeController {
     return this.queued(repository.commonDir, invocation.signal, async () => {
       this.assertProject(project);
       await this.sameSettings(source, settings, request, invocation);
-      const remote = requiredText(request.remote, 'remote'); const remoteBranch = requiredText(request.remoteBranch, 'remoteBranch');
-      const identity = (await git.remotes(repository.root, invocation.signal)).find(r => r.name === remote)?.identity;
-      if (identity === undefined) throw new WorktreeError('REMOTE_NOT_FOUND', 'The selected remote is not configured.');
-      if (request.remoteIdentity !== undefined && request.remoteIdentity !== identity) throw new WorktreeError('REMOTE_CHANGED', 'The remote configuration changed. Reload its branch list.');
+      const branchSource = request.branchSource ?? 'remote';
+      const remote = branchSource === 'local' ? 'local' : requiredText(request.remote, 'remote');
+      const remoteBranch = branchSource === 'local' ? requiredText(request.localBranch, 'localBranch') : requiredText(request.remoteBranch, 'remoteBranch');
+      let identity: string;
+      if (branchSource === 'local') identity = hashValue(repository.commonDir);
+      else {
+        const selected = (await git.remotes(repository.root, invocation.signal)).find(r => r.name === remote)?.identity;
+        if (selected === undefined) throw new WorktreeError('REMOTE_NOT_FOUND', 'The selected remote is not configured.');
+        if (request.remoteIdentity !== undefined && request.remoteIdentity !== selected) throw new WorktreeError('REMOTE_CHANGED', 'The remote configuration changed. Reload its branch list.');
+        identity = selected;
+      }
       const root = resolveWorktreeRoot(await canonicalFuture(resolveWorktreeRoot(invocation.capturedRoot)));
       if (contained(repository.root, root)) throw new WorktreeError('UNSAFE_ROOT', 'The worktree root must be outside the source checkout.');
       const id = randomUUID(); const directoryRoot = resolve(root, hashValue(repository.commonDir).slice(0, 24), id);
       const initialBranch = `worktree/${id}`;
       const destination = resolve(directoryRoot, `worktree-${id}`);
-      const record: WorktreeRecord = { id, operationId, repoRoot: repository.root, commonDir: repository.commonDir, projectSubdir: repository.projectSubdir, checkoutRoot: destination, effectiveCwd: resolve(destination, repository.projectSubdir), remote, remoteIdentity: identity, remoteBranch, baseOid: '', baseRef: `refs/dsh-worktrees/${id}/base`, fetchedAt: 0, createdAt: Date.now(), sessionIds: [], workspaceId: null, branch: null, ...(project === undefined ? {} : { projectId: project.projectId, folderId: project.folderId }), protected: false, archived: false, state: 'creating', error: null };
+      const record: WorktreeRecord = { id, operationId, repoRoot: repository.root, commonDir: repository.commonDir, projectSubdir: repository.projectSubdir, checkoutRoot: destination, effectiveCwd: resolve(destination, repository.projectSubdir), remote, remoteIdentity: identity, remoteBranch, branchSource, ...(branchSource === 'local' ? { localBranch: remoteBranch } : {}), baseOid: '', baseRef: `refs/dsh-worktrees/${id}/base`, fetchedAt: 0, createdAt: Date.now(), sessionIds: [], workspaceId: null, branch: null, ...(project === undefined ? {} : { projectId: project.projectId, folderId: project.folderId }), protected: false, archived: false, state: 'creating', error: null };
       let operation = this.newOperation(operationId, 'create', requestHash, invocation.agent, record, source, settings, request.sessionMode ?? 'new');
       let effects = false;
       try {
         await this.putOperation(operation, request, invocation); await this.putRecord(record, request, invocation);
         await this.sameSettings(source, settings, request, invocation);
-        operation = await this.phase(operation, 'fetching', request, invocation); effects = true;
+        if (branchSource === 'remote') operation = await this.phase(operation, 'fetching', request, invocation);
+        effects = true;
         this.guard(request, invocation); await mkdir(dirname(destination), { recursive: true });
         if (await canonicalFuture(destination) !== destination) throw new WorktreeError('PATH_CHANGED', 'The destination ancestry changed during preparation.');
         this.guard(request, invocation);
         const progressOperation = Object.freeze({ id: operationId, worktreeId: id });
-        const checkout = await git.create({ id, repository, destination, remote, remoteIdentity: identity, remoteBranch, baseRef: record.baseRef, signal: invocation.signal,
+        const sourceInput: CreateCheckoutInput = {
+          id, repository: branchSource === 'local' ? selectedRepository : repository, destination, baseRef: record.baseRef, signal: invocation.signal,
           onProgress: stage => this.progress(invocation, progressOperation, stage),
-        });
+          ...(branchSource === 'local' ? { branchSource: 'local', localBranch: remoteBranch, ...(request.localOid === undefined ? {} : { localOid: request.localOid }) } : { branchSource: 'remote', remote, remoteIdentity: identity, remoteBranch }),
+        };
+        const checkout = await git.create(sourceInput);
         let created = { ...record, ...checkout };
         await this.store.worktrees.put(created.id, clone(created)); operation = await this.receipt(operation, 'checkout-created');
         await this.sameSettings(source, settings, request, invocation);

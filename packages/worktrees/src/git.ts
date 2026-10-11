@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, mkdir, mkdtemp, open, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { CheckoutState, CreateCheckoutInput, CreatedCheckout, GitExecutor, GitRunResult, PatchFile, RemoteBranches, RemoteInfo, RepositoryInfo, SnapshotInput, WorktreeConfig, WorktreePreview, WorktreeRecord } from './types.js';
+import type { CheckoutState, CreateCheckoutInput, CreatedCheckout, GitExecutor, GitRunResult, PatchFile, LocalBranches, RemoteBranches, RemoteInfo, RepositoryInfo, SnapshotInput, WorktreeConfig, WorktreePreview, WorktreeRecord } from './types.js';
 import { abortIfRequested, WorktreeError } from './errors.js';
 
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
@@ -119,8 +119,10 @@ export class GitOperations {
     if (mapping.isSymbolicLink() || (!mapping.isFile() && !mapping.isDirectory()) || (mapping.isDirectory() && commonDir !== path.join(root, '.git'))) fail('UNSUPPORTED_REPOSITORY', 'Unsupported Git admin directory mappings are not supported.');
     const headResult = await this.run(root, ['rev-parse', '--verify', 'HEAD^{commit}'], signal, { allowed: [0, 128] });
     if (headResult.exitCode !== 0) fail('UNBORN_REPOSITORY', 'The repository does not have a committed HEAD.');
-    const branchResult = await this.run(root, ['symbolic-ref', '--quiet', '--short', 'HEAD'], signal, { allowed: [0, 1] });
-    return { root, commonDir, projectSubdir: path.relative(root, project).split(path.sep).join('/'), head: oid(line(headResult.stdout)), branch: branchResult.exitCode === 0 ? line(branchResult.stdout) : null };
+    const branchResult = await this.run(root, ['symbolic-ref', '--quiet', 'HEAD'], signal, { allowed: [0, 1] });
+    const branchRef = branchResult.exitCode === 0 ? line(branchResult.stdout) : null;
+    if (branchRef !== null && !branchRef.startsWith('refs/heads/')) fail('UNSUPPORTED_REF', 'HEAD must identify a local branch or a detached commit.');
+    return { root, commonDir, projectSubdir: path.relative(root, project).split(path.sep).join('/'), head: oid(line(headResult.stdout)), branch: branchRef === null ? null : branchRef.slice(11) };
   }
 
   private async ref(root: string, value: string, signal?: AbortSignal): Promise<void> {
@@ -201,6 +203,62 @@ export class GitOperations {
     return { remote, remoteIdentity: selected.identity, defaultBranch, branches: branches.sort((a, b) => a.name.localeCompare(b.name)), observedAt: Date.now() };
   }
 
+  /** One bounded local ref generation; no remote configuration or network commands. */
+  async localBranches(repoRoot: string, signal?: AbortSignal): Promise<LocalBranches> {
+    const repository = await this.discover(repoRoot, signal);
+    const result = await this.run(repository.root, ['for-each-ref', '--format=%(refname)%00%(objectname)%00%(objecttype)%00%(symref)%00', 'refs/heads/'], signal);
+    const output = text(result.stdout);
+    if (output && !output.endsWith('\n')) fail('TRUNCATED_OUTPUT', 'The local branch generation was truncated.');
+    const branches: LocalBranches['branches'] = []; const seen = new Set<string>();
+    for (const row of output ? output.slice(0, -1).split('\n') : []) {
+      const parts = row.split('\0');
+      if (parts.length !== 5 || parts[4] !== '' || !parts[0]?.startsWith('refs/heads/')) fail('INVALID_GIT_OUTPUT', 'Git returned an invalid local reference.');
+      await this.ref(repository.root, parts[0], signal);
+      if (parts[2] !== 'commit' || parts[3] !== '') fail('UNSUPPORTED_REF', 'Local branches must directly identify commits, not symbolic refs or other objects.');
+      const name = parts[0].slice(11);
+      if (name === 'HEAD' || seen.has(name)) fail('UNSUPPORTED_REF', 'The local branch generation contains an ambiguous branch.');
+      seen.add(name); branches.push({ name, oid: oid(parts[1]!) });
+      if (branches.length > this.config.maxFiles) fail('REF_LIMIT', 'The local branch generation exceeds the configured count limit.');
+    }
+    const after = await this.discover(repoRoot, signal);
+    if (after.root !== repository.root || after.commonDir !== repository.commonDir || after.head !== repository.head || after.branch !== repository.branch) fail('BRANCH_CHANGED', 'HEAD changed during local branch discovery. Reload its first page.');
+    if (repository.branch === null) branches.push({ name: 'HEAD', oid: repository.head });
+    else if (branches.find(branch => branch.name === repository.branch)?.oid !== repository.head) fail('BRANCH_CHANGED', 'The current branch changed during local branch discovery.');
+    if (branches.length > this.config.maxFiles) fail('REF_LIMIT', 'The local branch generation exceeds the configured count limit.');
+    return { branchSource: 'local', currentBranch: repository.branch, defaultBranch: repository.branch ?? 'HEAD', branches: branches.sort((a, b) => a.name.localeCompare(b.name)), observedAt: Date.now() };
+  }
+
+  private async localBase(repository: RepositoryInfo, input: Extract<CreateCheckoutInput, { branchSource: 'local' }>): Promise<string> {
+    const { signal, localBranch, localOid } = input;
+    if (!localBranch || localBranch.startsWith('-')) fail('INVALID_REF', 'The selected local branch name is invalid.');
+    if (localOid !== undefined && !oidPattern.test(localOid)) fail('INVALID_REF', 'The selected local commit identity is invalid.');
+    const ref = localBranch === 'HEAD' ? 'HEAD' : `refs/heads/${localBranch}`;
+    if (localBranch === 'HEAD') {
+      if (localOid === undefined) fail('INVALID_REF', 'Detached HEAD creation requires an expected local commit.');
+      if (repository.branch !== null) fail('BRANCH_CHANGED', 'HEAD is no longer detached. Reload the local branch list.');
+    } else await this.ref(repository.root, ref, signal);
+    const symbolic = await this.run(repository.root, ['symbolic-ref', '--quiet', ref], signal, { allowed: [0, 1] });
+    if (symbolic.exitCode === 0) fail('UNSUPPORTED_REF', 'The selected local reference must directly identify a commit.');
+    const resolved = await this.run(repository.root, ['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`], signal, { allowed: [0, 128] });
+    if (resolved.exitCode !== 0) fail('LOCAL_BRANCH_NOT_FOUND', 'The selected local branch has no commit.');
+    const baseOid = oid(line(resolved.stdout));
+    const direct = oid(line((await this.run(repository.root, ['rev-parse', '--verify', '--end-of-options', ref], signal)).stdout));
+    if (direct !== baseOid) fail('UNSUPPORTED_REF', 'The selected local branch must directly identify a commit.');
+    if (localOid !== undefined && localOid !== baseOid) fail('BRANCH_CHANGED', 'The selected local branch moved. Reload its branch list.');
+    // Compare the source under its ref lock and create (never overwrite/dereference)
+    // the managed base in the same transaction. No source ref/index/file is changed.
+    const pin = await this.run(repository.root, ['update-ref', '--no-deref', '--stdin'], signal, {
+      stdin: `start\nverify ${ref} ${baseOid}\ncreate ${input.baseRef} ${baseOid}\nprepare\ncommit\n`, allowed: [0, 128],
+    });
+    if (pin.exitCode !== 0) fail('BRANCH_CHANGED', 'The local branch or managed base changed before pinning; no checkout was created.');
+    // Git's no-deref verify may still compare a symbolic ref's resolved OID.
+    // Reject replacement explicitly before any checkout, retaining the exact base
+    // as a recovery receipt rather than ever writing through the source reference.
+    const after = await this.run(repository.root, ['symbolic-ref', '--quiet', ref], signal, { allowed: [0, 1] });
+    if (after.exitCode === 0) fail('BRANCH_CHANGED', 'The selected local branch became symbolic during pinning; the exact base may remain but no checkout was created.', { refsMayHaveChanged: true });
+    return baseOid;
+  }
+
   private async destination(root: string, requested: string): Promise<string> {
     const absolute = path.resolve(requested);
     const parent = await realpath(path.dirname(absolute)).catch(() => fail('MISSING_PATH', 'The managed checkout parent directory is unavailable.'));
@@ -254,21 +312,29 @@ export class GitOperations {
     const repository = await this.discover(path.join(input.repository.root, input.repository.projectSubdir), signal);
     if (repository.root !== input.repository.root || repository.commonDir !== input.repository.commonDir) fail('REPOSITORY_CHANGED', 'The source repository identity changed.');
     const destination = await this.destination(repository.root, input.destination);
-    if (!input.remoteBranch || input.remoteBranch.startsWith('-')) fail('INVALID_REF', 'The selected branch name is invalid.');
-    await this.ref(repository.root, `refs/heads/${input.remoteBranch}`, signal);
-    await this.ref(repository.root, `refs/remotes/${input.remote}/${input.remoteBranch}`, signal);
     await this.ref(repository.root, input.baseRef, signal);
     if (!input.baseRef.startsWith('refs/dsh-worktrees/')) fail('INVALID_REF', 'The persistent base ref must use the managed worktree namespace.');
     const prior = await this.run(repository.root, ['show-ref', '--verify', '--quiet', input.baseRef], signal, { allowed: [0, 1] });
     if (prior.exitCode === 0) fail('BASE_REF_EXISTS', 'The persistent base reference is already in use.');
-    const remote = await this.remote(repository.root, input.remote, signal);
-    if (remote.identity !== input.remoteIdentity) fail('REMOTE_CHANGED', 'The selected remote identity has changed.');
-    checkoutProgress(input, 'fetching');
-    await this.run(repository.root, ['fetch', '--atomic', '--refmap=', '--no-tags', '--no-write-fetch-head', '--no-recurse-submodules', '--no-auto-maintenance', '--no-write-commit-graph', '--no-prune', '--upload-pack=git-upload-pack', '--', input.remote, `+refs/heads/${input.remoteBranch}:refs/remotes/${input.remote}/${input.remoteBranch}`, `refs/heads/${input.remoteBranch}:${input.baseRef}`], signal, { fetch: true });
-    if ((await this.remote(repository.root, input.remote, signal)).identity !== remote.identity) fail('REMOTE_CHANGED', 'The remote changed during fetch; fetched refs may remain.', { refsMayHaveChanged: true });
-    const baseOid = oid(line((await this.run(repository.root, ['rev-parse', '--verify', `${input.baseRef}^{commit}`], signal)).stdout));
+    let baseOid: string;
+    if (input.branchSource === 'local') {
+      if (input.remote !== undefined || input.remoteIdentity !== undefined || input.remoteBranch !== undefined) fail('INVALID_REQUEST', 'Local source does not accept remote fields.');
+      baseOid = await this.localBase(repository, input);
+    } else {
+      if (input.branchSource !== undefined && input.branchSource !== 'remote') fail('INVALID_REQUEST', 'The branch source is invalid.');
+      if (input.localBranch !== undefined || input.localOid !== undefined) fail('INVALID_REQUEST', 'Remote source does not accept local fields.');
+      if (!input.remoteBranch || input.remoteBranch.startsWith('-')) fail('INVALID_REF', 'The selected branch name is invalid.');
+      await this.ref(repository.root, `refs/heads/${input.remoteBranch}`, signal);
+      await this.ref(repository.root, `refs/remotes/${input.remote}/${input.remoteBranch}`, signal);
+      const remote = await this.remote(repository.root, input.remote, signal);
+      if (remote.identity !== input.remoteIdentity) fail('REMOTE_CHANGED', 'The selected remote identity has changed.');
+      checkoutProgress(input, 'fetching');
+      await this.run(repository.root, ['fetch', '--atomic', '--refmap=', '--no-tags', '--no-write-fetch-head', '--no-recurse-submodules', '--no-auto-maintenance', '--no-write-commit-graph', '--no-prune', '--upload-pack=git-upload-pack', '--', input.remote, `+refs/heads/${input.remoteBranch}:refs/remotes/${input.remote}/${input.remoteBranch}`, `refs/heads/${input.remoteBranch}:${input.baseRef}`], signal, { fetch: true });
+      if ((await this.remote(repository.root, input.remote, signal)).identity !== remote.identity) fail('REMOTE_CHANGED', 'The remote changed during fetch; fetched refs may remain.', { refsMayHaveChanged: true });
+      baseOid = oid(line((await this.run(repository.root, ['rev-parse', '--verify', `${input.baseRef}^{commit}`], signal)).stdout));
+    }
     const entries = await this.tree(repository.root, baseOid, signal);
-    if (repository.projectSubdir && !entries.some(entry => entry.path.startsWith(`${repository.projectSubdir}/`))) fail('PROJECT_SUBDIR_MISSING', 'The project subdirectory is absent from the freshly fetched tree.');
+    if (repository.projectSubdir && !entries.some(entry => entry.path.startsWith(`${repository.projectSubdir}/`))) fail('PROJECT_SUBDIR_MISSING', 'The project subdirectory is absent from the selected base tree.');
     // Attribute validation uses an isolated index and object store, never the source index.
     const privateStore = await this.store(path.dirname(destination), repository.commonDir);
     try {
@@ -276,14 +342,14 @@ export class GitOperations {
       await this.attributes(repository.root, entries.map(entry => entry.path), signal, privateStore.env, true);
       for (const entry of entries.filter(value => value.mode === '120000')) {
         const target = text((await this.run(repository.root, ['cat-file', 'blob', entry.oid], signal)).stdout);
-        if (!target || path.isAbsolute(target) || !inside(destination, path.resolve(destination, path.dirname(entry.path), target))) fail('UNSAFE_SYMLINK', 'The fetched tree contains an escaping symlink.');
+        if (!target || path.isAbsolute(target) || !inside(destination, path.resolve(destination, path.dirname(entry.path), target))) fail('UNSAFE_SYMLINK', 'The selected base tree contains an escaping symlink.');
       }
     } finally { await this.removeStore(privateStore); }
     checkoutProgress(input, 'creating');
     try {
       await this.run(repository.root, ['worktree', 'add', '--detach', '--', destination, baseOid], signal);
       const checkoutRoot = await realpath(destination);
-      const effectiveCwd = await realpath(path.join(checkoutRoot, repository.projectSubdir)).catch(() => fail('PROJECT_SUBDIR_MISSING', 'The fetched project directory is unavailable.'));
+      const effectiveCwd = await realpath(path.join(checkoutRoot, repository.projectSubdir)).catch(() => fail('PROJECT_SUBDIR_MISSING', 'The selected base project directory is unavailable.'));
       if (checkoutRoot !== destination || !inside(checkoutRoot, effectiveCwd)) fail('UNSAFE_PATH', 'The created checkout has an unsafe project mapping.');
       return { checkoutRoot, effectiveCwd, baseOid, baseRef: input.baseRef, fetchedAt: Date.now() };
     } catch (error) {

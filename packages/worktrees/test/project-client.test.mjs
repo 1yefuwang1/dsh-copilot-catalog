@@ -334,7 +334,7 @@ test('sidebar workspace folder SVGs match the actual native open and closed artw
 
 test('compact project toolbar keeps search and archive choices off the default sidebar layout', () => {
   const toolbar = source.slice(source.indexOf('    function ProjectSidebarToolbar('), source.indexOf('    function ProjectsSidebar('));
-  const sidebar = source.slice(source.indexOf('    function ProjectsSidebar('), source.indexOf('    function NewWorktreeControls('));
+  const sidebar = source.slice(source.indexOf('    function ProjectsSidebar('), source.indexOf('    function ChevronIcon('));
   assert.match(toolbar, /\[searchOpen, setSearchOpen\] = React.useState\(!!query\), \[optionsOpen, setOptionsOpen\] = React.useState\(false\)/);
   assert.match(toolbar, /!searchOpen && h\('span', \{ className: 'dsh-wt-project-section-label' \}/);
   assert.match(toolbar, /searchOpen && h\('div', \{ className: 'dsh-wt-project-search' \}/); assert.match(toolbar, /'aria-expanded': searchOpen/);
@@ -880,7 +880,7 @@ test('Manage-only Remove is staged, Cancel-first, independently gated from inval
   const editor = source.slice(source.indexOf('    function ProjectEditor('), source.indexOf('    function ThreadRow('));
   const confirmation = source.slice(source.indexOf('    function ConfirmProjectRemoval('), source.indexOf('    function ProjectEditor('));
   const group = source.slice(source.indexOf('    function ProjectGroup('), source.indexOf('    function SidebarToggle('));
-  const sidebar = source.slice(source.indexOf('    function ProjectsSidebar('), source.indexOf('    function NewWorktreeControls('));
+  const sidebar = source.slice(source.indexOf('    function ProjectsSidebar('), source.indexOf('    function ChevronIcon('));
   const begin = editor.slice(editor.indexOf('      function beginRemoval('), editor.indexOf('      function dismissRemoval('));
   assert.match(begin, /confirming.current = true; setError\(''\); setConfirmRemoval\(true\)/); assert.doesNotMatch(begin, /\.mutate\(|\.remove\(|title|folders|mainFolder/);
   assert.match(editor, /project && h\(Button, \{ ref: removeTrigger, className: 'dsh-wt-remove-project', disabled: busy \|\| browser \|\| confirmRemoval, onClick: beginRemoval/);

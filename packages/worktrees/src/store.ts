@@ -13,6 +13,7 @@ const namingSchema = z.object({
 const worktreeSchema = z.object({
   id: z.string().uuid(), operationId: z.string().uuid(), repoRoot: str, commonDir: str, projectSubdir: str,
   checkoutRoot: str, effectiveCwd: str, remote: str, remoteIdentity: str, remoteBranch: str,
+  branchSource: z.enum(['local', 'remote']).optional(), localBranch: str.optional(),
   baseOid: str, baseRef: str, fetchedAt: z.number().int().nonnegative(), createdAt: z.number().int().nonnegative(),
   sessionIds: z.array(str), workspaceId: str.nullable(), branch: str.nullable(), protected: z.boolean(), archived: z.boolean(),
   state: z.enum(['creating', 'ready', 'recovery-required', 'missing']), error: str.nullable(),

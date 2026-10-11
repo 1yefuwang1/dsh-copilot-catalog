@@ -54,8 +54,10 @@ instead of assuming a registry release exists.
   model. The existing Web search settings card is DeepSeek-specific, not a chooser.
 - Restart the DSH host after host-plugin installation/removal or changing the
   nonvolatile web-service provider selection. No Web UI rebuild is required.
-- Worktrees freshly fetches a selectable advertised remote branch (`origin/main`
-  is only a default) on first native Send, creates a random checkout, applies a
+- Worktrees defaults to the current local branch without a remote fetch, or lets
+  you select a freshly fetched remote branch on first native Send. Its themed
+  branch picker searches loaded lists without network requests. It creates a
+  random checkout and applies a
   fast-model branch name with visible progress, then sends the normal prompt.
   Mode selection performs no setup; the checkout directory stays fixed. Cross-root Git mutations
   require the actual caller's existing Full access. Handoff is guarded but not

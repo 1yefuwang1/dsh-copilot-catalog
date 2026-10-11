@@ -8,6 +8,9 @@ const text = z.string().min(1).max(4096);
 const id = z.string().uuid();
 export const requestSchema = z.object({
   action: z.enum(ACTIONS), repoPath: text.optional(), id: id.optional(), operationId: id.optional(),
+  branchSource: z.enum(['local', 'remote']).describe('Branch source; omitted preserves remote behavior.').optional(),
+  localBranch: text.describe('Exact local branch name, or HEAD for a pinned detached HEAD.').optional(),
+  localOid: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u).describe('Expected local commit; fail if the selected branch moved. Required for detached HEAD.').optional(),
   remote: text.optional(), remoteIdentity: text.optional(), remoteBranch: text.optional(),
   sourceSessionId: z.string().min(1).max(256).optional(), sessionMode: z.enum(['new', 'continue']).optional(),
   requireBlankSource: z.boolean().optional(), settingsHash: z.string().max(128).optional(),
@@ -21,8 +24,8 @@ export const requestSchema = z.object({
 const fields: Record<WorktreeAction, readonly string[]> = {
   list: ['repoPath', 'cursor', 'limit', 'includeArchived'],
   status: ['repoPath', 'id', 'operationId'],
-  branches: ['repoPath', 'remote', 'remoteIdentity', 'query', 'cursor', 'limit'],
-  create: ['repoPath', 'operationId', 'remote', 'remoteIdentity', 'remoteBranch', 'sourceSessionId', 'sessionMode', 'requireBlankSource', 'settingsHash', 'firstPrompt', 'projectId', 'folderId'],
+  branches: ['repoPath', 'branchSource', 'remote', 'remoteIdentity', 'query', 'cursor', 'limit'],
+  create: ['repoPath', 'operationId', 'branchSource', 'localBranch', 'localOid', 'remote', 'remoteIdentity', 'remoteBranch', 'sourceSessionId', 'sessionMode', 'requireBlankSource', 'settingsHash', 'firstPrompt', 'projectId', 'folderId'],
   start: ['id', 'sourceSessionId', 'sessionMode'],
   branch: ['id', 'name'], protect: ['id', 'protected'],
   preview: ['id', 'sourceSessionId', 'targetPath'], export: ['previewId'],
@@ -34,10 +37,17 @@ export function parseRequest(value: unknown): WorktreeRequest {
   const request = parsed.data;
   for (const key of Object.keys(request)) if (key !== 'action' && !fields[request.action].includes(key)) throw new WorktreeError('INVALID_REQUEST', `${request.action} does not accept ${key}.`);
   const required: Partial<Record<WorktreeAction, readonly string[]>> = {
-    create: ['operationId', 'remote', 'remoteBranch'], start: ['id'], branch: ['id', 'name'], protect: ['id', 'protected'],
-    preview: ['id'], export: ['previewId'], handoff: ['id', 'previewId', 'operationId'], archive: ['id'], branches: ['remote'],
+    create: ['operationId'], start: ['id'], branch: ['id', 'name'], protect: ['id', 'protected'],
+    preview: ['id'], export: ['previewId'], handoff: ['id', 'previewId', 'operationId'], archive: ['id'],
   };
   for (const key of required[request.action] ?? []) if ((request as Record<string, unknown>)[key] === undefined) throw new WorktreeError('INVALID_REQUEST', `${request.action} requires ${key}.`);
+  if (request.action === 'create' || request.action === 'branches') {
+    const local = request.branchSource === 'local';
+    const sourceFields = local ? (request.action === 'create' ? ['localBranch'] : []) : (request.action === 'create' ? ['remote', 'remoteBranch'] : ['remote']);
+    for (const key of sourceFields) if ((request as Record<string, unknown>)[key] === undefined) throw new WorktreeError('INVALID_REQUEST', `${request.action} requires ${key}.`);
+    for (const key of local ? ['remote', 'remoteIdentity', 'remoteBranch'] : ['localBranch', 'localOid']) if ((request as Record<string, unknown>)[key] !== undefined) throw new WorktreeError('INVALID_REQUEST', `${local ? 'Local' : 'Remote'} source does not accept ${key}.`);
+    if (local && request.localBranch === 'HEAD' && request.localOid === undefined) throw new WorktreeError('INVALID_REQUEST', 'Detached HEAD creation requires localOid.');
+  }
   if (request.action === 'status' && request.id !== undefined && request.operationId !== undefined) throw new WorktreeError('INVALID_REQUEST', 'Status accepts either id or operationId, not both.');
   if ((request.projectId === undefined) !== (request.folderId === undefined)) throw new WorktreeError('INVALID_REQUEST', 'Supply projectId and folderId together on create.');
   return request;
