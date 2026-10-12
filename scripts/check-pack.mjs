@@ -14,10 +14,10 @@ const policies = {
     extras: [], maxBytes: 150_000,
   },
   '@1yefuwang1/dsh-worktrees': {
-    modules: ['index', 'types', 'errors', 'runtime', 'schema', 'store', 'sessions', 'context', 'service', 'git', 'naming', 'rpc', 'projects', 'project-store', 'project-rpc', 'project-context', 'quiet-rpc', 'first-message'],
-    // Local-branch engine and accessible picker bring allowlisted bytes to ~549k;
-    // keep a bounded 575k ceiling without widening either Copilot leaf.
-    extras: ['client.js', 'locale/en.json', 'icon.svg'], maxBytes: 575_000,
+    modules: ['index', 'types', 'errors', 'runtime', 'schema', 'store', 'sessions', 'context', 'service', 'git', 'naming', 'rpc', 'projects', 'project-store', 'project-rpc', 'project-context', 'quiet-rpc', 'first-message', 'cleanup-store', 'cleanup', 'recovery-rpc'],
+    // Guarded cleanup, staged cold recovery and Client warnings bring the 0.2.20
+    // 50-file allowlist to ~743k; retain bounded headroom without widening other leaves.
+    extras: ['client.js', 'locale/en.json', 'icon.svg'], maxBytes: 775_000,
   },
 };
 

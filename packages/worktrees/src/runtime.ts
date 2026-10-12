@@ -86,9 +86,20 @@ function collect(stream: Readable | undefined, limit: number, controller: AbortC
   });
 }
 
-/** No native spawn fallback: every production Git command uses the caller's managed capabilities. */
-export function createExecutor(agent: Agent, config: WorktreeConfig, shutdown?: AbortSignal): GitExecutor {
-  const subprocess = required<SubprocessCapability>(agent.ctx, 'subprocess');
+/** No native spawn fallback: caller operations keep their exact managed policy. */
+export function createExecutor(agent: Agent, config: WorktreeConfig, shutdown?: AbortSignal, guard: () => void = () => undefined): GitExecutor {
+  return managedExecutor(agent.ctx, config, () => policyOf(agent), guard, shutdown);
+}
+
+/** Configured, narrowly scoped Host maintenance; never borrows an Agent's policy.
+ * The caller must bind guard to verified plugin-owned paths and its durable fence.
+ */
+export function createMaintenanceExecutor(owner: Context, config: WorktreeConfig, guard: () => void, shutdown?: AbortSignal): GitExecutor {
+  const fs = required<FsCapability>(owner, 'fs');
+  return managedExecutor(owner, config, undefined, guard, shutdown, fs);
+}
+function managedExecutor(owner: Context, config: WorktreeConfig, policyFor: (() => ExecutionPolicy) | undefined, guard: () => void, shutdown?: AbortSignal, localFs?: FsCapability): GitExecutor {
+  const subprocess = required<SubprocessCapability>(owner, 'subprocess');
   return async spec => {
     const controller = new AbortController();
     let timedOut = false;
@@ -97,15 +108,22 @@ export function createExecutor(agent: Agent, config: WorktreeConfig, shutdown?: 
     const signal = AbortSignal.any(signals);
     let handle: ProcessHandle | undefined;
     try {
+      guard();
+      if (localFs !== undefined) {
+        const target = await localFs.resolve(spec.cwd, { signal });
+        const mapped = localFs.processPathFromHostPath(spec.cwd);
+        if (mapped === undefined || resolve(mapped) !== resolve(localFs.processPath(target))) throw new WorktreeError('UNSUPPORTED_PROVIDER', 'Cleanup requires a local filesystem and managed subprocess execution world.');
+      }
       const executable = await subprocess.resolveExecutable(config.gitExecutable, spec.env, signal);
       let argv = [executable, ...spec.args];
-      const policy = policyOf(agent);
-      if (policy.mode !== 'danger-full-access') {
-        const sandbox = required<SandboxCapability>(agent.ctx, 'sandbox');
+      const policy = policyFor?.();
+      if (policy !== undefined && policy.mode !== 'danger-full-access') {
+        const sandbox = required<SandboxCapability>(owner, 'sandbox');
         const confined = await sandbox.confine(argv, policy, signal);
         if (confined.enforcement !== 'full') throw new WorktreeError('INCOMPLETE_SANDBOX', 'The available sandbox cannot fully enforce this operation.');
         argv = confined.argv;
       }
+      guard();
       handle = subprocess.spawn({ argv, cwd: spec.cwd, env: spec.env, signal, graceMs: 1500, stdio: { stdin: spec.stdin === undefined ? 'ignore' : 'pipe', stdout: 'pipe', stderr: 'pipe' } });
       const stdout = collect(handle.stdout, spec.maxBytes ?? 65536, controller);
       const stderr = collect(handle.stderr, 65536, controller);

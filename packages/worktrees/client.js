@@ -21,6 +21,8 @@ window.__ModuleLoader__.load({
       mainFolder: 'Main folder', main: 'Main', chooseMainFolder: 'Select the main folder', mainFolderRequired: 'Choose a main folder from the project source folders.', mainFolderHelp: 'Default for new conversations. You can choose another folder before sending.', conversationFolder: 'Conversation folder',
       createProject: 'Create project', sourceFolders: 'Source folders', localFolders: 'Browse for folders', enterFolderPath: 'Enter a folder path', checkingFolderOptions: 'Checking available folder options…', browseUnavailable: 'This session cannot list Host folders. Use Choose a folder… or enter an absolute path.', folderPickerUnavailable: 'The native folder chooser is unavailable here. Browse folders or enter an absolute Host folder path instead.', add: 'Add', cancel: 'Cancel', selectedFolders: 'Selected folders', selectFolder: 'Select folder', folderLimit: 'A project can contain at most 32 folders.', invalidFolder: 'Enter a valid absolute Host folder path.', alreadyAdded: 'Already added', multiFolderHelp: 'Select multiple folders using the checkboxes. Selections are kept as you browse.', hostFolderHelp: 'Folders are on the Host computer; adding them does not move files.', noSubfolders: 'No subfolders.', directoryTruncated: 'This listing is truncated. Enter a path to browse other folders.',
       rootFolder: 'Worktree root folder', rootSummary: 'Choose where new worktrees are created.', rootHelp: 'Absolute folder path on the Host, outside your source repositories. Changes apply to new worktrees only; existing directories and in-flight creates are not moved.', rootReset: 'Reset to inherited default', rootSaved: 'Saved. New worktrees will use this location.', rootUnavailable: 'Host-backed settings are unavailable for this entry.', rootInvalid: 'Enter a valid absolute Host folder path.', rootConflict: 'The setting changed or the Host refused the write. Your draft is preserved; reopen this page to read the latest value.',
+      cleanupTitle: 'Workspace cleanup', cleanupEnabled: 'Automatically reclaim inactive worktrees', cleanupDays: 'Inactivity days', cleanupHelp: 'Counts user messages only. Opening a thread does not reset the timer. Loaded conversation runtimes, active work, and protected worktrees defer cleanup; retrying may require a server restart.', cleanupDanger: 'Cleanup permanently deletes uncommitted, untracked, and ignored files. Git branches and conversation history are retained. Archive status does not exempt a worktree.', cleanupSaved: 'Cleanup settings saved.', cleanupInvalid: 'Choose a whole number of days from 1 to 3650.', cleanupConflict: 'The setting changed or the Host refused the write. Your draft is preserved.', reclaimed: 'Worktree reclaimed', cleanupDeferred: 'Cleanup deferred', gcWarning: 'This worktree was garbage-collected after inactivity. Unsaved files were discarded; Git branches and conversation history were retained.', gcDate: 'Reclaimed {date}', gcChoose: 'Choose a Local branch to continue this conversation.', gcLocal: 'Continue in Local', gcSwitchWarning: 'Selecting a different branch switches the original Local checkout. It requires Full access and a clean, idle checkout. No worktree changes are applied; no reset, stash, merge, or forced switch.', gcCurrent: 'Current Local branch', gcSelected: 'Local branch chosen: {branch}', gcCancelled: 'History remains available. Choose a branch when you are ready to continue.', gcBlock: 'Sending is paused while this worktree needs cleanup or Local recovery.', gcContinue: 'Continue on selected branch', gcRetry: 'Review Local branches', gcReadOnly: 'Keep viewing history', gcLookup: 'Checking reclaimed-worktree status…',
+      gcCollecting: 'Worktree cleanup is in progress. Keep viewing history; sending is paused.', gcRecovery: 'Cleanup needs inspection. The checkout may be partly removed; sending is paused.', gcRetained: 'Retained worktree branch', gcAllBranches: 'Choose a Local branch', gcDraftHeld: 'Draft text, reference chips and file drafts remain in the historical conversation. This runtime cannot safely transfer the structured draft; open its history to review or copy it manually.', gcHistoryDraft: 'View historical draft', gcPermissions: 'Open Local permission controls', gcPending: 'A real Local continuation is staged. Adjust its standard permission controls if needed, then review a branch and retry.', gcReady: 'Local continuation ready', gcBranchChanged: 'The Local branch generation changed. Refresh and explicitly choose again.',
       pinned: 'Pinned', title: 'Worktrees', local: 'Local', new: 'New worktree', remote: 'Remote', branch: 'Starting branch',
       localBranches: 'Local branches', remoteBranches: 'Remote branches', currentBranch: 'Current branch', localBranchHelp: 'Start from a local commit. No remote fetch.', remoteBranchHelp: 'Start from the latest remote commit. Fetches when the worktree is created.', noBranches: 'No matching branches.', noRemotes: 'No remotes configured.', branchSource: 'Branch source',
       setupProgress: 'Preparing worktree', preparingMessage: 'Preparing your first message…', fetchingLatest: 'Fetching latest remote branch…', creatingWorktree: 'Creating worktree…', namingBranch: 'Generating and applying branch name…', openingConversation: 'Opening worktree conversation…', setupReady: 'Worktree ready', stagingAttachments: 'Preparing attachments for this worktree…', startingConversation: 'Starting normal conversation…', setupFailed: 'Worktree preparation failed', cancelSetup: 'Cancel setup', unsupported: 'This native composer version is not supported by the guarded adapter.', filesLost: 'A draft attachment is no longer available.', upload: 'Attachment upload failed', uncertain: 'Prompt admission is uncertain. Open the created conversation before trying again.',
@@ -57,6 +59,8 @@ window.__ModuleLoader__.load({
       mainFolder: '主文件夹', main: '主目录', chooseMainFolder: '选择主文件夹', mainFolderRequired: '请从项目源文件夹中选择一个主文件夹。', mainFolderHelp: '新对话默认使用此文件夹，发送前仍可选择其他文件夹。', conversationFolder: '对话文件夹',
       createProject: '创建项目', sourceFolders: '源文件夹', localFolders: '浏览文件夹', enterFolderPath: '输入文件夹路径', checkingFolderOptions: '正在检查可用的文件夹选项…', browseUnavailable: '此会话无法列出主机文件夹。请使用“选择文件夹…”或输入绝对路径。', folderPickerUnavailable: '此处无法使用系统文件夹选择器。请改用浏览文件夹或输入主机绝对文件夹路径。', add: '添加', cancel: '取消', selectedFolders: '已选文件夹', selectFolder: '选择文件夹', folderLimit: '一个项目最多可包含 32 个文件夹。', invalidFolder: '请输入有效的主机绝对文件夹路径。', alreadyAdded: '已添加', multiFolderHelp: '使用复选框选择多个文件夹，浏览其他目录时会保留已选项。', hostFolderHelp: '文件夹位于主机计算机上；添加不会移动文件。', noSubfolders: '没有子文件夹。', directoryTruncated: '目录列表已截断，请输入路径浏览其他文件夹。',
       rootFolder: '工作树根目录', rootSummary: '选择新工作树的创建位置。', rootHelp: '主机上的绝对目录路径，需位于源仓库之外。仅影响新工作树，已有目录和进行中的创建不会移动。', rootReset: '恢复继承的默认值', rootSaved: '已保存，新工作树将使用此位置。', rootUnavailable: '此条目的主机设置不可用。', rootInvalid: '请输入有效的主机绝对目录路径。', rootConflict: '设置已更改或主机拒绝了保存，草稿已保留。请重新打开页面读取最新值。',
+      cleanupTitle: '工作区清理', cleanupEnabled: '自动回收长期不活跃的工作树', cleanupDays: '不活跃天数', cleanupHelp: '仅统计用户消息；打开对话不会重置计时。仍加载的对话运行实例、进行中的工作和受保护的工作树会推迟清理；可能需在服务器重启后重试。', cleanupDanger: '清理会永久删除未提交、未跟踪和被忽略的文件。Git 分支和对话历史会保留。归档不会豁免清理。', cleanupSaved: '已保存清理设置。', cleanupInvalid: '请输入 1 至 3650 之间的整数天数。', cleanupConflict: '设置已更改或主机拒绝了保存，草稿已保留。', reclaimed: '工作树已回收', cleanupDeferred: '已推迟清理', gcWarning: '此工作树因长期不活跃已被回收。未保存的文件已删除；Git 分支和对话历史仍被保留。', gcDate: '回收时间：{date}', gcChoose: '请选择本地分支以继续此对话。', gcLocal: '在本地继续', gcSwitchWarning: '选择其他分支会切换原始本地检出，需要完整访问权限以及干净、空闲的检出。不会应用工作树改动，也不会重置、暂存、合并或强制切换。', gcCurrent: '当前本地分支', gcSelected: '所选本地分支：{branch}', gcCancelled: '仍可查看历史；准备好继续时再选择分支。', gcBlock: '工作树需要清理或本地续接，发送已暂停。', gcContinue: '在所选分支上继续', gcRetry: '查看本地分支', gcReadOnly: '继续查看历史', gcLookup: '正在检查工作树回收状态…',
+      gcCollecting: '工作树正在清理。仍可查看历史；发送已暂停。', gcRecovery: '清理需要检查。检出可能已被部分移除；发送已暂停。', gcRetained: '保留的工作树分支', gcAllBranches: '选择本地分支', gcDraftHeld: '草稿文字、引用标签和文件草稿仍保留在历史对话中。当前运行时无法安全迁移结构化草稿；请打开历史对话查看或手动复制。', gcHistoryDraft: '查看历史草稿', gcPermissions: '打开本地权限设置', gcPending: '已准备真实的本地续接对话。如有需要，请调整其标准权限设置，然后重新选择分支并重试。', gcReady: '本地续接已就绪', gcBranchChanged: '本地分支列表已更改，请刷新并重新明确选择。',
       pinned: '已固定', title: '工作树', local: '本地', new: '新工作树', remote: '远程', branch: '起始分支', search: '搜索分支',
       localBranches: '本地分支', remoteBranches: '远程分支', currentBranch: '当前分支', localBranchHelp: '从本地提交开始，不获取远程更新。', remoteBranchHelp: '从最新远程提交开始，创建工作树时获取更新。', noBranches: '没有匹配的分支。', noRemotes: '未配置远程仓库。', branchSource: '分支来源',
       setupProgress: '正在准备工作树', preparingMessage: '正在准备第一条消息…', fetchingLatest: '正在获取最新远程分支…', creatingWorktree: '正在创建工作树…', namingBranch: '正在生成并应用分支名称…', openingConversation: '正在打开工作树对话…', setupReady: '工作树已就绪', stagingAttachments: '正在为工作树准备附件…', startingConversation: '正在开始正常对话…', setupFailed: '工作树准备失败', cancelSetup: '取消准备', unsupported: '该输入区版本不受受保护适配器支持。', filesLost: '草稿附件已不可用。', upload: '附件上传失败', uncertain: '消息发送结果不确定，请先打开创建的对话检查。',
@@ -119,6 +123,7 @@ window.__ModuleLoader__.load({
 .dsh-wt-state-dot{position:relative;display:inline-block;flex:none;width:10px;height:10px}.dsh-wt-state-dot::after{content:'';position:absolute;inset:20%;border-radius:50%;background:currentColor}.dsh-wt-state-dot[data-state=warning]{color:var(--dsw-alias-state-warn-primary)}.dsh-wt-state-dot[data-state=done]{color:var(--dsw-alias-state-success-primary)}
 .dsh-wt-state-spinner{display:block;flex:none;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}.dsh-wt-state-motion{transform-origin:center;animation:dsh-wt-state-spin 1.5s linear infinite}.dsh-wt-state-track,.dsh-wt-state-arc{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}.dsh-wt-state-track{opacity:.25}.dsh-wt-state-arc{stroke-dasharray:12 150;animation:dsh-wt-state-dash 1.5s ease-in-out infinite}
 @keyframes dsh-wt-state-spin{to{transform:rotate(360deg)}}@keyframes dsh-wt-state-dash{0%{stroke-dasharray:12 150;stroke-dashoffset:0}50%{stroke-dasharray:24 150;stroke-dashoffset:-6}100%{stroke-dasharray:12 150;stroke-dashoffset:0}}
+.dsh-wt-recovery{padding:12px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-1);margin:8px 0}.dsh-wt-recovery fieldset{border:0;padding:0;margin:8px 0}.dsh-wt-recovery legend{font-weight:600}.dsh-wt-recovery-branches{max-height:180px;overflow:auto;display:flex;flex-direction:column;gap:4px}.dsh-wt-recovery-branches label{padding:4px 6px;border-radius:6px;overflow-wrap:anywhere}.dsh-wt-recovery-branches label:hover{background:var(--dsw-alias-interactive-bg-hover)}.dsh-wt-recovery input[type=radio]{accent-color:var(--dsw-alias-state-business-primary)}
 @media(prefers-reduced-motion:reduce){.dsh-wt-state-motion,.dsh-wt-state-arc{animation:none}.dsh-wt-state-arc{stroke-dasharray:18 150;stroke-dashoffset:-3}}
 `;
     class WorktreeError extends Error {
@@ -141,10 +146,46 @@ window.__ModuleLoader__.load({
       if (!Object.hasOwn(envelope, 'data')) throw new WorktreeError('decode', 'missing-data');
       return envelope.data;
     }
+    const cleanupPhases = ['deferred', 'planned', 'preserving', 'removing', 'collected', 'recovery-required'];
+    function cleanupData(value) {
+      const timestamp = item => item === null || (Number.isSafeInteger(item) && item >= 0 && item <= 8640000000000000);
+      return !!value && cleanupPhases.includes(value.phase) && Number.isSafeInteger(value.inactivityDays) && value.inactivityDays >= 1 && value.inactivityDays <= 3650 && ['lastActivityAt', 'eligibleAfter', 'reclaimedAt'].every(key => timestamp(value[key])) && (value.originalFolder === null || absolutePath(value.originalFolder)) && (value.recoveryRef === null || typeof value.recoveryRef === 'string' && value.recoveryRef.startsWith('refs/dsh-worktrees/')) && (value.reason === null || typeof value.reason?.code === 'string' && !!value.reason.code && typeof value.reason.message === 'string');
+    }
+    function recoveryRequest(request) {
+      const string = (value, max = 4096) => typeof value === 'string' && value.length > 0 && value.length <= max && !/[\u0000-\u001f\u007f]/u.test(value);
+      const keys = request?.action === 'reopen-info' ? ['action', 'sourceSessionId', 'cursor', 'limit', 'after'] : request?.action === 'reopen' ? ['action', 'sourceSessionId', 'localBranch', 'localOid'] : null;
+      let valid = !!keys && Object.keys(request).every(key => keys.includes(key)) && string(request.sourceSessionId, 256);
+      if (request?.action === 'reopen-info') valid = valid && (request.cursor === undefined || string(request.cursor, 512)) && (request.limit === undefined || Number.isSafeInteger(request.limit) && request.limit >= 1 && request.limit <= 100) && (request.after === undefined || Number.isSafeInteger(request.after) && request.after >= 0 && request.cursor === undefined && request.limit === undefined);
+      if (request?.action === 'reopen') valid = valid && string(request.localBranch) && !request.localBranch.startsWith('-') && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(request.localOid || '');
+      if (!valid) throw new WorktreeError('decode', 'invalid-recovery-request');
+      return request;
+    }
+    function recoveryData(request, data) {
+      if (!data || typeof data !== 'object' || Array.isArray(data)) throw new WorktreeError('decode', 'invalid-' + request.action + '-data');
+      const string = value => typeof value === 'string' && value.length > 0;
+      const nullable = value => value === null || string(value);
+      const oid = value => typeof value === 'string' && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(value);
+      let valid = data && data.sourceSessionId === request.sourceSessionId && (data.cleanup === null || cleanupData(data.cleanup));
+      if (request.action === 'reopen-info') {
+        valid = valid && nullable(data.worktreeId) && nullable(data.continuationSessionId) && (data.originalFolder === null || absolutePath(data.originalFolder)) && Number.isSafeInteger(data.revision) && data.revision >= 0 && (data.pendingSessionId === undefined || string(data.pendingSessionId)) && (data.recoveredBranch === undefined || nullable(data.recoveredBranch));
+        if (data.repository !== undefined) valid = valid && absolutePath(data.repository?.root) && absolutePath(data.repository.commonDir) && oid(data.repository.head) && nullable(data.repository.branch);
+        if (data.branches !== undefined) valid = valid && data.repository !== undefined && Array.isArray(data.branches) && data.branches.length <= 100 && data.branches.every(item => string(item?.name) && oid(item.oid) && (item.name !== 'HEAD' || data.repository.branch === null)) && Number.isSafeInteger(data.observedAt) && data.observedAt >= 0;
+        if (data.nextCursor !== undefined) valid = valid && string(data.nextCursor) && data.branches !== undefined;
+        if (data.continuationSessionId !== null || data.pendingSessionId !== undefined) valid = valid && data.cleanup?.phase === 'collected' && string(data.worktreeId);
+      } else valid = valid && string(data.sessionId) && string(data.workspaceId) && string(data.worktreeId) && absolutePath(data.cwd) && nullable(data.branch) && data.cleanup?.phase === 'collected';
+      if (!valid) throw new WorktreeError('decode', 'invalid-' + request.action + '-data');
+      return data;
+    }
+    async function requestRecovery(ctx, request, signal) {
+      recoveryRequest(request);
+      const { after, ...hostRequest } = request;
+      return recoveryData(request, await quietRPC(ctx, 'dsh-worktrees/recovery', { v: 1, request: hostRequest, ...(after === undefined ? {} : { after }) }, signal));
+    }
     function validateData(request, data) {
+      if (['reopen-info', 'reopen'].includes(request.action)) return recoveryData(request, data);
       const string = value => typeof value === 'string' && value.length > 0;
       const naming = value => value && string(value.title) && string(value.slug) && string(value.directoryName) && string(value.branch) && ['model', 'fallback'].includes(value.source) && (value.fallbackReason === undefined || string(value.fallbackReason));
-      const record = value => value && (value.displayName === undefined || string(value.displayName)) && (value.naming === undefined || naming(value.naming)) && string(value.id) && string(value.operationId) && string(value.effectiveCwd) && string(value.remote) && string(value.remoteBranch) && typeof value.baseOid === 'string' && (value.state !== 'ready' || string(value.baseOid)) && Array.isArray(value.sessionIds) && value.sessionIds.every(string) && (value.branch === null || typeof value.branch === 'string') && typeof value.protected === 'boolean' && typeof value.archived === 'boolean' && ['creating', 'ready', 'recovery-required', 'missing'].includes(value.state);
+      const record = value => value && (value.cleanup === undefined || cleanupData(value.cleanup)) && (value.displayName === undefined || string(value.displayName)) && (value.naming === undefined || naming(value.naming)) && string(value.id) && string(value.operationId) && string(value.effectiveCwd) && string(value.remote) && string(value.remoteBranch) && typeof value.baseOid === 'string' && (value.state !== 'ready' || string(value.baseOid)) && Array.isArray(value.sessionIds) && value.sessionIds.every(string) && (value.branch === null || typeof value.branch === 'string') && typeof value.protected === 'boolean' && typeof value.archived === 'boolean' && ['creating', 'ready', 'recovery-required', 'missing'].includes(value.state);
       const operation = value => value && (value.generatedName === undefined || naming(value.generatedName)) && string(value.id) && string(value.phase) && (value.error === null || (string(value.error?.code) && typeof value.error.message === 'string'));
       let valid = true;
       if (request.action === 'status') {
@@ -356,7 +397,7 @@ window.__ModuleLoader__.load({
     function projectData(request, data) {
       const string = value => typeof value === 'string' && value.length > 0;
       const project = value => value && uuid(value.id) && string(value.title) && value.title.length <= 120 && Array.isArray(value.folders) && value.folders.length > 0 && value.folders.length <= 32 && value.folders.every(folder => string(folder?.id) && absolutePath(folder.path) && typeof folder.title === 'string') && Number.isSafeInteger(value.createdAt) && value.createdAt >= 0 && !Object.is(value.createdAt, -0) && Number.isSafeInteger(value.updatedAt) && value.updatedAt >= 0 && !Object.is(value.updatedAt, -0) && (value.imported === undefined || typeof value.imported === 'boolean') && (value.mainFolderId === undefined || (string(value.mainFolderId) && value.folders.some(folder => folder.id === value.mainFolderId)));
-      const binding = value => value && string(value.sessionId) && uuid(value.projectId) && string(value.folderId) && ['local', 'worktree'].includes(value.mode) && absolutePath(value.effectiveCwd) && (value.mode === 'worktree' ? uuid(value.worktreeId) : value.worktreeId === undefined);
+      const binding = value => value && (value.cleanup === undefined || cleanupData(value.cleanup)) && string(value.sessionId) && uuid(value.projectId) && string(value.folderId) && ['local', 'worktree'].includes(value.mode) && absolutePath(value.effectiveCwd) && (value.mode === 'worktree' ? uuid(value.worktreeId) : value.worktreeId === undefined);
       let valid;
       if (request.action === 'list') {
         valid = data && Array.isArray(data.projects) && data.projects.every(project) && Array.isArray(data.bindings) && data.bindings.every(binding);
@@ -513,6 +554,196 @@ window.__ModuleLoader__.load({
       };
       schedule(); return api;
     }
+    const emptyRecoveryStore = Object.freeze({ getSnapshot: () => null, subscribe: () => () => {} });
+    const recoveryVerified = (state, id) => state === null || state.sessionId === id && state.checked === true && !state.loading && !!state.info && (!recoveryBlocked(state.info.cleanup) || state.info.continuationSessionId === id);
+    const recoveryBlocked = cleanup => !!cleanup && ['planned', 'preserving', 'removing', 'collected', 'recovery-required'].includes(cleanup.phase);
+    function recoveryLabel(cleanup, t) {
+      if (!cleanup) return '';
+      return t(cleanup.phase === 'collected' ? 'reclaimed' : cleanup.phase === 'recovery-required' ? 'recovery' : cleanup.phase === 'deferred' ? 'cleanupDeferred' : 'gcCollecting');
+    }
+    function recoveryBranches(info, records = []) {
+      if (!info?.repository) return [];
+      const current = info.repository.branch ?? 'HEAD';
+      const retained = info.recoveredBranch ?? records.find(record => record.id === info.worktreeId)?.branch;
+      const items = [{ name: current, oid: info.repository.head }, ...(info.branches || [])];
+      const seen = new Set();
+      return items.filter(item => (item.name !== 'HEAD' || info.repository.branch === null) && !seen.has(item.name) && seen.add(item.name)).map(item => ({ ...item, current: item.name === current, retained: item.name === retained })).sort((a, b) => Number(b.current) - Number(a.current) || Number(b.retained) - Number(a.retained));
+    }
+    /** One root observer. Reads never resume a historical Host Agent or submit a prompt. */
+    function createRecoveryStore(ctx, t, projects) {
+      let disposed = false, sequence = 0, queued = false, forceRead = false, active;
+      let state = { sessionId: undefined, info: null, branches: [], selected: null, query: '', checked: false, loading: false, paging: false, busy: false, error: '', foreignBlock: false, cancelled: false, draftHistoryId: undefined };
+      const listeners = new Set(), blocks = new Map(), references = new Map(), targets = new Map(), history = new Set();
+      const publish = patch => { if (disposed) return; state = { ...state, ...patch }; for (const listener of [...listeners]) listener(); };
+      const store = { getSnapshot: () => state, subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); } };
+      const owns = op => !disposed && active === op && !op.controller.signal.aborted && currentActor(ctx.sessions.list.getSnapshot()) === op.id && ctx.connection.generation.getSnapshot()?.id === op.generation;
+      function preserveDraft(id) {
+        if (references.has(id)) return;
+        // Public SessionReference keeps the original structured editor, chips and
+        // browser File drafts alive. No public atomic structured migration exists.
+        const reference = ctx.sessions.retain(id, { source: 'controllerOperation' });
+        references.set(id, reference);
+        void Promise.resolve(reference.ready).catch(() => { if (!disposed && state.sessionId === id) publish({ error: t('gcDraftHeld') }); });
+      }
+      function block(id, needed) {
+        let entry = blocks.get(id);
+        if (!needed) {
+          if (entry) { entry.unsubscribe(); entry.handle?.release(); blocks.delete(id); }
+          return;
+        }
+        preserveDraft(id);
+        if (!entry) {
+          const source = ctx.conversation.blocks.storeFor(id);
+          entry = { source, handle: null, acquiring: false, unsubscribe: () => {} };
+          blocks.set(id, entry);
+          entry.unsubscribe = source.subscribe(() => syncBlock(id, entry));
+        }
+        syncBlock(id, entry);
+      }
+      function syncBlock(id, entry) {
+        if (disposed || entry.acquiring || blocks.get(id) !== entry) return;
+        entry.acquiring = true;
+        try {
+          const current = entry.source.getSnapshot();
+          if (entry.handle && current !== entry.handle.owned) entry.handle = null;
+          if (current === undefined) entry.handle = acquireBlock(ctx.conversation.blocks, id, t('gcBlock'));
+          if (state.sessionId === id) publish({ foreignBlock: entry.source.getSnapshot() !== entry.handle?.owned });
+        } finally { entry.acquiring = false; }
+      }
+      function hint(id) {
+        return projects?.store.getSnapshot().records?.find(record => record.sessionIds.includes(id));
+      }
+      function draftHistory(id) { return [...references.keys()].find(source => source !== id && targets.get(source) === id); }
+      // Only explicit recovery actions navigate. rc.2 has no public read-only
+      // current navigation signal: even beginNavigation before an initial read
+      // could cancel a native Workspace/New Thread choice already in flight.
+      async function navigate(op, target, capturedNavigation) {
+        if (!owns(op) || !target) return;
+        let navigation;
+        try {
+          preserveDraft(op.id); targets.set(op.id, target);
+          navigation = capturedNavigation || ctx.layout.beginNavigation();
+          if (!owns(op) || navigation.aborted) return;
+          await ctx.uiWorkspace.openSession(target);
+        } catch (failure) { if (owns(op) && !navigation?.aborted) publish({ error: report(t, failure) }); }
+      }
+      function install(op, info, append = false) {
+        if (!owns(op)) return;
+        op.page?.abort(); op.page = null;
+        const old = state.info;
+        const sameGeneration = append || old?.observedAt === info.observedAt && old?.repository?.head === info.repository?.head && old?.repository?.branch === info.repository?.branch;
+        const branches = recoveryBranches({ ...info, branches: append ? [...(old?.branches || []), ...(info.branches || [])] : info.branches }, projects?.store.getSnapshot().records);
+        const selected = sameGeneration && state.selected && branches.some(item => item.name === state.selected.name && item.oid === state.selected.oid) ? state.selected : null;
+        const merged = append ? { ...info, branches: branches.map(({ name, oid }) => ({ name, oid })) } : info;
+        const readyHere = info.continuationSessionId === op.id;
+        block(op.id, recoveryBlocked(info.cleanup) && !readyHere);
+        if (info.pendingSessionId && info.pendingSessionId !== op.id) targets.set(op.id, info.pendingSessionId);
+        publish({ info: merged, branches, selected, checked: true, loading: false, paging: false, error: '', cancelled: history.has(op.id), draftHistoryId: draftHistory(op.id) });
+        // Ready metadata keeps history and its warning visible. The existing
+        // Open action can select the exact Local target on a genuine user click;
+        // asynchronous facts never acquire or supersede navigation authority.
+      }
+      async function watch(op, info) {
+        op.watch?.abort(); const controller = new AbortController(); op.watch = controller;
+        const signal = AbortSignal.any([op.controller.signal, controller.signal]);
+        let revision = info.revision;
+        try {
+          while (owns(op) && !signal.aborted) {
+            const next = await requestRecovery(ctx, { action: 'reopen-info', sourceSessionId: op.id, after: revision }, signal);
+            if (!owns(op) || signal.aborted) return;
+            if (next.revision <= revision) throw new WorktreeError('decode', 'lifecycle-revision-not-advanced');
+            revision = next.revision; install(op, next);
+          }
+        } catch (failure) { if (owns(op) && !signal.aborted) publish({ error: report(t, failure) }); }
+      }
+      async function read(force = false) {
+        if (disposed) return;
+        const id = currentActor(ctx.sessions.list.getSnapshot()), generation = ctx.connection.generation.getSnapshot()?.id;
+        if (!force && active?.id === id && active?.generation === generation && !active.controller.signal.aborted) return;
+        active?.controller.abort(); ++sequence;
+        const cached = state.sessionId === id ? state.info : null;
+        if (!id || generation === undefined) { active = undefined; publish({ sessionId: id, info: cached, checked: false, loading: false, busy: false, paging: false }); return; }
+        const op = { id, generation, sequence, controller: new AbortController(), watch: null, page: null, action: null }; active = op;
+        publish({ sessionId: id, info: cached, branches: [], selected: null, query: '', checked: false, loading: true, paging: false, busy: false, error: '', foreignBlock: false, cancelled: history.has(id), draftHistoryId: draftHistory(id) });
+        const record = hint(id);
+        try {
+          if (recoveryBlocked(record?.cleanup)) {
+            block(id, true);
+            if (!cached) publish({ info: { sourceSessionId: id, worktreeId: record.id, cleanup: record.cleanup, originalFolder: record.cleanup.originalFolder, continuationSessionId: null, revision: 0 } });
+          }
+          const info = await requestRecovery(ctx, { action: 'reopen-info', sourceSessionId: id, limit: 100 }, op.controller.signal);
+          if (!owns(op)) return;
+          install(op, info); void watch(op, info);
+        } catch (failure) { if (owns(op)) publish({ loading: false, error: report(t, failure) }); }
+      }
+      function schedule(force = false) {
+        forceRead ||= force;
+        if (queued || disposed) return;
+        queued = true;
+        Promise.resolve().then(() => { queued = false; const refresh = forceRead; forceRead = false; if (!disposed) void read(refresh); });
+      }
+      function changed() {
+        const id = currentActor(ctx.sessions.list.getSnapshot()), generation = ctx.connection.generation.getSnapshot()?.id;
+        if (active && (id !== active.id || generation !== active.generation)) active.controller.abort();
+        schedule();
+      }
+      const stopSessions = ctx.sessions.list.subscribe(changed), stopConnection = ctx.connection.generation.subscribe(changed);
+      async function more() {
+        const op = active, initial = state.info;
+        if (!op || !owns(op) || !state.checked || state.paging || state.busy || !initial?.nextCursor) return;
+        const controller = new AbortController(); op.page?.abort(); op.page = controller;
+        const signal = AbortSignal.any([op.controller.signal, controller.signal]); publish({ paging: true, error: '' });
+        try {
+          const page = await requestRecovery(ctx, { action: 'reopen-info', sourceSessionId: op.id, cursor: initial.nextCursor, limit: 100 }, signal);
+          if (!owns(op) || signal.aborted || state.info !== initial) return;
+          if (page.revision !== initial.revision || page.observedAt !== initial.observedAt || JSON.stringify(page.repository) !== JSON.stringify(initial.repository)) throw new WorktreeError('gcBranchChanged', 'branch-generation-changed');
+          install(op, page, true);
+        } catch (failure) { if (owns(op) && !signal.aborted) publish({ paging: false, error: report(t, failure) }); }
+      }
+      async function resume() {
+        const op = active, selected = state.selected;
+        if (!op || !owns(op) || !state.checked || state.busy || !selected || state.info?.cleanup?.phase !== 'collected' || state.info.continuationSessionId) return;
+        op.watch?.abort(); op.page?.abort(); const controller = new AbortController(); op.action = controller;
+        const navigation = ctx.layout.beginNavigation();
+        const signal = AbortSignal.any([op.controller.signal, controller.signal, navigation]);
+        publish({ busy: true, error: '' });
+        try {
+          preserveDraft(op.id);
+          const result = await requestRecovery(ctx, { action: 'reopen', sourceSessionId: op.id, localBranch: selected.name, localOid: selected.oid }, signal);
+          if (!owns(op) || signal.aborted) return;
+          targets.set(op.id, result.sessionId);
+          if (result.sessionId === op.id) { block(op.id, false); publish({ busy: false, info: { ...state.info, continuationSessionId: result.sessionId, recoveredBranch: result.branch }, selected: null }); }
+          else await navigate(op, result.sessionId, navigation);
+        } catch (failure) {
+          if (owns(op) && !signal.aborted) {
+            // A refusal may have staged a REAL Local target for standard permission
+            // controls. Refresh facts quietly; never invent a permission actor.
+            publish({ busy: false, error: report(t, failure) });
+            try { const info = await requestRecovery(ctx, { action: 'reopen-info', sourceSessionId: op.id, limit: 100 }, op.controller.signal); if (owns(op)) { install(op, info); publish({ error: report(t, failure) }); } } catch { /* original refusal and draft remain */ }
+          }
+        } finally {
+          if (owns(op)) {
+            op.action = null;
+            // A newer native navigation has priority even before mainView counts
+            // settle. Later lifecycle facts must not undo that explicit intent.
+            if (navigation.aborted) history.add(op.id);
+            publish({ busy: false, cancelled: history.has(op.id) });
+            if (state.info) void watch(op, state.info);
+          }
+        }
+      }
+      const api = { store, refresh: () => read(true), more, resume,
+        setQuery(query) { publish({ query }); },
+        choose(name) { if (!active || !owns(active) || !state.checked || state.busy) return false; const item = state.branches.find(branch => branch.name === name); if (!item) return false; history.delete(active.id); publish({ selected: { name: item.name, oid: item.oid }, cancelled: false, error: '' }); return true; },
+        cancel() { if (!active) return; active.action?.abort(); history.add(active.id); publish({ selected: null, cancelled: true, busy: false }); },
+        retry() { if (!active) return; history.delete(active.id); publish({ cancelled: false }); return read(true); },
+        openTarget() { const op = active; if (op && owns(op) && state.checked) return navigate(op, state.info?.continuationSessionId); },
+        openPermissions() { const op = active; if (op && owns(op) && state.checked) return navigate(op, state.info?.pendingSessionId); },
+        openHistory() { const id = state.draftHistoryId; if (!id || !references.has(id)) return; history.add(id); return ctx.uiWorkspace.openSession(id); },
+        dispose() { if (disposed) return; disposed = true; active?.controller.abort(); stopSessions(); stopConnection(); for (const entry of blocks.values()) { entry.unsubscribe(); entry.handle?.release(); } blocks.clear(); for (const reference of references.values()) reference.release(); references.clear(); listeners.clear(); },
+      };
+      schedule(); return api;
+    }
     function rootFolderValue(state) { return typeof state?.value?.root === 'string' ? state.value.root : ''; }
     async function writeRootFolder(form, draft, expectedRevision, reset = false) {
       const state = form?.state;
@@ -523,6 +754,19 @@ window.__ModuleLoader__.load({
       const accepted = await form.mutate([reset ? { op: 'unset', path: ['root'] } : { op: 'set', path: ['root'], value: root }], expectedRevision);
       if (accepted !== true) throw new WorktreeError('rootConflict', 'root-setting-refused');
       return root;
+    }
+    function cleanupSettingsValue(state) {
+      return { enabled: typeof state?.value?.cleanupEnabled === 'boolean' ? state.value.cleanupEnabled : true, days: Number.isSafeInteger(state?.value?.cleanupInactivityDays) ? state.value.cleanupInactivityDays : 10 };
+    }
+    async function writeCleanupSettings(form, enabled, days, expectedRevision, reset = false) {
+      const state = form?.state;
+      if (!state || state.status !== 'ready' || !state.writable || state.mode !== 'host' || typeof form.mutate !== 'function') throw new WorktreeError('rootUnavailable', 'settings-unavailable');
+      if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) throw new WorktreeError('rootUnavailable', 'missing-settings-revision');
+      const value = typeof days === 'string' && /^\d+$/.test(days) ? Number(days) : days;
+      if (!reset && (typeof enabled !== 'boolean' || !Number.isSafeInteger(value) || value < 1 || value > 3650)) throw new WorktreeError('cleanupInvalid', 'invalid-inactivity-days');
+      const ops = reset ? [{ op: 'unset', path: ['cleanupEnabled'] }, { op: 'unset', path: ['cleanupInactivityDays'] }] : [{ op: 'set', path: ['cleanupEnabled'], value: enabled }, { op: 'set', path: ['cleanupInactivityDays'], value }];
+      if (await form.mutate(ops, expectedRevision) !== true) throw new WorktreeError('cleanupConflict', 'cleanup-setting-refused');
+      return { enabled, days: value };
     }
     const NATIVE_SUBMIT_ABI = '0.2.0-rc.2/default-sink-v1';
     const later = callback => { void Promise.resolve().then(() => Promise.resolve()).then(callback); };
@@ -1179,7 +1423,7 @@ window.__ModuleLoader__.load({
       const record = worktree ? row.backing?.record || metadata.records.find(item => item.id === row.context?.binding.worktreeId) : undefined;
       const path = row.backing?.effectiveCwd || row.context?.binding.effectiveCwd || row.context?.folder.path || '';
       const title = row.session.blank ? t('blankThread') : row.title || t('untitled');
-      const marker = (worktree ? t('worktreeThread') : t('localThread')) + (row.context ? ' · ' + row.context.folder.path : '') + (record?.branch ? ' · ' + record.branch : '') + (worktree ? ' · ' + path : '');
+      const marker = (worktree ? t('worktreeThread') : t('localThread')) + (row.context ? ' · ' + row.context.folder.path : '') + (record?.branch ? ' · ' + record.branch : '') + (record?.cleanup ? ' · ' + recoveryLabel(record.cleanup, t) : '') + (worktree ? ' · ' + path : '');
       const state = projectRowState(row), status = row.pending ? t('waiting') : row.running ? t('busy') : row.done ? t('done') : t('idle');
       const owner = { sessionId: row.id, displayTitle: row.title };
       return h('div', { className: 'dsh-wt-thread' + (row.archived ? ' dsh-wt-thread-archived' : ''), role: 'treeitem', 'aria-selected': selected, 'data-menu-open': menu, 'aria-description': row.archived ? t('archived') : undefined },
@@ -1190,7 +1434,7 @@ window.__ModuleLoader__.load({
           worktree && h('span', { className: 'dsh-wt-branch-chip', title: marker, 'aria-label': marker, role: 'img' }, h(Icon, { size: 13 })),
           activity && h('time', { className: 'dsh-wt-thread-time', dateTime: activity.dateTime, title: activity.title, 'aria-label': activity.title }, activity.label),
           !row.session.blank && h('span', { className: 'dsh-wt-thread-actions' }, h(Button, { 'aria-label': t('threadActions') + ' ' + title, onClick: () => setMenu(true) }, '…'), renderSlot(projectSlotName('sidebar.workspaces.session.row.action'), owner), h(Button, { 'aria-label': t('threadDetails'), onClick: () => setHover(value => !value), 'aria-expanded': hover }, 'ⓘ'))),
-        hover && h('div', { className: 'dsh-wt-thread-hover' }, h('div', null, title), h('div', { className: 'dsh-wt-muted' }, status), worktree && record?.branch && h('div', null, h('code', null, record.branch)), h('code', null, path), renderSlot(projectSlotName('sidebar.session.row.hover'), { sessionId: row.id })),
+        hover && h('div', { className: 'dsh-wt-thread-hover' }, h('div', null, title), h('div', { className: 'dsh-wt-muted' }, status), worktree && record?.branch && h('div', null, h('code', null, record.branch)), h('code', null, path), record?.cleanup && h('div', null, recoveryLabel(record.cleanup, t), record.cleanup.reason && h('p', { className: 'dsh-wt-muted' }, record.cleanup.reason.code + ': ' + record.cleanup.reason.message)), renderSlot(projectSlotName('sidebar.session.row.hover'), { sessionId: row.id })),
         menu && h(Dialog, { title: t('threadActions'), t, close: () => setMenu(false) }, h('div', { role: 'menu', className: 'dsh-wt-project-menu', onKeyDown: event => { if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return; const items = [...event.currentTarget.querySelectorAll('[role=menuitem]:not(:disabled)')]; if (!items.length) return; event.preventDefault(); const at = items.indexOf(event.target); items[event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (at + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus(); } }, renderSlot(projectSlotName('sidebar.workspaces.session.menu.item'), owner, { hookContext: [menu, setMenu] }))));
     }
     function ProjectGroup({ group, selectedId, runtime, metadata, renderSlot, t, searching, onManage, now }) {
@@ -1283,14 +1527,15 @@ window.__ModuleLoader__.load({
           h('div', { role: 'menu', 'aria-label': t(local ? 'localBranches' : 'remoteBranches'), className: 'dsh-wt-branch-list', 'aria-busy': state.loading, onKeyDown: menuKeys }, state.loading ? h('div', { role: 'status', className: 'dsh-wt-branch-help' }, t('loading')) : matches.length ? matches.map(item => h(Button, { key: item.name, role: 'menuitemradio', 'aria-checked': branch === item.name, disabled, className: 'dsh-wt-branch-item', title: item.name, onClick: () => { if (flow.setBranch(item.name)) dismiss(); } }, h('span', { className: 'dsh-wt-choice-check', 'aria-hidden': true }, branch === item.name ? '✓' : ''), h('span', { className: 'dsh-wt-branch-name' }, item.name === 'HEAD' && local ? t('detached') + ' · HEAD' : item.name), local && item.name === (state.status?.repository.branch || 'HEAD') && h('span', { className: 'dsh-wt-branch-badge' }, t('currentBranch')))) : h('div', { className: 'dsh-wt-branch-help', role: 'status' }, t('noBranches'))),
           h('div', { className: 'dsh-wt-branch-help' }, t(local ? 'localBranchHelp' : 'remoteBranchHelp'))));
     }
-    function NewWorktreeControls({ sessionId, flow, projects, repositories, runtime: ctx, t, useSession, useInput, usePanelInfo, useWorkspaces }) {
+    function NewWorktreeControls({ sessionId, flow, projects, repositories, recovery, runtime: ctx, t, useSession, useInput, usePanelInfo, useWorkspaces }) {
       const snapshot = useSession(value => value), empty = useInput(inputEmpty), ready = sourceEligible(snapshot), panel = usePanelInfo(value => value.activePanelId), workspaces = useWorkspaces(value => value);
+      const recoverySource = recovery?.store || emptyRecoveryStore, recoveryState = React.useSyncExternalStore(recoverySource.subscribe, recoverySource.getSnapshot), verified = recoveryVerified(recoveryState, sessionId);
       const state = React.useSyncExternalStore(flow.store.subscribe, flow.store.getSnapshot);
       React.useSyncExternalStore(repositories.store.subscribe, repositories.store.getSnapshot);
       const metadata = React.useSyncExternalStore(projects.store.subscribe, projects.store.getSnapshot), context = projects.context(sessionId);
       const [folderError, setFolderError] = React.useState('');
-      React.useEffect(() => { if (panel || !snapshot.blank || snapshot.subagent !== null) return; try { flow.observe(sessionId); } catch { /* New mode reports the guarded ABI refusal. */ } void repositories.ensure(sessionId); return () => repositories.withdraw(sessionId); }, [flow, repositories, sessionId, ready, panel, snapshot.blank, snapshot.subagent, snapshot.openState, snapshot.removed, context?.project.id, context?.folder.id, context?.folder.path]);
-      if (panel || !snapshot.blank || snapshot.subagent !== null) return null;
+      React.useEffect(() => { if (!verified || panel || !snapshot.blank || snapshot.subagent !== null) return; try { flow.observe(sessionId); } catch { /* New mode reports the guarded ABI refusal. */ } void repositories.ensure(sessionId); return () => repositories.withdraw(sessionId); }, [flow, repositories, sessionId, ready, verified, panel, snapshot.blank, snapshot.subagent, snapshot.openState, snapshot.removed, context?.project.id, context?.folder.id, context?.folder.path]);
+      if (!verified || panel || !snapshot.blank || snapshot.subagent !== null) return null;
       const backing = projectBacking(metadata, workspaces, sessionId), worktree = backing.mode === 'worktree', record = backing.record;
       const selected = state.sessionId === sessionId, busy = selected && state.busy, main = projectMainFolder(context?.project), canWorktree = repositories.enabled(sessionId), blockedNew = selected && state.mode === 'new' && (!canWorktree || state.sourceChanged);
       return h('div', { className: 'dsh-wt dsh-wt-row dsh-wt-create-controls' }, h(Styles),
@@ -1319,11 +1564,66 @@ window.__ModuleLoader__.load({
         state.error && h('p', { role: 'alert', className: 'dsh-wt-error' }, state.error),
         !state.busy && state.op && h('div', { className: 'dsh-wt-row' }, h('code', null, state.op.id), h(Button, { onClick: () => { void flow.reconcile(sessionId); } }, t('reconcile')), state.op.result?.sessionId && h(Button, { onClick: () => flow.openTarget(sessionId) }, t('open'))));
     }
+    function RecoveryNotice({ sessionId, recovery, t }) {
+      const state = React.useSyncExternalStore(recovery.store.subscribe, recovery.store.getSnapshot);
+      if (state.sessionId !== sessionId || !recoveryBlocked(state.info?.cleanup)) return null;
+      const info = state.info, cleanup = info.cleanup, readyHere = info.continuationSessionId === sessionId;
+      const title = cleanup.phase === 'collected' ? 'gcWarning' : cleanup.phase === 'recovery-required' ? 'gcRecovery' : 'gcCollecting';
+      const branches = state.branches.filter(item => item.name.toLocaleLowerCase().includes(state.query.toLocaleLowerCase()));
+      const choosing = cleanup.phase === 'collected' && !info.continuationSessionId && !state.cancelled;
+      return h('section', { className: 'dsh-wt dsh-wt-recovery', 'aria-label': t('gcLocal'), 'aria-busy': state.busy || state.loading }, h(Styles),
+        h('p', { role: 'status', 'aria-live': 'polite' }, t(title)), cleanup.reclaimedAt !== null && h('p', { className: 'dsh-wt-muted' }, t('gcDate', { date: new Date(cleanup.reclaimedAt).toLocaleString() })),
+        info.originalFolder && h('p', { className: 'dsh-wt-muted' }, t('original'), ': ', h('code', null, info.originalFolder)),
+        cleanup.reason && h('p', { className: 'dsh-wt-error' }, cleanup.reason.code + ': ' + cleanup.reason.message),
+        readyHere && h('p', null, t('gcSelected', { branch: info.recoveredBranch ?? 'HEAD' })),
+        !readyHere && info.continuationSessionId && h(Button, { disabled: state.busy || state.loading || !state.checked, onClick: () => { void recovery.openTarget(); } }, t('open')),
+        state.draftHistoryId && h('div', null, h('p', { className: 'dsh-wt-muted' }, t('gcDraftHeld')), h(Button, { onClick: () => { void recovery.openHistory(); } }, t('gcHistoryDraft'))),
+        !readyHere && !info.continuationSessionId && h('p', { className: 'dsh-wt-muted' }, t('gcDraftHeld')),
+        choosing && h(React.Fragment, null, h('p', null, t('gcChoose')), h('p', { className: 'dsh-wt-muted' }, t('gcSwitchWarning')),
+          h('label', { className: 'dsh-wt-field' }, t('search'), h('input', { type: 'search', maxLength: 256, value: state.query, 'aria-label': t('search'), disabled: state.busy, onChange: event => recovery.setQuery(event.target.value) })),
+          h('fieldset', { disabled: state.busy || state.loading || !state.checked }, h('legend', null, t('gcAllBranches')), h('div', { className: 'dsh-wt-recovery-branches' }, ...branches.map(item => h('label', { key: item.name }, h('input', { type: 'radio', name: 'recovery-' + sessionId, checked: state.selected?.name === item.name, onChange: () => recovery.choose(item.name) }), h('span', null, item.name === 'HEAD' ? t('detached') + ' · HEAD' : item.name), item.current && h('span', { className: 'dsh-wt-muted' }, t('gcCurrent')), item.retained && h('span', { className: 'dsh-wt-muted' }, t('gcRetained')))))),
+          !branches.length && h('p', { role: 'status' }, t('noBranches')), info.nextCursor && h(Button, { disabled: state.busy || state.paging || !state.checked, onClick: () => { void recovery.more(); } }, t('more')),
+          h('div', { className: 'dsh-wt-row' }, h(Button, { className: 'dsh-wt-primary', disabled: state.busy || state.loading || !state.checked || !state.selected, onClick: () => { void recovery.resume(); } }, t('gcContinue')), h(Button, { onClick: recovery.cancel }, t('gcReadOnly')))),
+        state.cancelled && !readyHere && h('p', { role: 'status' }, t('gcCancelled')),
+        info.pendingSessionId && !readyHere && h('div', null, h('p', { className: 'dsh-wt-muted' }, t('gcPending')), info.pendingSessionId !== sessionId && h(Button, { disabled: state.busy || state.loading || !state.checked, onClick: () => { void recovery.openPermissions(); } }, t('gcPermissions'))),
+        state.foreignBlock && h('p', { role: 'status', className: 'dsh-wt-muted' }, t('blocked')),
+        state.loading && h('p', { role: 'status' }, t('gcLookup')), state.error && h('p', { role: 'alert', className: 'dsh-wt-error' }, state.error),
+        !readyHere && h('div', { className: 'dsh-wt-row' }, h(Button, { disabled: state.busy || state.loading, onClick: () => { void recovery.refresh(); } }, t('refresh')), state.cancelled && h(Button, { disabled: state.busy || state.loading, onClick: () => { void recovery.retry(); } }, t('gcRetry'))));
+    }
     // Keep the header passive: worktree details are loaded over quiet RPC only
     // after the user opens the manager, never on an ordinary conversation mount.
     function RootFolderSettings({ view, form, t }) {
-      if (view === 'summary') return h('span', null, t('rootSummary'));
-      return h(RootFolderSettingsPage, { form, t });
+      if (view === 'summary') return h('span', null, t('rootSummary') + ' · ' + t('cleanupTitle'));
+      return h(React.Fragment, null, h(RootFolderSettingsPage, { form, t }), h(CleanupSettingsPage, { form, t }));
+    }
+    function CleanupSettingsPage({ form, t }) {
+      const state = form?.state, value = cleanupSettingsValue(state);
+      const [enabled, setEnabled] = React.useState(value.enabled), [days, setDays] = React.useState(String(value.days)), [revision, setRevision] = React.useState(state?.revision), [dirty, setDirty] = React.useState(false);
+      const [busy, setBusy] = React.useState(false), [error, setError] = React.useState(''), [saved, setSaved] = React.useState(false);
+      const pending = React.useRef(null), alive = React.useRef(true), field = React.useId(), help = React.useId();
+      React.useEffect(() => () => { alive.current = false; }, []);
+      React.useEffect(() => {
+        if (!dirty || (pending.current && state?.revision !== pending.current.revision && (pending.current.reset || (value.enabled === pending.current.enabled && value.days === pending.current.days)))) {
+          setEnabled(value.enabled); setDays(String(value.days)); setRevision(state?.revision); setDirty(false); pending.current = null;
+        }
+      }, [value.enabled, value.days, state?.revision, dirty]);
+      const writable = state?.status === 'ready' && state.writable && state.mode === 'host';
+      function changed() { setDirty(true); setSaved(false); setError(''); }
+      async function save(reset = false) {
+        if (busy) return; setBusy(true); setError(''); setSaved(false);
+        try {
+          const next = await writeCleanupSettings(form, enabled, days, revision, reset);
+          if (alive.current) { pending.current = { ...next, revision, reset }; if (reset || (next.enabled === value.enabled && next.days === value.days)) setDirty(false); setSaved(true); }
+        } catch (failure) { if (alive.current) setError(report(t, failure)); }
+        finally { if (alive.current) setBusy(false); }
+      }
+      return h('section', { className: 'dsh-wt dsh-wt-card', 'aria-label': t('cleanupTitle') }, h(Styles), h('h3', null, t('cleanupTitle')),
+        h('form', { onSubmit: event => { event.preventDefault(); void save(); } },
+          h('label', null, h('input', { type: 'checkbox', checked: enabled, disabled: !writable || busy, onChange: event => { setEnabled(event.target.checked); changed(); } }), t('cleanupEnabled')),
+          h('label', { className: 'dsh-wt-field', htmlFor: field }, t('cleanupDays'), h('input', { id: field, type: 'number', min: 1, max: 3650, step: 1, value: days, disabled: !writable || busy, 'aria-describedby': help, onChange: event => { setDays(event.target.value); changed(); } })),
+          h('p', { id: help, className: 'dsh-wt-muted' }, t('cleanupHelp')), h('p', { className: 'dsh-wt-cleanup-danger' }, t('cleanupDanger')),
+          h('div', { className: 'dsh-wt-row' }, h('button', { type: 'submit', disabled: !writable || busy || !dirty }, t(busy ? 'loading' : 'save')), h(Button, { disabled: !writable || busy, onClick: () => { void save(true); } }, t('rootReset'))),
+          !writable && h('p', { role: 'status' }, t('rootUnavailable')), saved && h('p', { role: 'status', 'aria-live': 'polite' }, t('cleanupSaved')), error && h('p', { role: 'alert', className: 'dsh-wt-error' }, error)));
     }
     function RootFolderSettingsPage({ form, t }) {
       const state = form?.state, value = rootFolderValue(state);
@@ -1359,14 +1659,17 @@ window.__ModuleLoader__.load({
       const metadata = React.useSyncExternalStore(projects.store.subscribe, projects.store.getSnapshot), context = projects.context(sessionId), backing = projectBacking(metadata, workspaces, sessionId);
       if (blank || (!context && backing.mode !== 'worktree')) return null;
       const worktree = backing.mode === 'worktree', record = backing.record;
-      const label = [context?.project.title, t(worktree ? 'worktreeThread' : 'local'), record?.branch].filter(Boolean).join(' · ');
+      const label = [context?.project.title, t(worktree ? 'worktreeThread' : 'local'), record?.branch, recoveryLabel(record?.cleanup, t)].filter(Boolean).join(' · ');
       return h('span', { className: 'dsh-wt dsh-wt-muted', title: backing.effectiveCwd }, h(Styles), label);
     }
-    function Manager({ runtime: ctx, projects, t, useSessions, usePanelInfo, useSessionStatus }) {
+    function Manager({ runtime: ctx, projects, recovery, t, useSessions, usePanelInfo, useSessionStatus }) {
       const list = useSessions(value => value);
       const activePanel = usePanelInfo(value => value.activePanelId);
       const sessionStatuses = useSessionStatus(value => value);
-      const actorId = currentActor(list);
+      const selectedActor = currentActor(list), recoveryState = React.useSyncExternalStore(recovery.store.subscribe, recovery.store.getSnapshot), metadata = React.useSyncExternalStore(projects.store.subscribe, projects.store.getSnapshot);
+      const historical = !!selectedActor && !recoveryVerified(recoveryState, selectedActor);
+      // Manager reads must not resolve the reclaimed historical Agent as actor.
+      const actorId = historical ? undefined : selectedActor;
       const [records, setRecords] = React.useState([]);
       const [cursor, setCursor] = React.useState(undefined);
       const [archived, setArchived] = React.useState(false);
@@ -1380,7 +1683,7 @@ window.__ModuleLoader__.load({
         const controller = new AbortController(); lifetime.current = controller;
         const seq = ++generation.current;
         setRecords([]); setCursor(undefined); setError('');
-        if (!actorId || activePanel !== PANEL) return () => controller.abort();
+        if (!actorId || activePanel !== PANEL) { setLoading(false); return () => controller.abort(); }
         setLoading(true);
         requestHost(ctx, actorId, { action: 'list', includeArchived: archived, limit: 50 }, controller.signal).then(data => {
           if (seq !== generation.current || controller.signal.aborted) return;
@@ -1402,7 +1705,7 @@ window.__ModuleLoader__.load({
       return h('section', { className: 'dsh-wt dsh-wt-panel', 'aria-label': t('title') }, h(Styles),
         h('div', { className: 'dsh-wt-row dsh-wt-between' }, h('h2', null, t('title')), h(Button, { onClick: () => ctx.layout.selectPanel(null) }, t('close'))),
         h('p', { className: 'dsh-wt-muted' }, t('retained')),
-        !actorId ? h('p', { role: 'status' }, t('actor')) : h(React.Fragment, null,
+        !actorId ? h(React.Fragment, null, h('p', { role: 'status' }, t(historical ? 'gcChoose' : 'actor')), historical && metadata.records.map(record => h(RecordCard, { key: record.id, record, runtime: ctx, t, actorId: undefined, list, sessionStatuses, onChanged: () => {}, onPreview: () => {} }))) : h(React.Fragment, null,
           h('div', { className: 'dsh-wt-row' }, h(Button, { disabled: loading, onClick: () => setRevision(value => value + 1) }, t('refresh')),
             h('label', null, h('input', { type: 'checkbox', checked: archived, onChange: event => setArchived(event.target.checked) }), t('includeArchived'))),
           loading && h('p', { role: 'status' }, t('loading')),
@@ -1422,10 +1725,12 @@ window.__ModuleLoader__.load({
       const controller = React.useRef(null);
       React.useEffect(() => {
         const abort = new AbortController(); controller.current = abort;
+        if (!actorId || record.state === 'missing' || recoveryBlocked(record.cleanup)) { setCheckout(null); return () => abort.abort(); }
         requestHost(ctx, actorId, { action: 'status', id: record.id }, abort.signal).then(data => { if (!abort.signal.aborted) setCheckout(data.status); }).catch(failure => { if (!abort.signal.aborted) setError(t('statusError') + ': ' + report(t, failure)); });
         return () => abort.abort();
       }, [ctx, actorId, record]);
       async function act(request, open) {
+        if (!actorId) return;
         const signal = controller.current.signal;
         const navigation = open ? ctx.layout.beginNavigation() : null;
         setBusy(true); setError('');
@@ -1443,19 +1748,21 @@ window.__ModuleLoader__.load({
         h('div', { className: 'dsh-wt-row dsh-wt-between' }, h('h3', null, record.branch || t('detached')), h('span', { className: 'dsh-wt-muted' }, t(record.protected ? 'protected' : 'unprotected') + (record.archived ? ' · ' + t('archived') : ''))),
         h('dl', { className: 'dsh-wt-details' },
           h('dt', null, t('base')), h('dd', null, record.remote + '/' + record.remoteBranch + ' · ' + record.baseOid.slice(0, 12)),
-          h('dt', null, t('state')), h('dd', null, record.state + (checkout ? ' · ' + t(checkout.dirty ? 'dirty' : 'clean') + ' · ' + checkout.changes + ' / ' + checkout.untracked : '')),
+          h('dt', null, t('state')), h('dd', null, record.state + (record.cleanup ? ' · ' + recoveryLabel(record.cleanup, t) : '') + (checkout ? ' · ' + t(checkout.dirty ? 'dirty' : 'clean') + ' · ' + checkout.changes + ' / ' + checkout.untracked : '')),
           h('dt', null, t('local')), h('dd', null, h('code', null, record.effectiveCwd)),
           h('dt', null, t('sessions')), h('dd', null, ...record.sessionIds.map(id => h('div', { key: id, className: 'dsh-wt-row' }, h(Button, { onClick: () => ctx.uiWorkspace.openSession(id) }, list.byId[id]?.displayTitle || id), h('span', { className: 'dsh-wt-muted' }, t(sessionStatuses.get(id)?.running ? 'busy' : 'idle')))))),
+        record.cleanup && h('div', { className: 'dsh-wt-muted' }, record.cleanup.phase === 'collected' && h('p', null, t('gcWarning')), record.cleanup.reclaimedAt !== null && h('p', null, t('gcDate', { date: new Date(record.cleanup.reclaimedAt).toLocaleString() })), record.cleanup.reason && h('p', null, record.cleanup.reason.code + ': ' + record.cleanup.reason.message)),
         record.error && h('p', { role: 'alert', className: 'dsh-wt-error' }, record.error),
         h('div', { className: 'dsh-wt-row' },
-          h(Button, { disabled: busy || record.archived || record.state !== 'ready', onClick: () => act({ action: 'start', sourceSessionId: actorId, sessionMode: 'continue' }, true) }, t('open')),
-          h(Button, { disabled: busy || record.archived, onClick: () => setBranchDialog(true) }, t('createBranch')),
-          h(Button, { disabled: busy, onClick: () => act({ action: 'protect', protected: !record.protected }) }, t(record.protected ? 'unprotect' : 'protect')),
-          h(Button, { disabled: busy, onClick: () => act({ action: 'archive', archived: !record.archived }) }, t(record.archived ? 'restore' : 'archive')),
-          h(Button, { disabled: busy || record.state !== 'ready' || !record.sessionIds.includes(actorId), onClick: onPreview }, t('preview'))),
+          h(Button, { disabled: busy || !actorId || record.archived || record.state !== 'ready' || recoveryBlocked(record.cleanup), onClick: () => act({ action: 'start', sourceSessionId: actorId, sessionMode: 'continue' }, true) }, t('open')),
+          h(Button, { disabled: busy || !actorId || record.archived || record.state !== 'ready' || recoveryBlocked(record.cleanup), onClick: () => setBranchDialog(true) }, t('createBranch')),
+          h(Button, { disabled: busy || !actorId, onClick: () => act({ action: 'protect', protected: !record.protected }) }, t(record.protected ? 'unprotect' : 'protect')),
+          h(Button, { disabled: busy || !actorId, onClick: () => act({ action: 'archive', archived: !record.archived }) }, t(record.archived ? 'restore' : 'archive')),
+          h(Button, { disabled: busy || !actorId || record.state !== 'ready' || recoveryBlocked(record.cleanup) || !record.sessionIds.includes(actorId), onClick: onPreview }, t('preview'))),
         !record.sessionIds.includes(actorId) && h('p', { className: 'dsh-wt-muted' }, t('openSource')),
         h('p', { className: 'dsh-wt-muted' }, t('operation') + ': ', h('code', null, record.operationId)),
-        h(Button, { disabled: busy, onClick: async () => {
+        h(Button, { disabled: busy || !actorId, onClick: async () => {
+          if (!actorId) return;
           const signal = controller.current.signal;
           try { const data = await requestHost(ctx, actorId, { action: 'status', operationId: record.operationId }, signal); if (!signal.aborted) setOperationStatus(data); }
           catch (failure) { if (!signal.aborted) setError(report(t, failure)); }
@@ -1543,23 +1850,26 @@ window.__ModuleLoader__.load({
     return {
       inject: ['slots', 'locale', 'conversation', 'sessions', 'uiSession', 'uiWorkspace', 'layout', 'connection', 'workspaces', 'shortcuts'],
       // Export pure protocol/guard functions for Node tests, not a second renderer or service.
-      protocol: Object.freeze({ createRepositoryAvailability, projectMainFolder, draftMainFolder, chooseConversationFolder, rootFolderValue, writeRootFolder, decodeReply, validateData, currentActor, sourceEligible, inputEmpty, captureDraft, draftUnchanged, advertisedDefault, acquireBlock, NATIVE_SUBMIT_ABI, interrupted, leaseNativeSink, setupProgress, prepareWorktree, waitForDraftFiles, createWorktreeFlow, requestHost, absolutePath, projectRequest, projectData, requestProjects, workspaceStructure, projectContext, captureProject, sameProject, projectPath, projectRows, visibleProjectRows, projectActor, projectReady, createProjectStore, projectSlotName, projectChildren, mirrorProjectSlot, createSidebarMode }),
+      protocol: Object.freeze({ cleanupSettingsValue, writeCleanupSettings, cleanupData, recoveryRequest, recoveryData, requestRecovery, recoveryBlocked, recoveryLabel, recoveryBranches, createRecoveryStore, createRepositoryAvailability, projectMainFolder, draftMainFolder, chooseConversationFolder, rootFolderValue, writeRootFolder, decodeReply, validateData, currentActor, sourceEligible, inputEmpty, captureDraft, draftUnchanged, advertisedDefault, acquireBlock, NATIVE_SUBMIT_ABI, interrupted, leaseNativeSink, setupProgress, prepareWorktree, waitForDraftFiles, createWorktreeFlow, requestHost, absolutePath, projectRequest, projectData, requestProjects, workspaceStructure, projectContext, captureProject, sameProject, projectPath, projectRows, visibleProjectRows, projectActor, projectReady, createProjectStore, projectSlotName, projectChildren, mirrorProjectSlot, createSidebarMode }),
       apply(ctx) {
         ctx.effect(() => ctx.locale.register(NS, { en, zh }));
         const projects = createProjectStore(ctx, ctx.locale.bind(NS));
         ctx.effect(() => () => projects.dispose());
+        const recovery = createRecoveryStore(ctx, ctx.locale.bind(NS), projects);
+        ctx.effect(() => () => recovery.dispose());
         const repositories = createRepositoryAvailability(ctx, projects);
         ctx.effect(() => () => repositories.dispose());
         const flow = createWorktreeFlow(ctx, ctx.locale.bind(NS), projects, repositories);
         ctx.effect(() => () => flow.dispose());
         let sidebarMode;
-        const seat = (owner, options, component) => ctx.slots.inject(owner, () => ctx.slots.register({ ...options, locale: NS, inject: () => ({ runtime: ctx, flow, projects, repositories, sidebarMode }) }, component));
+        const seat = (owner, options, component) => ctx.slots.inject(owner, () => ctx.slots.register({ ...options, locale: NS, inject: () => ({ runtime: ctx, flow, projects, repositories, recovery, sidebarMode }) }, component));
         sidebarMode = createSidebarMode(() => seat('sidebar.workspaces', { name: 'sidebar.workspaces', priority: -50, children: projectChildren(ctx) }, ProjectsSidebar));
         ctx.effect(() => () => sidebarMode.dispose());
         for (const source of projectSlots) mirrorProjectSlot(ctx, source);
         registerSidebarViewSwitch(ctx, sidebarMode, SidebarToggle);
         seat('conversation.input.left', { name: 'conversation.input.left', id: PANEL, order: 15 }, NewWorktreeControls);
         seat('conversation.input.dock', { name: 'conversation.input.dock', id: PANEL + '-setup', order: 5 }, SetupProgress);
+        seat('conversation.input.dock', { name: 'conversation.input.dock', id: PANEL + '-recovery', order: 10 }, RecoveryNotice);
         seat('plugins.row.config', { name: 'plugins.row.config', key: '@1yefuwang1/dsh-worktrees#git-worktrees' }, RootFolderSettings);
         seat('conversation.session.header.actions', { name: 'conversation.session.header.actions', id: PANEL, order: 250 }, Header);
         ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: PANEL, order: 450, label: () => ctx.locale.bind(NS)('title') }, Icon));

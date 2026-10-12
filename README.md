@@ -3,14 +3,14 @@
 A **pnpm monorepo with three independently installable DeepSeek Harness plugins**.
 Host halves use strict TypeScript/ESM with declarations; the worktree package also
 contains a persistent plain-JS Web Client. The worktree plugin is packaged as
-`@1yefuwang1/dsh-worktrees@0.2.18`; npm availability follows maintainer approval
+`@1yefuwang1/dsh-worktrees@0.2.20`; npm availability follows maintainer approval
 of the staged release.
 
 | Package | Purpose | DSH behavior |
 | --- | --- | --- |
 | [dsh-copilot-catalog](packages/catalog/README.md) | Account-aware Copilot model discovery | Wraps/replaces the standard pi-ai adapter; preserves its public configuration and credential key |
 | [dsh-copilot-search](<packages/search/README.md>) | Copilot native Responses web search | Registers `github-copilot-search`; does not replace an LLM adapter |
-| [@1yefuwang1/dsh-worktrees](<packages/worktrees/README.md>) | Multi-folder projects with Local/worktree threads | Adds project grouping with metadata-only removal, main-folder defaults and agent folder reminders, worktree indicators, native first-Send lazy setup with visible progress and fast branch naming, manager/reminders and guarded Local handoff; no core or LLM adapter changes |
+| [@1yefuwang1/dsh-worktrees](<packages/worktrees/README.md>) | Multi-folder projects with Local/worktree threads | Adds metadata-only project grouping, main-folder defaults/reminders, native first-Send worktree setup and branch naming, configurable inactivity cleanup, explicit branch-choice Local recovery with staged input and exact-ID reuse, and guarded handoff; no core or LLM adapter changes |
 
 The repository root is **private development tooling**, not a DSH plugin. Install
 or link a leaf package, not the root Git URL. The existing catalog npm name and
@@ -62,8 +62,16 @@ instead of assuming a registry release exists.
   Mode selection performs no setup; the checkout directory stays fixed. Cross-root Git mutations
   require the actual caller's existing Full access. Handoff is guarded but not
   globally atomic; external writers must stop.
-  Archive retains files/history, and unsupported LFS/filter/sparse/partial/submodule
-  repositories fail explicitly.
+  Archive itself retains files/history; enabled inactivity cleanup can later reclaim
+  a checkout regardless of archive status. Cleanup defaults to 10 days without user
+  messages, discards unsaved files, retains Git branches/history, and defers every
+  loaded runtime or known active/protected checkout. Reopening asks for a Local
+  branch and shows a persistent warning. Recovery stages the real target under the
+  factory's existing initialization claim; held jobs/terminals and fresh Local owners
+  are checked at managed process-spawn boundaries. Validated/flushed history and a
+  ready journal commit the exact continuation independently of later live publication.
+  **Continue/Open Local** are explicit actions: recovery metadata never navigates
+  automatically or overrides a newer native selection. Unsupported repositories fail explicitly.
 
 Package READMEs describe settings, account precedence and non-destructive recovery.
 Development checks do not enable plugins in an active profile or use real credentials.
@@ -74,12 +82,15 @@ From the repository root:
 
 ```sh
 pnpm install --frozen-lockfile --ignore-scripts
-pnpm run build
-pnpm run verify
+pnpm --config.ignore-scripts=true run build
+pnpm --config.ignore-scripts=true run verify
 ```
 
-Install with dependency lifecycle scripts off; builds are explicit. Commit the
-pnpm lockfile only. Do not add npm lockfiles or install from a leaf directory.
+Install with dependency lifecycle scripts off; builds are explicit. Carry the
+explicit `--config.ignore-scripts=true` on run/pack commands when manifests changed:
+pnpm 11 can install automatically before a run, and an environment-only flag may
+not suppress leaf prepare scripts. Explicitly requested build/test scripts still run.
+Commit the pnpm lockfile only. Do not add npm lockfiles or install from a leaf directory.
 
 Target one package:
 
@@ -119,9 +130,13 @@ pnpm --dir packages/search pack --pack-destination ../../artifacts --config.igno
 7. Exact pnpm publication allowlists and every exported file target.
 
 There are **no live Copilot requests or sign-in flows** in the suite. Search tests
-validate construction/parsing, not live model/account acceptance. Worktree Client
-checks are static/pure protocols, not a fake DOM/screenshot or live GUI probe.
-Installed slot registration, interaction and light/dark appearance require
+validate construction/parsing, not live model/account acceptance. Worktree checks
+include Client protocols and real React interaction fixtures, production Local
+owner/resource guards, temporary Git repositories, and the pinned AgentLoop/native
+Session controller with goals/presets/policies and JSONL persistence. They exercise
+staged create/resume, queued input, native permissions, publication-failure retries
+and shutdown without reclaiming any user checkout. These fixtures are not a live GUI
+probe: installed slot registration, interaction and light/dark appearance require
 separate browser verification.
 
 ## Native-search prerequisites
@@ -163,7 +178,17 @@ A release selects **one package**, never the root or multiple packages at once:
 The tag must match its leaf version and repository identity. Catalog is currently
 `0.2.2`, adding GHE Cloud endpoint support; published versions cannot be republished. Search is currently
 `0.1.2`, adding GHE Cloud endpoint support alongside the Copilot stream-ID compatibility fix.
-Worktrees is `@1yefuwang1/dsh-worktrees@0.2.18`, adding theme-aligned Local/New worktree controls and local or remote starting branches. The current local branch is the default; local worktree creation does not fetch, while remote creation keeps the fresh-fetch path. Branch search filters cached lists, selection dismisses automatically, and Refresh keeps the picker open. It retains capability-aware folder entry, persistent multi-folder projects, metadata-only removal, native-aligned browsing, first-Send setup, staged progress and guarded Local handoff. Version `0.2.14` is published; `0.2.18` becomes available after staged-release approval. The unrelated unscoped npm name is not an alias for this plugin.
+Worktrees is `@1yefuwang1/dsh-worktrees@0.2.20`, correcting real factory staging,
+held-target resource checks, Local runtime admission/spawn guards, and late navigation
+races in the unreleased cleanup/Local-recovery work. Ready recovery commits durable
+branch/history/Workspace facts and the existing continuation identity; later publication
+errors do not downgrade it. Explicit Continue/Open Local retains navigation authority.
+Cleanup still discards unsaved checkout files after messaging-only inactivity while
+retaining Git branches and conversation history; loaded runtimes and active/protected
+work defer it. Existing local/remote starting branches, themed controls, multi-folder
+projects and guarded handoff are retained. This is an unreleased development version;
+npm availability requires staged-release approval. The unrelated unscoped npm name is
+not an alias for this plugin.
 
 The [release workflow](.github/workflows/publish.yml) installs/verifies with pnpm,
 then uses native `pnpm stage publish` to stage **only the selected leaf** through

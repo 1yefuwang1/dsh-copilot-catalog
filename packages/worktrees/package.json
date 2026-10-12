@@ -1,7 +1,7 @@
 {
   "name": "@1yefuwang1/dsh-worktrees",
-  "version": "0.2.18",
-  "description": "Multi-folder projects with Local and isolated Git worktree threads, local or freshly fetched remote starting branches and guarded local handoff.",
+  "version": "0.2.20",
+  "description": "Multi-folder projects with Local and isolated Git worktree threads, configurable inactivity cleanup, warning/branch-choice Local recovery and guarded handoff.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

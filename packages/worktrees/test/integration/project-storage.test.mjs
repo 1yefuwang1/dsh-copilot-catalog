@@ -173,7 +173,7 @@ test('removed sources support independent worktree creation and retained worktre
     async create(input) { await mkdir(input.destination, { recursive: true }); return { checkoutRoot: input.destination, effectiveCwd: input.destination, baseOid: state.head, baseRef: input.baseRef, fetchedAt: 2 }; },
     async verify(record) { return { ...state, branch: record.branch }; }, async status() { return state; }, async createBranch(_record, branch) { return { ...state, branch }; },
   };
-  const controller = new WorktreeController({ get: () => undefined }, { ...Config({}), root: resolve(f.root, 'independent-managed') }, store, {
+  const controller = new WorktreeController(new Context(), { ...Config({}), root: resolve(f.root, 'independent-managed') }, store, {
     projects: projects.controller, bootstrap, localPath: (agent, path) => realpath(path ?? agent.session.header.cwd),
     git: (_agent, _signal, guard) => Object.fromEntries(Object.entries(git).map(([name, method]) => [name, async (...args) => { guard(); return method(...args); }])),
   });

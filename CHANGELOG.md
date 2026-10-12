@@ -1,5 +1,31 @@
 # Monorepo changelog
 
+## @1yefuwang1/dsh-worktrees 0.2.20 — Unreleased review fixes
+
+- Stage Local recovery under the actual runtime factory's existing initialization
+  claim, avoiding nested maintenance and preserving queued input/native controls.
+- Keep terminal/job validation for held targets; fence Local runtime admission and
+  revalidate the complete owner/resource set immediately before process spawning.
+- Treat the validated chosen Local branch, flushed history/Workspace association
+  and ready journal as the durable recovery commit. Later publication errors retain
+  ready and the exact continuation, with controlled failure/native same-ID retry
+  guidance rather than a recovery-required downgrade or another branch switch.
+- Let recovery metadata update warnings and explicit Open Local actions, never
+  override newer or pre-existing navigation with an automatic redirect.
+- Add actual factory create/resume/publication-failure integration and production
+  Local-claim/guard regressions instead of relying only on simplified mocks.
+
+## @1yefuwang1/dsh-worktrees 0.2.19 — Unreleased
+
+- Add configurable 10-day messaging-only worktree cleanup, independent of archive;
+  defer every loaded runtime, protected checkout and known active/uncertain work.
+- Permanently discard unsaved checkout files while retaining branches, commit
+  recovery refs and history; use exact Git identity and cold writer claims.
+- Journal GC and one Local continuation per historical thread, ask for a branch,
+  preserve full history/settings, show warnings, and never silently apply old code.
+- Add live settings, global quiet recovery UI, pre-turn input holds and regression
+  coverage for Git, leases, crash recovery, RPC and real Client interactions.
+
 ## @1yefuwang1/dsh-worktrees 0.2.18
 
 - Align Local/New worktree controls, native menu colors and the search field with
@@ -80,4 +106,4 @@ Package history and versions are independent:
 
 - [Catalog changelog](packages/catalog/CHANGELOG.md) — `0.2.2` GHE Cloud endpoint support; earlier versions previously published.
 - [Search changelog](<packages/search/CHANGELOG.md>) — `0.1.2` GHE Cloud endpoint support; `0.1.1` first public native-search release and streaming compatibility fix.
-- [Worktrees changelog](<packages/worktrees/CHANGELOG.md>) — `@1yefuwang1/dsh-worktrees@0.2.18`; staged release requires maintainer approval before npm availability.
+- [Worktrees changelog](<packages/worktrees/CHANGELOG.md>) — `@1yefuwang1/dsh-worktrees@0.2.20`; unreleased review fixes for staged Local recovery, owner/resource guards and explicit-only navigation, requiring staged-release approval before npm availability.

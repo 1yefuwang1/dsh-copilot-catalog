@@ -1,5 +1,6 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { mkdir, realpath, readFile, stat } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import type { Context } from '@deepseek-ai/cordis';
 import type { Agent } from '@deepseek-ai/dsh-agent';
@@ -12,7 +13,7 @@ import { SessionBootstrap, type SessionSettings } from './sessions.js';
 import { fallbackName, generateWorktreeName, NAMING_DEFAULTS, NAMING_INPUT_CHARS, namingConfig } from './naming.js';
 import type { WorktreeStore } from './store.js';
 import type { ProjectController } from './projects.js';
-import type { CheckoutState, CreateCheckoutInput, LocalBranches, OperationRecord, RemoteBranches, RepositoryInfo, SessionResult, WorktreeConfig, WorktreePreview, WorktreeRecord, WorktreeRequest, WorktreeSetupProgress } from './types.js';
+import type { CheckoutState, CreateCheckoutInput, LocalBranches, OperationRecord, RemoteBranches, RepositoryInfo, SessionResult, WorktreeCleanupSummary, WorktreeConfig, WorktreePreview, WorktreeRecord, WorktreeRequest, WorktreeReopenInfo, WorktreeReopenResult, WorktreeSetupProgress } from './types.js';
 
 export interface Invocation {
   agent: Agent; origin: 'tool' | 'command' | 'ui'; signal: AbortSignal;
@@ -23,7 +24,14 @@ export interface Invocation {
 }
 type GitApi = Pick<GitOperations, 'discover' | 'remotes' | 'branches' | 'localBranches' | 'create' | 'verify' | 'status' | 'createBranch' | 'renameBranch' | 'fingerprint' | 'snapshot' | 'apply'>;
 type BootstrapApi = Pick<SessionBootstrap, 'actor' | 'isLive' | 'settings' | 'assertBlank' | 'create' | 'close'>;
+export interface RecoveryInvocation { agent?: Agent; origin: Invocation['origin']; signal: AbortSignal }
+export interface WorktreeLifecycle {
+  summary(id: string): WorktreeCleanupSummary | undefined;
+  info(sourceSessionId: string, signal: AbortSignal, options?: Pick<WorktreeRequest, 'cursor' | 'limit'>): Promise<WorktreeReopenInfo>;
+  reopen(request: WorktreeRequest, invocation: RecoveryInvocation): Promise<WorktreeReopenResult>;
+}
 export interface ControllerDependencies {
+  lifecycle?: () => WorktreeLifecycle | undefined;
   git?: (actor: Agent, signal: AbortSignal, guard: () => void) => GitApi;
   bootstrap?: BootstrapApi;
   /** Live destination setting for newly admitted creates only; other roots stay static. */
@@ -37,6 +45,7 @@ interface AgentsCapability { list(): Agent[] }
 interface JobsCapability { list(sessionId?: Agent['id']): { status: string }[] }
 interface TerminalsCapability { hasOwnerActivity(agent: Agent): boolean }
 interface TerminalControllerCapability { list(sessionId: Agent['id']): { state: string }[] }
+interface LocalClaimFence { roots: readonly string[]; accepted: ReadonlySet<Agent> }
 type BranchGeneration = { id: string; repository: string } & ({ branchSource: 'remote'; value: RemoteBranches } | { branchSource: 'local'; value: LocalBranches });
 
 /** Validate before any filesystem/Git/naming effects; legacy plain configs may be relative. */
@@ -87,11 +96,69 @@ export class WorktreeController {
   private readonly namingPreparations = new Map<string, { agent: Agent; task: Promise<void> }>();
   private generation: BranchGeneration | undefined;
   private readonly cursors = new Map<string, { key: string; offset: number }>();
+  private readonly localFences = new Set<LocalClaimFence>();
+  private readonly stops: Array<() => void> = [];
   private closed = false;
   constructor(private readonly owner: Context, private readonly config: WorktreeConfig, private readonly store: WorktreeStore, private readonly dependencies: ControllerDependencies = {}) {
     this.bootstrap = dependencies.bootstrap ?? new SessionBootstrap(owner);
+    this.stops.push(owner.on('agent/created', async ({ agent }) => {
+      const cwd = agent.session.header.cwd;
+      if (cwd === undefined || this.localFences.size === 0) return undefined;
+      const canonical = await realpath(cwd).catch(() => { throw new WorktreeError('BUSY_UNKNOWN', 'New runtime admission cannot verify its directory during Local maintenance.'); });
+      for (const fence of this.localFences) if (fence.roots.some(root => contained(root, canonical)) && !fence.accepted.has(agent)) throw new WorktreeError('LOCAL_MAINTENANCE', 'Local branch recovery holds this checkout; retry runtime creation after it finishes.');
+      return undefined;
+    }));
   }
-  records(): WorktreeRecord[] { return [...this.store.worktrees.entries()].map(([, record]) => clone(record)); }
+  records(): WorktreeRecord[] {
+    return [...this.store.worktrees.entries()].map(([, record]) => {
+      const cleanup = this.dependencies.lifecycle?.()?.summary(record.id);
+      return { ...clone(record), ...(cleanup === undefined ? {} : { cleanup }) };
+    });
+  }
+  /** Share the same queue and shutdown drain with unattended lifecycle effects. */
+  withRepositoryMaintenance<T>(commonDir: string, signal: AbortSignal, task: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    return this.namingTask(signal, lifetime => this.queued(commonDir, lifetime, () => task(lifetime)));
+  }
+  /** Exclude existing holds only from driver acquisition, never from resource validation.
+   * The returned synchronous guard must run at the managed process spawn boundary.
+   */
+  withLocalClaims<T>(roots: readonly string[], invocation: Invocation, task: (signal: AbortSignal, guardClaims: () => void) => Promise<T>, alreadyHeld: readonly Agent[] = []): Promise<T> {
+    return this.namingTask(invocation.signal, async signal => {
+      const canonicalRoots = roots.map(root => {
+        if (!isAbsolute(root) || resolve(root) !== root || realpathSync(root) !== root) throw new WorktreeError('INVALID_LOCAL_ROOT', 'Local maintenance requires exact canonical checkout roots.');
+        return root;
+      });
+      const accepted = new Set(required<AgentsCapability>(this.owner, 'agents').list());
+      const fence: LocalClaimFence = { roots: canonicalRoots, accepted }; this.localFences.add(fence);
+      try {
+        const scoped = { ...invocation, signal }, held = new Set(alreadyHeld);
+        const all = this.candidatesNow(canonicalRoots);
+        if (alreadyHeld.some(agent => !all.includes(agent))) throw new WorktreeError('BUSY', 'A supplied held runtime is no longer the exact Local owner.');
+        this.checkIdle(all, scoped, held);
+        const drivers = all.filter(agent => !held.has(agent));
+        return await this.claims(drivers, scoped, async maintenance => {
+          const claimed = { ...scoped, signal: maintenance };
+          const guardClaims = () => {
+            abortIfRequested(maintenance);
+            if (this.closed) throw new WorktreeError('CLOSED', 'Local maintenance is closing.');
+            if (canonicalRoots.some(root => realpathSync(root) !== root)) throw new WorktreeError('BUSY_UNKNOWN', 'A Local maintenance root changed.');
+            const current = this.candidatesNow(canonicalRoots);
+            if (current.length !== all.length || current.some(agent => !all.includes(agent))) throw new WorktreeError('BUSY', 'A Local runtime was created, resumed, replaced or disposed during branch recovery.');
+            this.checkIdle(current, claimed, held);
+          };
+          guardClaims();
+          const result = await task(maintenance, guardClaims);
+          guardClaims();
+          return result;
+        });
+      } finally { this.localFences.delete(fence); }
+    });
+  }
+  hasPendingEffects(record: WorktreeRecord): boolean {
+    if (this.namingPreparations.has(record.id) || ['generating', 'generated', 'renaming'].includes(record.firstMessageNaming?.phase ?? '')) return true;
+    return [...this.store.operations.entries()].some(([, operation]) => !['ready', 'cancelled-before-effects'].includes(operation.phase)
+      && (operation.worktreeId === record.id || (operation.targetRoot !== null && contained(record.checkoutRoot, operation.targetRoot))));
+  }
   cachedStatus(id: string): CheckoutState | undefined { const state = this.statuses.get(id); return state === undefined ? undefined : clone(state); }
   execute(request: WorktreeRequest, invocation: Invocation): Promise<unknown> {
     if (this.closed) return Promise.reject(new WorktreeError('CLOSED', 'The worktree controller is closing.'));
@@ -261,6 +328,8 @@ export class WorktreeController {
     this.closed = true; this.shutdown.abort();
     await Promise.allSettled([...this.flights]);
     await this.bootstrap.close();
+    for (const stop of this.stops.splice(0)) stop();
+    this.localFences.clear();
     this.previews.clear(); this.cursors.clear(); this.statuses.clear();
   }
   private guard(request: WorktreeRequest, invocation: Invocation): void {
@@ -336,6 +405,11 @@ export class WorktreeController {
   }
   private async run(request: WorktreeRequest, invocation: Invocation): Promise<unknown> {
     this.guard(request, invocation);
+    if (request.action === 'reopen-info' || request.action === 'reopen') {
+      const lifecycle = this.dependencies.lifecycle?.();
+      if (lifecycle === undefined) throw new WorktreeError('MISSING_CLEANUP', 'Worktree recovery is unavailable in this composition.');
+      return request.action === 'reopen-info' ? lifecycle.info(requiredText(request.sourceSessionId, 'sourceSessionId'), invocation.signal, request) : lifecycle.reopen(request, invocation);
+    }
     if (request.action === 'start' || request.action === 'branch' || request.action === 'export' || (request.action === 'status' && request.id !== undefined)) await this.local(invocation.agent, undefined, invocation.signal);
     const git = this.git(request, invocation);
     if (request.action === 'create' || request.action === 'handoff') return this.queued(`operation:${requiredText(request.operationId, 'operationId')}`, invocation.signal, () => request.action === 'create' ? this.create(request, invocation, git) : this.handoff(request, invocation, git));
@@ -385,10 +459,13 @@ export class WorktreeController {
     }
     if (request.id !== undefined) {
       const record = this.record(request.id);
+      const cleanup = this.dependencies.lifecycle?.()?.summary(record.id);
       let state: CheckoutState | null = null;
-      try { state = await git.verify(record, invocation.signal); this.statuses.set(record.id, state); }
-      catch (error) { abortIfRequested(invocation.signal); if (!(error instanceof WorktreeError)) throw error; this.statuses.delete(record.id); }
-      return { worktree: record, status: state, settingsHash: settings.hash };
+      if (cleanup?.phase !== 'collected') {
+        try { state = await git.verify(record, invocation.signal); this.statuses.set(record.id, state); }
+        catch (error) { abortIfRequested(invocation.signal); if (!(error instanceof WorktreeError)) throw error; this.statuses.delete(record.id); }
+      } else this.statuses.delete(record.id);
+      return { worktree: { ...record, ...(cleanup === undefined ? {} : { cleanup }) }, status: state, settingsHash: settings.hash };
     }
     const path = await this.local(invocation.agent, request.repoPath, invocation.signal);
     const repository = await git.discover(path, invocation.signal);
@@ -616,6 +693,17 @@ export class WorktreeController {
       await this.sameSettings(source, settings, request, invocation); operation = await this.phase(operation, 'ready', request, invocation); return this.operationResult(operation);
     } catch (error) { await this.journalFailure(operation.id, error, true); throw error; }
   }
+  /** Synchronous effect-boundary lookup; never accepts a stale Local owner snapshot. */
+  private candidatesNow(roots: readonly string[]): Agent[] {
+    const result: Agent[] = [];
+    for (const agent of required<AgentsCapability>(this.owner, 'agents').list()) {
+      const cwd = agent.session.header.cwd; if (cwd === undefined) continue;
+      let canonical: string;
+      try { canonical = realpathSync(cwd); } catch { throw new WorktreeError('BUSY_UNKNOWN', 'A live runtime directory cannot be verified at the Local mutation boundary.'); }
+      if (roots.some(root => contained(root, canonical))) result.push(agent);
+    }
+    return result.sort((left, right) => left.id.localeCompare(right.id));
+  }
   private async candidates(roots: readonly string[], signal: AbortSignal): Promise<Agent[]> {
     const agents = required<AgentsCapability>(this.owner, 'agents').list();
     const candidates: Agent[] = [];
@@ -628,9 +716,9 @@ export class WorktreeController {
     }
     return candidates.sort((a, b) => a.id.localeCompare(b.id));
   }
-  private checkIdle(agents: readonly Agent[], invocation: Invocation): void {
+  private checkIdle(agents: readonly Agent[], invocation: Invocation, inboxHeld: ReadonlySet<Agent> = new Set()): void {
     for (const agent of agents) {
-      if (!this.bootstrap.isLive(agent) || agent.status !== 'idle' || agent.inbox.nextStep.length > 0 || agent.inbox.nextTurn.length > 0) throw new WorktreeError('BUSY', 'A known source or target session has active or pending work. Finish it before handoff; the invoking tool never waits for its own turn.');
+      if (!this.bootstrap.isLive(agent) || agent.status !== 'idle' || (!inboxHeld.has(agent) && (agent.inbox.nextStep.length > 0 || agent.inbox.nextTurn.length > 0))) throw new WorktreeError('BUSY', 'A known source or target session has active or pending work. Finish it before handoff; the invoking tool never waits for its own turn.');
       try {
         if (capability<JobsCapability>(this.owner, 'jobs')?.list(agent.id).some(job => job.status === 'running' || job.status === 'stopping')) throw new WorktreeError('BUSY', 'Known background jobs are still running or stopping.');
         if (capability<TerminalsCapability>(this.owner, 'terminals')?.hasOwnerActivity(agent)) throw new WorktreeError('BUSY', 'A known terminal still owns activity in the checkout.');

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, mkdir, mkdtemp, open, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, open, opendir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { CheckoutState, CreateCheckoutInput, CreatedCheckout, GitExecutor, GitRunResult, PatchFile, LocalBranches, RemoteBranches, RemoteInfo, RepositoryInfo, SnapshotInput, WorktreeConfig, WorktreePreview, WorktreeRecord } from './types.js';
 import { abortIfRequested, WorktreeError } from './errors.js';
@@ -23,6 +23,33 @@ const selectors = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE
 type PrivateStore = { root: string; env: NodeJS.ProcessEnv };
 type Entry = { path: string; mode: string; oid: string };
 type Status = { state: CheckoutState; raw: Buffer; paths: string[] };
+
+/** Durable observations, not deletion authority. Rechecked under the caller's maintenance claim. */
+export interface RemovalIdentity {
+  checkoutRoot: string;
+  sourceRoot: string;
+  commonDir: string;
+  adminDir: string;
+  head: string;
+  branch: string | null;
+  checkoutIdentity: string;
+  sourceIdentity: string;
+  commonIdentity: string;
+  adminIdentity: string;
+  pointerIdentity: string;
+  pointerHash: string;
+  backlinkIdentity: string;
+  backlinkHash: string;
+  commonPointerIdentity: string;
+  commonPointerHash: string;
+  sourceMappingIdentity: string;
+  sourceMappingHash: string;
+  privateStateHash: string;
+  retainedHeads: string[];
+}
+export type RemovalState = 'present' | 'absent' | 'partial' | 'replaced';
+type MetadataIdentity = { data: string; identity: string; hash: string };
+type Registration = { root: string; locked: boolean; branch: string | null };
 
 function checkoutProgress(input: CreateCheckoutInput, stage: 'fetching' | 'creating'): void {
   // Observation is not admission. Also absorb rejected promises from JS listeners.
@@ -61,7 +88,7 @@ export class GitOperations {
     return { ...result, ...extra };
   }
 
-  private async run(cwd: string, args: string[], signal?: AbortSignal, options: { env?: NodeJS.ProcessEnv; stdin?: string | Uint8Array; allowed?: number[]; fetch?: boolean; maxBytes?: number } = {}): Promise<GitRunResult> {
+  private async run(cwd: string, args: string[], signal?: AbortSignal, options: { env?: NodeJS.ProcessEnv; stdin?: string | Uint8Array; allowed?: number[]; fetch?: boolean; maxBytes?: number; preflight?: () => Promise<void> } = {}): Promise<GitRunResult> {
     abortIfRequested(signal);
     const maxBytes = options.maxBytes ?? this.config.maxRefBytes;
     try {
@@ -74,6 +101,8 @@ export class GitOperations {
           disabledDrivers.push(`${key}=${key.endsWith('.required') ? 'false' : ''}`);
         }
       }
+      await options.preflight?.();
+      abortIfRequested(signal);
       this.authorize();
       const result = await this.execute({ cwd, args: ['--no-pager', ...[...overrides, ...disabledDrivers].flatMap(value => ['-c', value]), ...args], env: this.env(options.env), signal, stdin: options.stdin, timeoutMs: options.fetch ? this.config.fetchTimeoutMs : this.config.commandTimeoutMs, maxBytes, allowedExitCodes: options.allowed ?? [0] });
       if (result.stdout.length + result.stderr.length > maxBytes) fail('OUTPUT_LIMIT', 'Git output exceeded the configured byte limit.');
@@ -119,7 +148,7 @@ export class GitOperations {
     if (mapping.isSymbolicLink() || (!mapping.isFile() && !mapping.isDirectory()) || (mapping.isDirectory() && commonDir !== path.join(root, '.git'))) fail('UNSUPPORTED_REPOSITORY', 'Unsupported Git admin directory mappings are not supported.');
     const headResult = await this.run(root, ['rev-parse', '--verify', 'HEAD^{commit}'], signal, { allowed: [0, 128] });
     if (headResult.exitCode !== 0) fail('UNBORN_REPOSITORY', 'The repository does not have a committed HEAD.');
-    const branchResult = await this.run(root, ['symbolic-ref', '--quiet', 'HEAD'], signal, { allowed: [0, 1] });
+    const branchResult = await this.run(root, ['symbolic-ref', '--quiet', '--no-recurse', 'HEAD'], signal, { allowed: [0, 1] });
     const branchRef = branchResult.exitCode === 0 ? line(branchResult.stdout) : null;
     if (branchRef !== null && !branchRef.startsWith('refs/heads/')) fail('UNSUPPORTED_REF', 'HEAD must identify a local branch or a detached commit.');
     return { root, commonDir, projectSubdir: path.relative(root, project).split(path.sep).join('/'), head: oid(line(headResult.stdout)), branch: branchRef === null ? null : branchRef.slice(11) };
@@ -226,6 +255,77 @@ export class GitOperations {
     else if (branches.find(branch => branch.name === repository.branch)?.oid !== repository.head) fail('BRANCH_CHANGED', 'The current branch changed during local branch discovery.');
     if (branches.length > this.config.maxFiles) fail('REF_LIMIT', 'The local branch generation exceeds the configured count limit.');
     return { branchSource: 'local', currentBranch: repository.branch, defaultBranch: repository.branch ?? 'HEAD', branches: branches.sort((a, b) => a.name.localeCompare(b.name)), observedAt: Date.now() };
+  }
+
+  /** Safe Local reopening; verifyOnly structurally prohibits every switch path. */
+  async switchLocalBranch(sourcePath: string, expectedCommon: string, localBranch: string, localOid: string, signal?: AbortSignal, verifyOnly = false): Promise<CheckoutState> {
+    if (!localBranch || localBranch.startsWith('-') || !oidPattern.test(localOid)) fail('INVALID_REF', 'An exact local branch and commit selection are required.');
+    const selectedPath = await this.directoryIdentity(sourcePath);
+    const source = await this.discover(sourcePath, signal);
+    if (source.commonDir !== expectedCommon || path.resolve(expectedCommon) !== expectedCommon) fail('CHECKOUT_IDENTITY_CHANGED', 'The original Local repository identity changed.');
+    const rootIdentity = await this.directoryIdentity(source.root); const commonIdentity = await this.directoryIdentity(source.commonDir);
+    await this.registered(source, source.root, signal);
+    const mappingPath = path.join(source.root, '.git');
+    const mapping = async (): Promise<string> => {
+      const info = await lstat(mappingPath);
+      if (info.isDirectory()) return await this.directoryIdentity(mappingPath);
+      const value = await this.metadataIdentity(mappingPath);
+      return JSON.stringify([value.identity, value.hash]);
+    };
+    const mappingIdentity = await mapping();
+    const validateIdentity = async (): Promise<RepositoryInfo> => {
+      if (await this.directoryIdentity(sourcePath) !== selectedPath || await this.directoryIdentity(source.root) !== rootIdentity || await this.directoryIdentity(source.commonDir) !== commonIdentity || await mapping() !== mappingIdentity) fail('CHECKOUT_IDENTITY_CHANGED', 'The original Local directory or admin mapping changed.');
+      const current = await this.identity(source.root, expectedCommon, signal);
+      await this.registered(current, source.root, signal);
+      return current;
+    };
+    const selectedRef = localBranch === 'HEAD' ? null : `refs/heads/${localBranch}`;
+    const changedCode = verifyOnly ? 'LOCAL_BRANCH_CHANGED' : 'BRANCH_CHANGED';
+    const isChosen = (info: Pick<RepositoryInfo, 'head' | 'branch'>): boolean => info.head === localOid && info.branch === (selectedRef === null ? null : localBranch);
+    if (verifyOnly && !isChosen(source)) fail('LOCAL_BRANCH_CHANGED', 'The current Local branch or HEAD changed; verification cannot switch it.');
+    if (selectedRef === null) {
+      // HEAD is the explicit pinned detached option from localBranches, not an
+      // invitation to detach an attached branch or follow its latest commit.
+      if (source.branch !== null || source.head !== localOid) fail(changedCode, 'The selected detached HEAD changed. Reload the local branch list.');
+    } else if (await this.directCommit(source.root, selectedRef, signal) !== localOid) fail(changedCode, 'The selected local branch moved or disappeared. Reload its branch list.');
+    if (isChosen(source)) {
+      const result = await this.statusRaw(source.root, signal, true);
+      if (!isChosen(result.state) || !isChosen(await validateIdentity()) || selectedRef !== null && await this.directCommit(source.root, selectedRef, signal) !== localOid) fail(changedCode, 'The current Local selection changed before reopening.');
+      return result.state;
+    }
+    if (verifyOnly) fail('LOCAL_BRANCH_CHANGED', 'Verification cannot mutate the Local checkout.');
+    const ensureSwitchable = async (): Promise<void> => {
+      const current = await validateIdentity();
+      if (current.head !== source.head || current.branch !== source.branch) fail('BRANCH_CHANGED', 'Local HEAD changed before branch selection.');
+      if (selectedRef === null || await this.directCommit(source.root, selectedRef, signal) !== localOid) fail('BRANCH_CHANGED', 'The selected local branch moved before switching.');
+      const files = await this.files(source.root, signal);
+      if (files.status.state.dirty) fail('LOCAL_DIRTY', 'A different Local branch requires a clean index and working tree.');
+      const ignored = nul((await this.run(source.root, ['ls-files', '--others', '--ignored', '--exclude-standard', '-z'], signal)).stdout);
+      if (ignored.length) fail('LOCAL_DIRTY', 'A different Local branch cannot overwrite or carry ignored files.');
+      await this.removalPaths(source.root, false, signal);
+      const targetEntries = await this.tree(source.root, localOid, signal);
+      if (source.projectSubdir && !targetEntries.some(entry => entry.path.startsWith(`${source.projectSubdir}/`))) fail('PROJECT_SUBDIR_MISSING', 'The chosen branch does not contain the original selected Local folder. No branch was switched.');
+      for (const entry of targetEntries.filter(value => value.mode === '120000')) {
+        const target = text((await this.run(source.root, ['cat-file', 'blob', entry.oid], signal)).stdout);
+        if (!target || path.isAbsolute(target) || !inside(source.root, path.resolve(source.root, path.dirname(entry.path), target))) fail('UNSAFE_SYMLINK', 'The selected Local tree contains an escaping symlink.');
+      }
+      for (const registration of await this.registrations(source.root, signal)) if (registration.branch === selectedRef && path.resolve(registration.root) !== source.root) fail('BRANCH_IN_USE', 'The selected branch is already checked out elsewhere.');
+    };
+    await ensureSwitchable();
+    await ensureSwitchable();
+    abortIfRequested(signal);
+    this.authorize();
+    try {
+      // --no-track implies new-branch creation in Git's switch parser, even for
+      // existing slash names. --no-guess switches only the existing exact branch.
+      await this.run(source.root, ['switch', '--no-overwrite-ignore', '--no-guess', '--', localBranch], signal, { preflight: ensureSwitchable });
+      const after = await validateIdentity();
+      const result = await this.status(source.root, signal);
+      if (!isChosen(after) || result.head !== localOid || result.branch !== localBranch || result.dirty || await this.directCommit(source.root, selectedRef!, signal) !== localOid) fail('LOCAL_SWITCH_RECOVERY_REQUIRED', 'The Local branch switch result changed.');
+      return result;
+    } catch (error) {
+      throw new WorktreeError('LOCAL_SWITCH_RECOVERY_REQUIRED', 'Local branch switching may have begun; inspect it before recovery. No reset, stash or rollback was attempted.', { targetMayHaveChanged: true, causeCode: error instanceof WorktreeError ? error.code : 'GIT_FAILED' });
+    }
   }
 
   private async localBase(repository: RepositoryInfo, input: Extract<CreateCheckoutInput, { branchSource: 'local' }>): Promise<string> {
@@ -363,12 +463,62 @@ export class GitOperations {
     return info;
   }
 
-  private async metadata(file: string): Promise<string> {
-    const info = await lstat(file);
-    if (!info.isFile() || info.isSymbolicLink() || info.size > this.config.maxRefBytes) fail('CHECKOUT_IDENTITY_CHANGED', 'Git admin metadata is not a bounded ordinary file.');
+  private statIdentity(info: { dev: bigint; ino: bigint; birthtimeNs: bigint; mode: bigint }): string {
+    // Lossless identity evidence; mutable directory timestamps deliberately are not
+    // authority. Filesystems without inode identities are unsupported for cleanup.
+    if (info.ino === 0n) fail('CHECKOUT_IDENTITY_CHANGED', 'The filesystem does not provide stable identity evidence.');
+    return JSON.stringify([String(info.dev), String(info.ino), String(info.birthtimeNs), String(info.mode)]);
+  }
+
+  private async directoryIdentity(directory: string): Promise<string> {
+    if (path.resolve(directory) !== directory || await realpath(directory) !== directory) fail('CHECKOUT_IDENTITY_CHANGED', 'A repository directory is not canonical.');
+    const info = await lstat(directory, { bigint: true });
+    if (!info.isDirectory() || info.isSymbolicLink()) fail('CHECKOUT_IDENTITY_CHANGED', 'A repository directory identity changed.');
+    return this.statIdentity(info);
+  }
+
+  private async metadataIdentity(file: string): Promise<MetadataIdentity> {
+    const info = await lstat(file, { bigint: true });
+    if (!info.isFile() || info.isSymbolicLink() || info.size > BigInt(this.config.maxRefBytes)) fail('CHECKOUT_IDENTITY_CHANGED', 'Git admin metadata is not a bounded ordinary file.');
     const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
-    try { const data = await handle.readFile(); if (data.length > this.config.maxRefBytes) fail('OUTPUT_LIMIT', 'Git admin metadata exceeds the configured byte limit.'); return text(data); }
-    finally { await handle.close(); }
+    try {
+      const opened = await handle.stat({ bigint: true });
+      if (this.statIdentity(opened) !== this.statIdentity(info) || !opened.isFile()) fail('CHECKOUT_IDENTITY_CHANGED', 'Git admin metadata was replaced while opening.');
+      const buffer = Buffer.alloc(Math.min(this.config.maxRefBytes + 1, Number(opened.size) + 1));
+      let length = 0;
+      while (length < buffer.length) {
+        const read = await handle.read(buffer, length, buffer.length - length, length);
+        if (read.bytesRead === 0) break;
+        length += read.bytesRead;
+      }
+      const after = await handle.stat({ bigint: true });
+      const current = await lstat(file, { bigint: true });
+      if (this.statIdentity(current) !== this.statIdentity(opened) || after.size !== opened.size || after.mtimeNs !== opened.mtimeNs || after.ctimeNs !== opened.ctimeNs || BigInt(length) !== opened.size) fail('CHECKOUT_IDENTITY_CHANGED', 'Git admin metadata changed while reading.');
+      if (length > this.config.maxRefBytes) fail('OUTPUT_LIMIT', 'Git admin metadata exceeds the configured byte limit.');
+      const data = buffer.subarray(0, length);
+      return { data: text(data), identity: this.statIdentity(opened), hash: hash(data) };
+    } finally { await handle.close(); }
+  }
+
+  private async metadata(file: string): Promise<string> { return (await this.metadataIdentity(file)).data; }
+
+  private async registrations(root: string, signal?: AbortSignal): Promise<Registration[]> {
+    const rows = nul((await this.run(root, ['worktree', 'list', '--porcelain', '-z'], signal)).stdout);
+    const output: Registration[] = [];
+    for (const row of rows) {
+      if (row.startsWith('worktree ')) output.push({ root: row.slice(9), locked: false, branch: null });
+      else if (row.startsWith('branch ')) {
+        const registration = output[output.length - 1];
+        if (!registration || !row.slice(7).startsWith('refs/heads/')) fail('INVALID_GIT_OUTPUT', 'Git returned an invalid worktree branch registration.');
+        registration.branch = row.slice(7);
+      } else if (row === 'locked' || row.startsWith('locked ')) {
+        const registration = output[output.length - 1];
+        if (!registration) fail('INVALID_GIT_OUTPUT', 'Git returned an invalid worktree registration.');
+        registration.locked = true;
+      }
+    }
+    if (output.length > this.config.maxFiles) fail('FILE_LIMIT', 'Git worktree registrations exceed the configured limit.');
+    return output;
   }
 
   private async registered(info: RepositoryInfo, repositoryRoot: string, signal?: AbortSignal): Promise<void> {
@@ -386,8 +536,7 @@ export class GitOperations {
       const common = (await this.metadata(path.join(admin, 'commondir'))).replace(/\n$/u, '');
       if (await realpath(path.resolve(admin, common)) !== info.commonDir) fail('CHECKOUT_IDENTITY_CHANGED', 'The Git admin common directory changed.');
     }
-    const registration = nul((await this.run(repositoryRoot, ['worktree', 'list', '--porcelain', '-z'], signal)).stdout);
-    const roots = registration.filter(value => value.startsWith('worktree ')).map(value => value.slice(9));
+    const roots = (await this.registrations(repositoryRoot, signal)).map(value => value.root);
     // Git reports these machine-formatted, so a raw comparison against the canonical
     // root fails wherever the two forms differ: Windows mixes separators and may
     // report a short name, and a symlinked ancestor appears in one form only. Match
@@ -414,21 +563,262 @@ export class GitOperations {
     return this.status(record.checkoutRoot, signal);
   }
 
-  private async statusRaw(root: string, signal?: AbortSignal): Promise<Status> {
+  private async exists(target: string): Promise<boolean> {
+    return lstat(target).then(() => true, (error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return false; throw error; });
+  }
+
+  private async directCommit(root: string, ref: string, signal?: AbortSignal): Promise<string | null> {
+    await this.ref(root, ref, signal);
+    const symbolic = await this.run(root, ['symbolic-ref', '--quiet', ref], signal, { allowed: [0, 1] });
+    if (symbolic.exitCode === 0) fail('UNSUPPORTED_REF', 'A retained reference must directly identify a commit.');
+    const result = await this.run(root, ['rev-parse', '--verify', '--end-of-options', ref], signal, { allowed: [0, 128] });
+    if (result.exitCode !== 0) return null;
+    const value = oid(line(result.stdout));
+    if (line((await this.run(root, ['cat-file', '-t', value], signal)).stdout) !== 'commit') fail('UNSUPPORTED_REF', 'A retained reference must identify a commit.');
+    return value;
+  }
+
+  private async removalBase(record: WorktreeRecord, sourceRoot: string, signal?: AbortSignal): Promise<void> {
+    if (record.baseRef !== `refs/dsh-worktrees/${record.id}/base` || !oidPattern.test(record.baseOid)) fail('BASE_CHANGED', 'The managed base reference does not match the exact recorded namespace.');
+    if (await this.directCommit(sourceRoot, record.baseRef, signal) !== record.baseOid) fail('BASE_CHANGED', 'The exact managed base reference changed.');
+  }
+
+  /** Bounded physical traversal. Never follow checkout-controlled symlinks. */
+  private async removalPaths(root: string, admin: boolean, signal?: AbortSignal): Promise<string[]> {
+    const files: string[] = []; let count = 0;
+    const visit = async (directory: string): Promise<void> => {
+      abortIfRequested(signal);
+      const before = await this.directoryIdentity(directory);
+      const handle = await opendir(directory);
+      for await (const entry of handle) {
+        abortIfRequested(signal);
+        if (++count > this.config.maxFiles) fail('FILE_LIMIT', 'Removal inspection exceeds the configured path count limit.');
+        const absolute = path.join(directory, entry.name); const relative = path.relative(root, absolute).split(path.sep).join('/');
+        if (admin && (entry.name === 'locked' || entry.name.endsWith('.lock'))) fail('WORKTREE_LOCKED', 'A worktree registration or admin operation is locked.');
+        if (!admin && relative === '.git') continue;
+        if (!admin && entry.name.toLowerCase() === '.git') fail('UNSUPPORTED_CHECKOUT', 'Nested repositories cannot be removed automatically.');
+        const info = await lstat(absolute);
+        if (info.isSymbolicLink()) {
+          if (admin) fail('CHECKOUT_IDENTITY_CHANGED', 'Worktree admin paths cannot be symlinked.');
+          continue; // Git removal unlinks, rather than follows, a working-tree symlink.
+        }
+        if (info.isDirectory()) {
+          if (admin && ['rebase-merge', 'rebase-apply', 'sequencer'].includes(entry.name)) fail('UNSUPPORTED_CHECKOUT', 'An in-progress private history operation must be recovered before cleanup.');
+          if (!admin && await this.exists(path.join(absolute, 'HEAD')) && await this.exists(path.join(absolute, 'objects')) && await this.exists(path.join(absolute, 'refs'))) fail('UNSUPPORTED_CHECKOUT', 'Nested bare repositories cannot be removed automatically.');
+          await visit(absolute);
+        } else if (!info.isFile()) fail('UNSUPPORTED_CHECKOUT', 'Special filesystem entries cannot be removed automatically.');
+        else files.push(relative);
+      }
+      if (await this.directoryIdentity(directory) !== before) fail('CHECKOUT_IDENTITY_CHANGED', 'A inspected directory was replaced.');
+    };
+    await visit(root);
+    return files.sort();
+  }
+
+  private async removalPrivate(root: string, admin: string, head: string, signal?: AbortSignal): Promise<{ privateStateHash: string; retainedHeads: string[] }> {
+    const files = await this.removalPaths(admin, true, signal); const retained = new Set<string>([head]);
+    const digest = createHash('sha256'); let bytes = 0;
+    for (const file of files) {
+      // AUTO_MERGE trees and the real index are unsaved recovery state, not commit
+      // heads. Explicit dirty/conflicted cleanup authorization permits their loss.
+      if (!file.startsWith('refs/') && !file.startsWith('logs/') && !['ORIG_HEAD', 'MERGE_HEAD', 'REBASE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'FETCH_HEAD'].includes(file)) continue;
+      const observed = await this.metadataIdentity(path.join(admin, file));
+      bytes += Buffer.byteLength(observed.data);
+      if (bytes > this.config.maxRefBytes) fail('OUTPUT_LIMIT', 'Private worktree history exceeds the configured byte bound.');
+      digest.update(JSON.stringify([file, observed.identity, observed.hash]));
+      if (observed.data && !observed.data.endsWith('\n')) fail('UNSUPPORTED_CHECKOUT', 'Private worktree history is incomplete.');
+      for (const row of observed.data ? observed.data.slice(0, -1).split('\n') : []) {
+        const values = file.startsWith('logs/') ? row.split(' ').slice(0, 2) : file === 'FETCH_HEAD' ? [row.split('\t')[0]!] : [row];
+        if (file.startsWith('logs/') && values.length !== 2) fail('UNSUPPORTED_CHECKOUT', 'Private reflog history is unsupported.');
+        for (const value of values) {
+          if (/^(?:0{40}|0{64})$/u.test(value)) continue;
+          if (!oidPattern.test(value)) fail('UNSUPPORTED_CHECKOUT', 'Private symbolic or unsupported history prevents automatic cleanup.');
+          retained.add(value);
+        }
+        if (retained.size > this.config.maxFiles) fail('REF_LIMIT', 'Private commit history exceeds the configured count bound.');
+      }
+    }
+    for (const value of retained) if (line((await this.run(root, ['cat-file', '-t', value], signal)).stdout) !== 'commit') fail('UNSUPPORTED_CHECKOUT', 'Private worktree history contains a noncommit object.');
+    return { privateStateHash: digest.digest('hex'), retainedHeads: [...retained].sort() };
+  }
+
+  private sameRemoval(expected: RemovalIdentity, actual: RemovalIdentity): void {
+    for (const key of Object.keys(actual) as (keyof RemovalIdentity)[]) {
+      if (JSON.stringify(actual[key]) !== JSON.stringify(expected[key])) fail(key === 'head' || key === 'branch' ? 'HEAD_CHANGED' : 'CHECKOUT_IDENTITY_CHANGED', 'The inspected removal identity changed; no checkout was deleted.');
+    }
+  }
+
+  /** Dirty, missing project subdirectories and conflicted indexes are allowed. */
+  async inspectRemoval(record: WorktreeRecord, sourceRoot: string, signal?: AbortSignal): Promise<RemovalIdentity> {
+    try {
+      const checkoutIdentity = await this.directoryIdentity(record.checkoutRoot);
+      const managedRoot = await realpath(path.resolve(this.config.root));
+      if (managedRoot !== path.resolve(this.config.root) || record.checkoutRoot === managedRoot || !inside(managedRoot, record.checkoutRoot)) fail('CHECKOUT_IDENTITY_CHANGED', 'The checkout is outside the configured canonical managed root.');
+      const sourceIdentity = await this.directoryIdentity(sourceRoot);
+      const commonIdentity = await this.directoryIdentity(record.commonDir);
+      if (inside(sourceRoot, record.checkoutRoot) || inside(record.checkoutRoot, sourceRoot) || inside(record.checkoutRoot, record.commonDir) || inside(record.commonDir, record.checkoutRoot)) fail('CHECKOUT_IDENTITY_CHANGED', 'Source, object storage and managed checkout paths must be distinct and unnested.');
+      const pointer = await this.metadataIdentity(path.join(record.checkoutRoot, '.git'));
+      const source = await this.identity(sourceRoot, record.commonDir, signal);
+      const info = await this.identity(record.checkoutRoot, record.commonDir, signal);
+      await this.registered(source, sourceRoot, signal);
+      await this.registered(info, sourceRoot, signal);
+      if (!pointer.data.startsWith('gitdir: ') || !pointer.data.endsWith('\n') || /[\0\r\n]/u.test(pointer.data.slice(8, -1))) fail('CHECKOUT_IDENTITY_CHANGED', 'The managed .git pointer is invalid.');
+      const adminDir = path.resolve(info.root, pointer.data.slice(8, -1));
+      const adminIdentity = await this.directoryIdentity(adminDir);
+      if (path.dirname(adminDir) !== path.join(info.commonDir, 'worktrees') || line((await this.run(info.root, ['rev-parse', '--absolute-git-dir'], signal)).stdout) !== adminDir) fail('CHECKOUT_IDENTITY_CHANGED', 'The worktree admin identity changed.');
+      const backlink = await this.metadataIdentity(path.join(adminDir, 'gitdir'));
+      const commonPointer = await this.metadataIdentity(path.join(adminDir, 'commondir'));
+      for (const value of [backlink.data, commonPointer.data]) if (!value.endsWith('\n') || /[\0\r\n]/u.test(value.slice(0, -1))) fail('CHECKOUT_IDENTITY_CHANGED', 'The worktree admin mapping is invalid.');
+      if (path.resolve(adminDir, backlink.data.slice(0, -1)) !== path.join(info.root, '.git') || path.resolve(adminDir, commonPointer.data.slice(0, -1)) !== info.commonDir) fail('CHECKOUT_IDENTITY_CHANGED', 'The exact admin backlink or common directory changed.');
+      const registrations = await this.registrations(sourceRoot, signal);
+      const matches = registrations.filter(value => path.resolve(value.root) === info.root);
+      if (matches.length !== 1) fail('CHECKOUT_IDENTITY_CHANGED', 'The exact managed root is not uniquely registered.');
+      if (matches[0]!.locked) fail('WORKTREE_LOCKED', 'Locked registrations cannot be removed automatically.');
+      await this.removalBase(record, sourceRoot, signal);
+      if (info.branch !== null && await this.directCommit(info.root, `refs/heads/${info.branch}`, signal) !== info.head) fail('HEAD_CHANGED', 'The current worktree branch changed or is unsupported.');
+      // Common ref/config locks also indicate native Git maintenance, even when
+      // no managed Agent is live. Never remove through a concurrent ref update.
+      const commonEntries = await opendir(info.commonDir);
+      let commonCount = 0;
+      for await (const entry of commonEntries) {
+        if (++commonCount > this.config.maxFiles) fail('FILE_LIMIT', 'Common admin inspection exceeds its count bound.');
+        if (entry.name.endsWith('.lock')) fail('WORKTREE_LOCKED', 'Shared Git admin maintenance is locked.');
+      }
+      if (await this.exists(path.join(info.commonDir, 'refs'))) await this.removalPaths(path.join(info.commonDir, 'refs'), true, signal);
+      await this.tree(info.root, info.head, signal);
+      const index = nul((await this.run(info.root, ['ls-files', '--stage', '-z'], signal)).stdout);
+      if (index.length > this.config.maxFiles) fail('FILE_LIMIT', 'The index exceeds the configured entry count bound.');
+      for (const entry of index) {
+        const tab = entry.indexOf('\t');
+        if (tab < 0 || !/^(?:100644|100755|120000) [a-f0-9]{40}(?:[a-f0-9]{24})? [0-3]$/u.test(entry.slice(0, tab))) fail('UNSUPPORTED_CHECKOUT', 'Submodules or unsupported index entries prevent automatic cleanup.');
+        validPath(entry.slice(tab + 1));
+      }
+      await this.removalPaths(info.root, false, signal);
+      const privateState = await this.removalPrivate(info.root, adminDir, info.head, signal);
+      const sourceMappingPath = path.join(sourceRoot, '.git'); const sourceMapping = await lstat(sourceMappingPath);
+      const sourceMappingEvidence = sourceMapping.isDirectory() ? { identity: await this.directoryIdentity(sourceMappingPath), hash: '' } : await this.metadataIdentity(sourceMappingPath);
+      const sourceMappingIdentity = sourceMappingEvidence.identity; const sourceMappingHash = sourceMappingEvidence.hash;
+      const result: RemovalIdentity = { checkoutRoot: info.root, sourceRoot, commonDir: info.commonDir, adminDir, head: info.head, branch: info.branch, checkoutIdentity, sourceIdentity, commonIdentity, adminIdentity, pointerIdentity: pointer.identity, pointerHash: pointer.hash, backlinkIdentity: backlink.identity, backlinkHash: backlink.hash, commonPointerIdentity: commonPointer.identity, commonPointerHash: commonPointer.hash, sourceMappingIdentity, sourceMappingHash, ...privateState };
+      const after = await this.identity(info.root, record.commonDir, signal);
+      if (after.head !== result.head || after.branch !== result.branch) fail('HEAD_CHANGED', 'HEAD changed during removal inspection.');
+      if (await this.directoryIdentity(info.root) !== checkoutIdentity || await this.directoryIdentity(sourceRoot) !== sourceIdentity || await this.directoryIdentity(record.commonDir) !== commonIdentity || await this.directoryIdentity(adminDir) !== adminIdentity) fail('CHECKOUT_IDENTITY_CHANGED', 'Directory identity changed during inspection.');
+      for (const [file, expected] of [[path.join(info.root, '.git'), pointer], [path.join(adminDir, 'gitdir'), backlink], [path.join(adminDir, 'commondir'), commonPointer]] as [string, MetadataIdentity][]) {
+        const observed = await this.metadataIdentity(file);
+        if (observed.identity !== expected.identity || observed.hash !== expected.hash) fail('CHECKOUT_IDENTITY_CHANGED', 'Admin pointer identity changed during inspection.');
+      }
+      const finalSourceMapping = sourceMapping.isDirectory() ? { identity: await this.directoryIdentity(sourceMappingPath), hash: '' } : await this.metadataIdentity(sourceMappingPath);
+      if (finalSourceMapping.identity !== sourceMappingIdentity || finalSourceMapping.hash !== sourceMappingHash) fail('CHECKOUT_IDENTITY_CHANGED', 'The original Local admin mapping changed during inspection.');
+      return result;
+    } catch (error) {
+      if (error instanceof WorktreeError) throw error;
+      abortIfRequested(signal);
+      throw new WorktreeError('CHECKOUT_IDENTITY_CHANGED', 'Removal inspection could not verify the managed identity. No checkout was deleted.');
+    }
+  }
+
+  private rescueRefs(record: WorktreeRecord, identity: RemovalIdentity): [string, string][] {
+    return [[`refs/dsh-worktrees/${record.id}/gc-head`, identity.head], ...identity.retainedHeads.filter(value => value !== identity.head).map(value => [`refs/dsh-worktrees/${record.id}/gc-retained/${value}`, value] as [string, string])];
+  }
+
+  /** Retain final HEAD and bounded private reflog/ref commits, never unsaved file backups. */
+  async preserveRemovalHead(record: WorktreeRecord, identity: RemovalIdentity, signal?: AbortSignal): Promise<string> {
+    this.sameRemoval(identity, await this.inspectRemoval(record, identity.sourceRoot, signal));
+    const refs = this.rescueRefs(record, identity); const instructions: string[] = [];
+    for (const [ref, value] of refs) {
+      const existing = await this.directCommit(identity.sourceRoot, ref, signal);
+      if (existing !== null && existing !== value) fail('RESCUE_REF_CHANGED', 'The deterministic rescue reference already identifies a different commit.');
+      instructions.push(`${existing === null ? 'create' : 'verify'} ${ref} ${value}`);
+    }
+    this.sameRemoval(identity, await this.inspectRemoval(record, identity.sourceRoot, signal));
+    let result: GitRunResult;
+    try {
+      // Git locks HEAD's referent during verify even with --no-deref; verifying
+      // the attached branch again would be a forbidden duplicate update. The
+      // exact symbolic branch is checked in preflight and again after commit.
+      result = await this.run(identity.checkoutRoot, ['update-ref', '--no-deref', '--stdin'], signal, {
+        stdin: `start\nverify HEAD ${identity.head}\nverify ${record.baseRef} ${record.baseOid}\n${instructions.join('\n')}\nprepare\ncommit\n`, allowed: [0, 128],
+        preflight: async () => this.sameRemoval(identity, await this.inspectRemoval(record, identity.sourceRoot, signal)),
+      });
+    } catch (error) {
+      throw new WorktreeError('REMOVAL_RECOVERY_REQUIRED', 'Commit preservation may have begun; verify the exact rescue refs before recovery. No checkout was deleted.', { refsMayHaveChanged: true, causeCode: error instanceof WorktreeError ? error.code : 'GIT_FAILED' });
+    }
+    if (result.exitCode !== 0) fail('HEAD_CHANGED', 'HEAD, base or rescue refs changed before commit preservation.');
+    try {
+      this.sameRemoval(identity, await this.inspectRemoval(record, identity.sourceRoot, signal));
+      await this.preservedRemoval(record, identity, signal);
+    } catch (error) { throw new WorktreeError('REMOVAL_RECOVERY_REQUIRED', 'Commit preservation requires inspection; no checkout was deleted.', { refsMayHaveChanged: true, causeCode: error instanceof WorktreeError ? error.code : 'GIT_FAILED' }); }
+    return refs[0]![0];
+  }
+
+  private async preservedRemoval(record: WorktreeRecord, identity: RemovalIdentity, signal?: AbortSignal): Promise<void> {
+    for (const [ref, value] of this.rescueRefs(record, identity)) if (await this.directCommit(identity.sourceRoot, ref, signal) !== value) fail('RESCUE_REF_CHANGED', 'The exact preserved commit reference is missing or changed.');
+  }
+
+  /** Caller journals before entry and owns live-agent, repository and idle claims. */
+  async removeManagedCheckout(record: WorktreeRecord, identity: RemovalIdentity, signal?: AbortSignal): Promise<void> {
+    this.sameRemoval(identity, await this.inspectRemoval(record, identity.sourceRoot, signal));
+    await this.preservedRemoval(record, identity, signal);
+    this.sameRemoval(identity, await this.inspectRemoval(record, identity.sourceRoot, signal));
+    abortIfRequested(signal);
+    this.authorize();
+    try {
+      await this.run(identity.sourceRoot, ['worktree', 'remove', '--force', '--', identity.checkoutRoot], signal, { preflight: async () => {
+        await this.preservedRemoval(record, identity, signal);
+        this.sameRemoval(identity, await this.inspectRemoval(record, identity.sourceRoot, signal));
+      } });
+      if (await this.removalState(record, identity.sourceRoot, identity, signal) !== 'absent') fail('REMOVAL_RECOVERY_REQUIRED', 'Removal did not confirm both checkout and exact registration absent.');
+    } catch (error) {
+      throw new WorktreeError('REMOVAL_RECOVERY_REQUIRED', 'Checkout removal may have begun; reconcile the exact directory and registration before recovery. No prune or broad deletion was attempted.', { checkoutMayHaveChanged: true, causeCode: error instanceof WorktreeError ? error.code : 'GIT_FAILED' });
+    }
+  }
+
+  /** Read-only, conservative reconciliation; never repairs, prunes or retries deletion. */
+  async removalState(record: WorktreeRecord, sourceRoot: string, identity?: RemovalIdentity, signal?: AbortSignal): Promise<RemovalState> {
+    try {
+      const source = await this.identity(sourceRoot, record.commonDir, signal);
+      await this.registered(source, sourceRoot, signal);
+      await this.removalBase(record, sourceRoot, signal);
+      if (identity) {
+        const mapping = path.join(sourceRoot, '.git'); const info = await lstat(mapping);
+        const evidence = info.isDirectory() ? { identity: await this.directoryIdentity(mapping), hash: '' } : await this.metadataIdentity(mapping);
+        if (identity.sourceRoot !== sourceRoot || identity.checkoutRoot !== record.checkoutRoot || identity.commonDir !== record.commonDir || await this.directoryIdentity(sourceRoot) !== identity.sourceIdentity || await this.directoryIdentity(record.commonDir) !== identity.commonIdentity || evidence.identity !== identity.sourceMappingIdentity || evidence.hash !== identity.sourceMappingHash || path.dirname(identity.adminDir) !== path.join(record.commonDir, 'worktrees')) return 'replaced';
+      }
+      const directory = await this.exists(record.checkoutRoot);
+      const registrations = (await this.registrations(sourceRoot, signal)).filter(value => path.resolve(value.root) === record.checkoutRoot);
+      const admin = identity ? await this.exists(identity.adminDir) : true;
+      if (!directory && registrations.length === 0 && !admin) {
+        if (identity) await this.preservedRemoval(record, identity, signal);
+        return 'absent';
+      }
+      if (!directory || registrations.length !== 1 || !admin) return 'partial';
+      if (identity && (await this.directoryIdentity(record.checkoutRoot) !== identity.checkoutIdentity || await this.directoryIdentity(identity.adminDir) !== identity.adminIdentity)) return 'replaced';
+      const fresh = await this.inspectRemoval(record, sourceRoot, signal);
+      if (identity) this.sameRemoval(identity, fresh);
+      return 'present';
+    } catch (error) {
+      abortIfRequested(signal);
+      if (error instanceof WorktreeError && ['CHECKOUT_IDENTITY_CHANGED', 'HEAD_CHANGED', 'BASE_CHANGED', 'UNSUPPORTED_REF', 'RESCUE_REF_CHANGED'].includes(error.code)) return 'replaced';
+      return 'partial';
+    }
+  }
+
+  private async statusRaw(root: string, signal?: AbortSignal, allowUnmerged = false): Promise<Status> {
     const result = await this.run(root, ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignore-submodules=none'], signal);
     const rows = nul(result.stdout); const paths: string[] = []; let changes = 0; let untracked = 0;
     for (let index = 0; index < rows.length; index++) {
       const row = rows[index]!;
       if (row.length < 4 || row[2] !== ' ') fail('INVALID_GIT_OUTPUT', 'Git status returned an invalid record.');
       const code = row.slice(0, 2); const file = row.slice(3); validPath(file); paths.push(file);
-      if (code.includes('U') || ['AA', 'DD'].includes(code)) fail('UNMERGED_CHECKOUT', 'Unmerged files are not supported.');
+      if (!allowUnmerged && (code.includes('U') || ['AA', 'DD'].includes(code))) fail('UNMERGED_CHECKOUT', 'Unmerged files are not supported.');
       if (code === '??') untracked++; else changes++;
       if (/[RC]/u.test(code)) { const original = rows[++index]; if (!original) fail('TRUNCATED_OUTPUT', 'Git status returned an incomplete rename.'); validPath(original); paths.push(original); }
     }
     if (changes + untracked > this.config.maxFiles) fail('FILE_LIMIT', 'Git status exceeds the configured file count limit.');
     const head = oid(line((await this.run(root, ['rev-parse', '--verify', 'HEAD^{commit}'], signal)).stdout));
-    const branch = await this.run(root, ['symbolic-ref', '--quiet', '--short', 'HEAD'], signal, { allowed: [0, 1] });
-    return { state: { head, branch: branch.exitCode === 0 ? line(branch.stdout) : null, dirty: changes + untracked > 0, changes, untracked }, raw: result.stdout, paths };
+    const branch = await this.run(root, ['symbolic-ref', '--quiet', '--no-recurse', 'HEAD'], signal, { allowed: [0, 1] });
+    const branchRef = branch.exitCode === 0 ? line(branch.stdout) : null;
+    if (branchRef !== null && !branchRef.startsWith('refs/heads/')) fail('UNSUPPORTED_REF', 'HEAD must identify an exact local branch or detached commit.');
+    return { state: { head, branch: branchRef === null ? null : branchRef.slice(11), dirty: changes + untracked > 0, changes, untracked }, raw: result.stdout, paths };
   }
 
   async status(checkoutRoot: string, signal?: AbortSignal): Promise<CheckoutState> { return (await this.statusRaw(checkoutRoot, signal)).state; }

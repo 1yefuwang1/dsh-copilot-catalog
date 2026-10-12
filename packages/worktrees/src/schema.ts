@@ -3,14 +3,14 @@ import { z } from 'zod';
 import { WorktreeError } from './errors.js';
 import type { WorktreeAction, WorktreeRequest } from './types.js';
 
-export const ACTIONS = ['list', 'status', 'branches', 'create', 'start', 'branch', 'protect', 'preview', 'export', 'handoff', 'archive'] as const;
+export const ACTIONS = ['list', 'status', 'branches', 'create', 'start', 'branch', 'protect', 'preview', 'export', 'handoff', 'archive', 'reopen-info', 'reopen'] as const;
 const text = z.string().min(1).max(4096);
 const id = z.string().uuid();
 export const requestSchema = z.object({
   action: z.enum(ACTIONS), repoPath: text.optional(), id: id.optional(), operationId: id.optional(),
   branchSource: z.enum(['local', 'remote']).describe('Branch source; omitted preserves remote behavior.').optional(),
-  localBranch: text.describe('Exact local branch name, or HEAD for a pinned detached HEAD.').optional(),
-  localOid: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u).describe('Expected local commit; fail if the selected branch moved. Required for detached HEAD.').optional(),
+  localBranch: text.describe('Exact local branch, or HEAD for a pinned detached commit. Reopen requires the user-selected branch.').optional(),
+  localOid: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u).describe('Expected selected commit; refuse movement. Required for reopen and detached creation.').optional(),
   remote: text.optional(), remoteIdentity: text.optional(), remoteBranch: text.optional(),
   sourceSessionId: z.string().min(1).max(256).optional(), sessionMode: z.enum(['new', 'continue']).optional(),
   requireBlankSource: z.boolean().optional(), settingsHash: z.string().max(128).optional(),
@@ -30,6 +30,7 @@ const fields: Record<WorktreeAction, readonly string[]> = {
   branch: ['id', 'name'], protect: ['id', 'protected'],
   preview: ['id', 'sourceSessionId', 'targetPath'], export: ['previewId'],
   handoff: ['id', 'previewId', 'operationId'], archive: ['id', 'archived'],
+  'reopen-info': ['sourceSessionId', 'cursor', 'limit'], reopen: ['sourceSessionId', 'localBranch', 'localOid'],
 };
 export function parseRequest(value: unknown): WorktreeRequest {
   const parsed = requestSchema.safeParse(value);
@@ -39,6 +40,7 @@ export function parseRequest(value: unknown): WorktreeRequest {
   const required: Partial<Record<WorktreeAction, readonly string[]>> = {
     create: ['operationId'], start: ['id'], branch: ['id', 'name'], protect: ['id', 'protected'],
     preview: ['id'], export: ['previewId'], handoff: ['id', 'previewId', 'operationId'], archive: ['id'],
+    'reopen-info': ['sourceSessionId'], reopen: ['sourceSessionId', 'localBranch', 'localOid'],
   };
   for (const key of required[request.action] ?? []) if ((request as Record<string, unknown>)[key] === undefined) throw new WorktreeError('INVALID_REQUEST', `${request.action} requires ${key}.`);
   if (request.action === 'create' || request.action === 'branches') {
@@ -57,7 +59,7 @@ export function parseCommand(raw: string): WorktreeRequest {
   if (line === '') return { action: 'list' };
   try {
     if (line.startsWith('{')) return parseRequest(JSON.parse(line));
-    const match = /^([a-z]+)(?:\s+([\s\S]+))?$/u.exec(line);
+    const match = /^([a-z]+(?:-[a-z]+)*)(?:\s+([\s\S]+))?$/u.exec(line);
     if (match === null) throw new WorktreeError('INVALID_REQUEST', 'Use /worktree <action> [JSON arguments].');
     const args: unknown = match[2] === undefined ? {} : JSON.parse(match[2]);
     if (args === null || typeof args !== 'object' || Array.isArray(args)) throw new WorktreeError('INVALID_REQUEST', 'Arguments must be a JSON object.');
@@ -76,7 +78,7 @@ export function hashValue(value: unknown): string {
   };
   return createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
 }
-export const mutationActions = new Set<WorktreeAction>(['create', 'start', 'branch', 'protect', 'handoff', 'archive']);
+export const mutationActions = new Set<WorktreeAction>(['create', 'start', 'branch', 'protect', 'handoff', 'archive', 'reopen']);
 export const fullAccessActions = new Set<WorktreeAction>(['create', 'start', 'branch', 'preview', 'export', 'handoff']);
 /** Zod attaches non-JSON ~standard helpers; the tool registry requires a plain lossless JSON snapshot. */
 export const parameterSchema: Record<string, unknown> = JSON.parse(JSON.stringify(z.toJSONSchema(requestSchema))) as Record<string, unknown>;

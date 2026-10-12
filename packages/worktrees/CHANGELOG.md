@@ -1,5 +1,57 @@
 # @1yefuwang1/dsh-worktrees changelog
 
+## 0.2.20 — Runtime recovery and Local/navigation safety fixes (unreleased)
+
+- Use the runtime factory's existing initialization claim as the staged input hold
+  through explicit branch choice and the durable ready journal. Avoid nested
+  `runMaintenance` and input-admission gaps; retain the real target for native
+  permission controls, exact-ID retry and cold adoption.
+- Define ready as the validated chosen Local branch, flushed history/Workspace
+  association, and durable ready journal. Preserve that exact continuation/redirect
+  if a later live-factory publication listener fails; report observed failures as
+  `CONTINUATION_PUBLICATION_FAILED` with native same-ID resume guidance, never a
+  downgrade or another branch switch. Pre-commit failures retain pending admission.
+- Validate held targets' jobs and terminals independently of their parked inbox;
+  exclude them only from acquiring a redundant driver claim.
+- Fence new/resumed/replaced Local runtimes throughout branch selection and refresh
+  the complete known owner/resource set at each actual managed spawn boundary,
+  including after asynchronous executable/sandbox setup.
+- Remove metadata-driven navigation. Show the GC warning and explicit Open Local
+  action without cancelling pre-existing, newer or not-yet-committed native
+  navigation; explicit Continue still opens the requested Local continuation.
+- Add real pinned-runtime create/resume/native-control/queued-input/publication
+  failure/shutdown tests, successful production claims/resource races and realistic
+  native navigation races. The earlier simplified factory mocks missed a real
+  nested-maintenance failure; these regressions now exercise that contract.
+
+## 0.2.19 — Inactive workspace cleanup and Local recovery (unreleased)
+
+- Reclaim verified managed worktrees after configurable messaging-only inactivity:
+  enabled by default, 10 elapsed days, live 1–3650-day setting and disable control.
+  Archive does not affect eligibility; protection, every loaded runtime, active
+  resources, queued work and uncertain operations defer collection.
+- Explicitly allow permanent deletion of unsaved/untracked/ignored checkout files;
+  preserve branches, bases, final HEAD/private commit recovery refs, and history.
+  Use narrowly scoped Host maintenance, cold writer claims, exact identity and
+  lock checks, and single-force targeted Git removal—not dummy agents or pruning.
+- Journal GC and reopening in a companion domain; retain old records/headers/logs,
+  reconcile interrupted effects, refuse partial/replaced identities, and publish
+  visible reclaimed/deferred/recovery states.
+- Ask for a Local branch when a reclaimed thread opens. Continue once under a
+  preallocated new session identity and persistent redirect, with full idle history
+  and normal settings/preset/goal semantics. Never silently merge/apply old code,
+  switch/reset Local forcefully, or resume the deleted-directory agent.
+- Park pending continuation input before turns; enforce actual permission/idle
+  claims on branch switches, and make Host-maintenance current-branch selection
+  strictly verify-only even if another writer changes the branch during recovery.
+- Add localized settings and warning/branch-choice UI with global navigation
+  observation and quiet, cancellable lifecycle RPC. Retain historical native drafts
+  instead of flattening chips or inventing a private draft migration transaction.
+- Cover native Git safety, cold history/adoption, held input, activity/leases,
+  storage crash recovery, quiet RPC, public declarations and Client interactions.
+  Generic headless fork adoption and arbitrary external-writer atomicity remain
+  outside the pinned runtime's supported recovery flow.
+
 ## 0.2.18 — Theme-aligned conversation controls and local starting branches
 
 - Replace the native Local/New worktree dropdown and the mismatched Local-only

@@ -14,6 +14,44 @@ export interface WorktreeConfig {
   namingModel?: string;
   namingTimeoutMs?: number;
   namingMaxTokens?: number;
+  cleanupEnabled?: boolean;
+  cleanupInactivityDays?: number;
+}
+
+/** Bounded lifecycle facts; unsaved checkout files are not backed up by cleanup. */
+export interface WorktreeCleanupSummary {
+  phase: 'deferred' | 'planned' | 'preserving' | 'removing' | 'collected' | 'recovery-required';
+  inactivityDays: number;
+  lastActivityAt: number | null;
+  eligibleAfter: number | null;
+  reclaimedAt: number | null;
+  originalFolder: string | null;
+  recoveryRef: string | null;
+  reason: { code: string; message: string } | null;
+}
+export interface WorktreeReopenInfo {
+  sourceSessionId: string;
+  worktreeId: string | null;
+  cleanup: WorktreeCleanupSummary | null;
+  continuationSessionId: string | null;
+  /** The real, input-held Local target; exposes only native controls while recovery is pending. */
+  pendingSessionId?: string;
+  originalFolder: string | null;
+  repository?: { root: string; commonDir: string; head: string; branch: string | null };
+  branches?: RemoteBranch[];
+  nextCursor?: string;
+  observedAt?: number;
+  revision: number;
+  recoveredBranch?: string | null;
+}
+export interface WorktreeReopenResult {
+  sourceSessionId: string;
+  sessionId: string;
+  workspaceId: string;
+  worktreeId: string;
+  cwd: string;
+  branch: string | null;
+  cleanup: WorktreeCleanupSummary;
 }
 
 export type NamingFallbackReason = 'disabled' | 'unavailable' | 'timeout' | 'provider-failure' | 'invalid-output' | 'output-limit' | 'incomplete-output';
@@ -187,6 +225,8 @@ export interface WorktreeRecord {
   archived: boolean;
   state: 'creating' | 'ready' | 'recovery-required' | 'missing';
   error: string | null;
+  /** Response-only companion facts; not written into the strict worktree table. */
+  cleanup?: WorktreeCleanupSummary;
 }
 export type OperationPhase = 'planned' | 'fetching' | 'checkout-created' | 'session-created' | 'ready' | 'applying' | 'code-applied' | 'cancel-requested' | 'cancelled-before-effects' | 'recovery-required';
 export interface SessionSettings {
@@ -222,7 +262,7 @@ export interface OperationRecord {
   error: { code: string; message: string } | null;
 }
 
-export type WorktreeAction = 'list' | 'status' | 'branches' | 'create' | 'start' | 'branch' | 'protect' | 'preview' | 'export' | 'handoff' | 'archive';
+export type WorktreeAction = 'list' | 'status' | 'branches' | 'create' | 'start' | 'branch' | 'protect' | 'preview' | 'export' | 'handoff' | 'archive' | 'reopen-info' | 'reopen';
 export interface WorktreeRequest {
   action: WorktreeAction;
   repoPath?: string;

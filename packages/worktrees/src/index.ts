@@ -5,8 +5,11 @@ import type {} from '@deepseek-ai/dsh-commands';
 import type {} from '@deepseek-ai/dsh-tools';
 import { worktreeDomain, type WorktreeStore } from './store.js';
 import { WorktreeController, resolveWorktreeRoot } from './service.js';
+import { WorktreeCleanup, type CleanupSettings } from './cleanup.js';
+import { cleanupDomain, type CleanupStore } from './cleanup-store.js';
+import { registerRecoveryRpc } from './recovery-rpc.js';
 import { FirstMessageNamer } from './first-message.js';
-import { WorktreeReminders } from './context.js';
+import { WorktreeReminders, RecoveryReminders } from './context.js';
 import { registerWorktreeRpc, registerWorktreeProgressRpc } from './rpc.js';
 import { ProjectController, parseProjectRequest, projectParameterSchema } from './projects.js';
 import { projectDomain, type ProjectStore } from './project-store.js';
@@ -20,7 +23,11 @@ import type { CommandEnvelope, WorktreeConfig } from './types.js';
 const rootPattern = process.platform === 'win32'
   ? /^(?:[A-Za-z]:[\\/]|\\\\)[^\u0000-\u001f]*[^\s\u0000-\u001f]$(?![\s\S])/u
   : /^\/[^\u0000-\u001f]*[^\s\u0000-\u001f]$(?![\s\S])/u;
-export type PluginConfig = Omit<WorktreeConfig, 'root'> & { root: string | Volatile<string> };
+export type PluginConfig = Omit<WorktreeConfig, 'root' | 'cleanupEnabled' | 'cleanupInactivityDays'> & {
+  root: string | Volatile<string>;
+  cleanupEnabled?: boolean | Volatile<boolean>;
+  cleanupInactivityDays?: number | Volatile<number>;
+};
 interface SettingsPresentation { configure(presentation: { auto?: boolean }, owner: Context['fiber']): () => void }
 
 export const name = 'git-worktrees';
@@ -39,6 +46,8 @@ export const Config = z.object({
   namingModel: z.string().min(1).max(256).default('gpt-6-luna'),
   namingTimeoutMs: z.number().step(1).min(100).max(60000).default(15000),
   namingMaxTokens: z.number().step(1).min(64).max(2048).default(256),
+  cleanupEnabled: z.boolean().default(true).volatile(),
+  cleanupInactivityDays: z.number().step(1).min(1).max(3650).default(10).volatile(),
 });
 
 function encode(envelope: CommandEnvelope): string {
@@ -54,23 +63,42 @@ export async function apply(ctx: Context, config: PluginConfig): Promise<void> {
     catch { throw new WorktreeError('INVALID_ROOT', 'The live worktree root setting could not be read.'); }
     return resolveWorktreeRoot(value, typeof configuredRoot === 'string');
   };
-  // Private snapshots and Git guards keep their initial root for this Host lifetime.
-  const resolvedConfig: WorktreeConfig = { ...config, root: worktreeRoot() };
+  const cleanupSettings = (): CleanupSettings => {
+    const enabled = config.cleanupEnabled === undefined ? true : typeof config.cleanupEnabled === 'boolean' ? config.cleanupEnabled : config.cleanupEnabled.get();
+    const days = config.cleanupInactivityDays === undefined ? 10 : typeof config.cleanupInactivityDays === 'number' ? config.cleanupInactivityDays : config.cleanupInactivityDays.get();
+    if (typeof enabled !== 'boolean' || !Number.isSafeInteger(days) || days < 1 || days > 3650) throw new WorktreeError('INVALID_CLEANUP_CONFIG', 'Cleanup needs an enable flag and 1–3650 whole inactivity days.');
+    return { enabled, days };
+  };
+  // Private snapshots keep their initial root; cleanup uses each historical layout.
+  const cleanupConfig = cleanupSettings();
+  const resolvedConfig: WorktreeConfig = { ...config, root: worktreeRoot(), cleanupEnabled: cleanupConfig.enabled, cleanupInactivityDays: cleanupConfig.days };
   const facility = ctx.get('storageDomain');
   if (facility === undefined) throw new WorktreeError('MISSING_STORAGE', 'The storage domain capability is required.');
   const domain = await facility.open(worktreeDomain);
   const store: WorktreeStore = { worktrees: domain.table('worktrees'), operations: domain.table('operations'), close: () => domain.close() };
   const projectsDomain = await facility.open(projectDomain).catch(async error => { await domain.close(); throw error; });
   const projectStore: ProjectStore = { projects: projectsDomain.table('projects'), bindings: projectsDomain.table('bindings'), starts: projectsDomain.table('starts'), removals: projectsDomain.table('removals'), close: () => projectsDomain.close() };
+  const lifecycleDomain = await facility.open(cleanupDomain).catch(async error => { await Promise.allSettled([domain.close(), projectsDomain.close()]); throw error; });
+  const cleanupStore: CleanupStore = { cleanup: lifecycleDomain.table('cleanup'), reopens: lifecycleDomain.table('reopens'), close: () => lifecycleDomain.close() };
   let controller: WorktreeController;
+  let cleanup: WorktreeCleanup;
+  let maintenanceContext = ctx;
   const projects = new ProjectController(ctx, projectStore, { records: () => controller.records() }, { operationTimeoutMs: resolvedConfig.operationTimeoutMs });
   let firstMessageNamer: FirstMessageNamer;
-  controller = new WorktreeController(ctx, resolvedConfig, store, { projects, worktreeRoot, onNamingEligible: agent => firstMessageNamer.attach(agent) });
+  controller = new WorktreeController(ctx, resolvedConfig, store, { projects, worktreeRoot, lifecycle: () => cleanup, onNamingEligible: agent => firstMessageNamer.attach(agent) });
+  cleanup = new WorktreeCleanup(ctx, resolvedConfig, store, cleanupStore, controller, { projects, settings: cleanupSettings, executionContext: () => maintenanceContext });
+  ctx.inject(['fs', 'subprocess'], scope => {
+    maintenanceContext = scope;
+    scope.effect(() => () => { if (maintenanceContext === scope) maintenanceContext = ctx; });
+  });
   firstMessageNamer = new FirstMessageNamer(ctx, controller);
   const reminders = new WorktreeReminders(ctx, controller);
+  const recoveryReminders = new RecoveryReminders(ctx, cleanup);
   const projectReminders = new ProjectReminders(ctx, { project: id => projectStore.projects.get(id), bindingFor: (id, cwd) => projects.bindingFor(id, cwd) });
   ctx.provide('gitWorktrees', controller);
   ctx.provide('workspaceProjects', projects);
+  // Mount persistent admission fences before any UI operation can resolve an old cwd.
+  cleanup.start(false);
   ctx.inject(['settings'], scope => {
     scope.effect(() => (scope.get('settings') as SettingsPresentation).configure({ auto: false }, ctx.fiber));
   });
@@ -78,14 +106,16 @@ export async function apply(ctx: Context, config: PluginConfig): Promise<void> {
   ctx.effect(() => async () => {
     // Close UI admission and await lookup/execution before the shared controller/store.
     await Promise.allSettled([...rpcStops].map(stop => stop()));
-    reminders.close(); projectReminders.close();
+    reminders.close(); projectReminders.close(); recoveryReminders.close();
     await firstMessageNamer.close();
-    try { await controller.close(); } finally {
-      try { await projects.close(); } finally { await Promise.allSettled([store.close(), projectStore.close()]); }
+    try { await cleanup.close(); } finally {
+      try { await controller.close(); } finally {
+        try { await projects.close(); } finally { await Promise.allSettled([store.close(), projectStore.close(), cleanupStore.close()]); }
+      }
     }
   }, 'worktrees: orderly teardown');
   ctx.inject(['connection', 'sessionController'], scope => {
-    for (const stop of [registerWorktreeRpc(scope, controller), registerWorktreeProgressRpc(scope, controller), registerProjectRpc(scope, projects)]) {
+    for (const stop of [registerWorktreeRpc(scope, controller), registerWorktreeProgressRpc(scope, controller), registerProjectRpc(scope, projects), registerRecoveryRpc(scope, cleanup)]) {
       rpcStops.add(stop);
       scope.effect(() => async () => { try { await stop(); } finally { rpcStops.delete(stop); } }, 'worktrees: optional UI capability ownership');
     }
@@ -104,11 +134,11 @@ export async function apply(ctx: Context, config: PluginConfig): Promise<void> {
   });
   ctx.tools.register({
     name: 'git_worktree',
-    description: 'List or create isolated Git worktree threads from an exact local branch without network access or a freshly fetched remote branch; preview/export or hand off changes to a clean Local checkout. Cross-root Git mutations require existing full access. Handoff refuses running source/target sessions and never resets or deletes checkouts.',
+    description: 'Manage isolated Git worktree threads, preview/export or hand off changes, and inspect or reopen reclaimed threads on a user-chosen Local branch. Cross-root Git mutations require existing full access. Handoff refuses running sessions and never resets or deletes checkouts; recovery does not apply old worktree changes.',
     parameters: parameterSchema,
     output: { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
     isConcurrencySafe: args => {
-      try { return ['list', 'status', 'branches'].includes(parseRequest(args).action); } catch { return false; }
+      try { return ['list', 'status', 'branches', 'reopen-info'].includes(parseRequest(args).action); } catch { return false; }
     },
     execute: async (args, execution) => {
       if (execution.agent === undefined) throw new WorktreeError('NO_CALLER', 'A receiving agent is required; no Host-default authority is used.');
@@ -141,7 +171,8 @@ export async function apply(ctx: Context, config: PluginConfig): Promise<void> {
       return { v: 1, ok: true, data };
     },
   });
-  reminders.start(); projectReminders.start(); firstMessageNamer.start();
+  reminders.start(); projectReminders.start(); recoveryReminders.start(); firstMessageNamer.start();
+  void cleanup.sweep().catch(() => undefined);
 }
 export { ProjectController, resolveMainFolder } from './projects.js';
 export type { ProjectFolder, ProjectRecord, ProjectThreadBinding, ProjectSnapshot, ProjectRequest, ProjectInvocation, ProjectStartResult, ProjectRemoveResult } from './projects.js';

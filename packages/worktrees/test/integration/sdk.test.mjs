@@ -33,7 +33,7 @@ function record(root) {
 }
 function table() { const map = new Map(); return { map, get: key => map.get(key), entries: () => map.entries(), async put(key, value) { map.set(key, structuredClone(value)); }, async delete(key) { return map.delete(key); } }; }
 function domainTables(worktree) {
-  const tables = { dsh_worktrees: { worktrees: table(), operations: table() }, dsh_worktree_projects: { projects: table(), bindings: table(), starts: table(), removals: table() } };
+  const tables = { dsh_worktrees: { worktrees: table(), operations: table() }, dsh_worktree_projects: { projects: table(), bindings: table(), starts: table(), removals: table() }, dsh_worktree_cleanup: { cleanup: table(), reopens: table() } };
   tables.dsh_worktrees.worktrees.map.set(worktree.id, worktree); return tables;
 }
 async function hostFixture(t) {
@@ -120,19 +120,28 @@ test('native root Config defaults to existing Host root and returns a bounded vo
   }
 });
 
+test('cleanup Config defaults are live and bounded without changing root or naming settings', () => {
+  const config = plugin.Config({});
+  assert.equal(config.cleanupEnabled.get(), true); assert.equal(config.cleanupInactivityDays.get(), 10);
+  assert.equal(plugin.Config({ cleanupEnabled: false, cleanupInactivityDays: 3650 }).cleanupEnabled.get(), false);
+  assert.equal(plugin.Config.dict.cleanupEnabled.meta.volatile, true); assert.equal(plugin.Config.dict.cleanupInactivityDays.meta.volatile, true);
+  for (const days of [0, -1, 1.5, 3651, NaN, Infinity, '10']) assert.throws(() => plugin.Config({ cleanupInactivityDays: days }), /cleanupInactivityDays/u);
+  assert.equal(config.namingModel, 'gpt-6-luna'); assert.equal(config.root.get(), dshHomePath('worktrees'));
+});
+
 test('public plain-string apply config retains compatibility and invalid getters open no storage', async t => {
   const f = await hostFixture(t), source = f.agent(f.root), worktree = record(f.root), tables = domainTables(worktree);
   let opened = 0;
   f.host.provide('storageDomain', { async open(spec) { opened++; return { table: name => tables[spec.name][name], async close() {} }; } });
   f.host.provide('sessionPersistence', {}); f.host.provide('workspaceRegistry', f.registry);
-  const config = { ...plugin.Config({}), root: relative(process.cwd(), resolve(f.root, 'legacy-managed')) };
+  const config = { ...plugin.Config({ cleanupEnabled: false }), root: relative(process.cwd(), resolve(f.root, 'legacy-managed')) };
   const owner = f.host.plugin({ name: 'plain-root-config-compat', apply: ctx => plugin.apply(ctx, config) }); f.scopes.push(owner); await owner;
-  assert.equal(opened, 2); assert.equal(f.host.commands.find(source, 'worktree').name, 'worktree');
+  assert.equal(opened, 3); assert.equal(f.host.commands.find(source, 'worktree').name, 'worktree');
   await owner.dispose();
   for (const root of [{ get() { throw Error('private getter failure'); } }, { get: () => 'relative-live-root' }, { get: () => '' }, { get: () => resolve('/') }]) {
     await assert.rejects(plugin.apply(owner.ctx, { ...config, root }), error => ['INVALID_ROOT', 'UNSAFE_ROOT'].includes(error.code));
   }
-  assert.equal(opened, 2, 'invalid initial roots fail before storage is opened');
+  assert.equal(opened, 3, 'invalid initial roots fail before storage is opened');
 });
 
 test('optional native settings presentation belongs to plugin fiber and is disposed with it', async t => {
@@ -140,7 +149,7 @@ test('optional native settings presentation belongs to plugin fiber and is dispo
   f.host.provide('storageDomain', { async open(spec) { return { table: name => tables[spec.name][name], async close() {} }; } });
   f.host.provide('sessionPersistence', {}); f.host.provide('workspaceRegistry', f.registry);
   f.host.provide('settings', { configure(presentation, owner) { calls.push({ presentation, owner }); return () => calls.push('dispose'); } });
-  const pluginScope = f.host.plugin(plugin, { root: resolve(f.root, 'managed') }); f.scopes.push(pluginScope); await pluginScope;
+  const pluginScope = f.host.plugin(plugin, { root: resolve(f.root, 'managed'), cleanupEnabled: false }); f.scopes.push(pluginScope); await pluginScope;
   assert.equal(calls.length, 1); assert.deepEqual(calls[0].presentation, { auto: false }); assert.equal(calls[0].owner, pluginScope.ctx.fiber);
   await pluginScope.dispose(); assert.equal(calls.at(-1), 'dispose'); assert.equal(calls.length, 2);
 });
@@ -152,9 +161,9 @@ test('published plugin Config and real SDK register command/tool and dispose exa
   f.host.provide('sessionPersistence', {}); f.host.provide('workspaceRegistry', f.registry);
   const config = plugin.Config({ root: resolve(f.root, 'managed') });
   assert.equal(config.defaultRemote, 'origin'); assert.equal(config.gitExecutable, 'git'); assert.equal(config.maxFiles, 1000);
-  const pluginScope = f.host.plugin(plugin, { root: resolve(f.root, 'managed') }); f.scopes.push(pluginScope);
+  const pluginScope = f.host.plugin(plugin, { root: resolve(f.root, 'managed'), cleanupEnabled: false }); f.scopes.push(pluginScope);
   await pluginScope;
-  assert.equal(opened, 2); assert.equal(f.host.commands.find(source, 'worktree').name, 'worktree');
+  assert.equal(opened, 3); assert.equal(f.host.commands.find(source, 'worktree').name, 'worktree');
   assert.equal(f.host.commands.find(source, 'project').name, 'project');
   assert.ok(f.host.tools.schemas(source).some(tool => tool.name === 'workspace_project'));
   const schema = f.host.tools.schemas(source).find(tool => tool.name === 'git_worktree'); assert.ok(schema); assert.equal(schema.parameters.additionalProperties, false); assert.ok(!('fullAccess' in schema.parameters.properties));
@@ -166,7 +175,7 @@ test('published plugin Config and real SDK register command/tool and dispose exa
   assert.equal(tool.isError, false); assert.equal(tool.value.v, 1); assert.equal(tool.value.data.worktree.protected, false);
   const missingActor = await f.host.tools.execute({ name: 'git_worktree', callId: 'worktree-sdk-no-caller', arguments: { action: 'protect', id: worktree.id, protected: false }, signal }); assert.equal(missingActor.isError, true); assert.match(JSON.stringify(missingActor), /NO_CALLER|receiving agent/u);
   const invalid = await f.host.commands.execute(source, '/worktree create {"fullAccess":true}', [], signal); assert.equal(invalid.result.kind, 'error'); assert.equal(JSON.parse(invalid.result.text).error.code, 'INVALID_REQUEST');
-  await pluginScope.dispose(); assert.equal(f.host.commands.find(source, 'worktree'), undefined); assert.ok(!f.host.tools.schemas(source).some(tool => tool.name === 'git_worktree')); assert.equal(closed, 2); assert.equal(f.host.commands.find(source, 'project'), undefined); assert.ok(!f.host.tools.schemas(source).some(tool => tool.name === 'workspace_project'));
+  await pluginScope.dispose(); assert.equal(f.host.commands.find(source, 'worktree'), undefined); assert.ok(!f.host.tools.schemas(source).some(tool => tool.name === 'git_worktree')); assert.equal(closed, 3); assert.equal(f.host.commands.find(source, 'project'), undefined); assert.ok(!f.host.tools.schemas(source).some(tool => tool.name === 'workspace_project'));
 });
 
 test('actual plugin exact UI routes coexist with the real SDK gateway and await admission disposal', async t => {
@@ -179,7 +188,7 @@ test('actual plugin exact UI routes coexist with the real SDK gateway and await 
   const resolver = { async resolveAgent(id) { lookups.push(id); const agent = f.agents.get(id); return agent ? { agent } : { error: { code: 'session/not-found', message: 'Missing source', details: {} } }; } };
   f.host.provide('sessionController', resolver);
   assert.deepEqual(await transport.rpc('session/foo', {}), { ok: true, value: true });
-  const pluginScope = f.host.plugin(plugin, { root: resolve(f.root, 'managed') }); f.scopes.push(pluginScope); await pluginScope;
+  const pluginScope = f.host.plugin(plugin, { root: resolve(f.root, 'managed'), cleanupEnabled: false }); f.scopes.push(pluginScope); await pluginScope;
   assert.deepEqual(await transport.rpc('session/foo', {}), { ok: true, value: true });
   assert.deepEqual(await transport.rpc('dsh-worktrees/projects', { v: 1, request: { action: 'list' } }), { ok: true, value: { v: 1, ok: true, data: { projects: [], bindings: [], records: [worktree] } } });
   // Actual optional plugin registration owns both lazy setup routes as well.
@@ -228,7 +237,7 @@ test('actual plugin exact UI routes coexist with the real SDK gateway and await 
   assert.equal((await transport.response('dsh-worktrees/progress', {})).response.status, 404);
   assert.equal(disposed, false); assert.equal(closed, 0);
   release(); const pendingResult = await pending; assert.equal(pendingResult.error.code, 'CANCELLED'); await disposal;
-  assert.equal(closed, 2); assert.equal(f.events.length, before);
+  assert.equal(closed, 3); assert.equal(f.events.length, before);
   assert.deepEqual(await transport.rpc('session/foo', {}), { ok: true, value: true });
   assert.ok(transport.gatewayCalls.every(call => call.peer.id === transport.connection.operator.id && call.peer.ctx === transport.connection.operator.ctx));
   assert.equal(f.host.commands.find(source, 'worktree'), undefined); assert.ok(!f.host.tools.schemas(source).some(value => value.name === 'git_worktree'));
@@ -282,7 +291,7 @@ test('actual Host project DTOs decode in actual Client protocol and share quiet 
   const transport = await connectionFixture(f);
   let resolutions = 0;
   f.host.provide('sessionController', { async resolveAgent(id) { resolutions++; return { agent: f.agents.get(id) }; } });
-  const pluginScope = f.host.plugin(plugin, { root: resolve(f.root, 'managed') }); f.scopes.push(pluginScope); await pluginScope;
+  const pluginScope = f.host.plugin(plugin, { root: resolve(f.root, 'managed'), cleanupEnabled: false }); f.scopes.push(pluginScope); await pluginScope;
   const javascript = await readFile(new URL('../../client.js', import.meta.url), 'utf8');
   const from = javascript.indexOf('    class WorktreeError extends Error'), to = javascript.indexOf('    function Icon(', from);
   // Only execute actual pure protocol declarations; no React/DOM renderer is made.
@@ -464,7 +473,7 @@ test('project remove shares exact quiet RPC/tool/command execution and retains l
   f.host.provide('storageDomain', { async open(spec) { return { table: name => tables[spec.name][name], async close() {} }; } });
   f.host.provide('sessionPersistence', {}); f.host.provide('workspaceRegistry', f.registry);
   f.host.provide('sessionController', { async resolveAgent(id) { const agent = f.agents.get(id); return agent ? { agent } : { error: { code: 'session/not-found', message: 'Missing ordinary session', details: {} } }; } });
-  const scope = f.host.plugin(plugin, { root: resolve(f.root, 'managed') }); f.scopes.push(scope); await scope;
+  const scope = f.host.plugin(plugin, { root: resolve(f.root, 'managed'), cleanupEnabled: false }); f.scopes.push(scope); await scope;
   const rpc = request => transport.rpc('dsh-worktrees/projects', { v: 1, request });
   const id = randomUUID(); const create = await rpc({ action: 'create', id, title: 'Metadata to remove', folders: [f.root] }); assert.equal(create.value.ok, true);
   const native = f.registry.list()[0]; await native.attachSession(source.id); native.pins = [source.id]; native.archived = [source.id];

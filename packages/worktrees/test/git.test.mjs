@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -626,4 +626,334 @@ test('content-normalizing attributes never silently change final-working-state b
   await assert.rejects(f.preview(record), code('UNSUPPORTED_CONTENT_TRANSFORM'));
   assert.equal(await readFile(path.join(record.checkoutRoot, 'project', 'file.txt'), 'utf8'), 'CRLF content\r\n');
   assert.equal((await f.engine.status(f.local)).dirty, false);
+});
+
+async function removalFixture(t, id = 'gc') {
+  const f = await fixture(t);
+  const project = await f.engine.discover(path.join(f.local, 'project'));
+  const record = await f.create(id, project);
+  return { ...f, record };
+}
+
+function noBroadCleanup(calls) {
+  for (const call of calls) {
+    assert.equal(call.args.includes('prune'), false);
+    assert.equal(call.args.includes('reset'), false);
+    assert.equal(call.args.includes('stash'), false);
+    assert.equal(call.args.includes('branch') && call.args.some(value => ['-d', '-D'].includes(value)), false);
+    if (call.args.includes('remove')) {
+      assert.equal(call.args.filter(value => value === '--force').length, 1);
+      assert.equal(call.args.includes('--'), true);
+    }
+  }
+}
+
+async function sourceReceipt(f) {
+  return { head: await f.git(f.local, 'rev-parse', 'HEAD'), index: await readFile(path.join(f.local, '.git/index')), status: await f.git(f.local, 'status', '--porcelain=v1', '-z', '--ignored'), file: await readFile(path.join(f.local, 'project/file.txt')) };
+}
+
+async function assertSourceReceipt(f, before) {
+  assert.deepEqual(await sourceReceipt(f), before);
+}
+
+test('GC removes authorized dirty, staged, untracked and ignored fixture bytes while retaining every shared ref and Source Local', async t => {
+  const f = await removalFixture(t, 'dirty-gc'); const { record } = f;
+  await f.engine.createBranch(record, 'feature/retained-gc');
+  await writeFile(path.join(record.checkoutRoot, 'committed'), 'committed task\n'); await f.git(record.checkoutRoot, 'add', '.'); await f.git(record.checkoutRoot, 'commit', '-m', 'task commit');
+  const finalHead = (await f.git(record.checkoutRoot, 'rev-parse', 'HEAD')).toString().trim();
+  await writeFile(path.join(record.checkoutRoot, 'project/file.txt'), 'staged deletion authority\n'); await f.git(record.checkoutRoot, 'add', '.');
+  await writeFile(path.join(record.checkoutRoot, 'untracked'), 'discard explicitly authorized\n');
+  await writeFile(path.join(record.checkoutRoot, 'ignored-secret'), 'discard ignored explicitly authorized\n');
+  await writeFile(path.join(f.local, 'project/file.txt'), 'preserve dirty Local\n'); await f.git(f.local, 'add', '.');
+  await writeFile(path.join(f.local, 'ignored-local'), 'preserve ignored Local\n');
+  await f.git(f.local, 'tag', 'keep-tag', finalHead); await f.git(f.local, 'update-ref', 'refs/custom/keep', finalHead);
+  const refs = await f.git(f.local, 'for-each-ref', '--format=%(refname) %(objectname)');
+  const source = await sourceReceipt(f); const start = f.calls.length;
+  // The recorded direct parent may already be GCed; only the ultimate Local is authoritative.
+  const legacyParent = { ...record, repoRoot: path.join(f.managed, 'already-collected') };
+  const identity = await f.engine.inspectRemoval(legacyParent, f.local);
+  assert.equal(identity.head, finalHead); assert.equal(identity.branch, 'feature/retained-gc');
+  assert.equal(identity.sourceRoot, f.local); assert.equal(identity.checkoutRoot, record.checkoutRoot);
+  assert.equal(typeof identity.pointerIdentity, 'string'); assert.ok(identity.retainedHeads.includes(record.baseOid));
+  assert.deepEqual(JSON.parse(JSON.stringify(identity)), identity, 'identity evidence is durable JSON, never Buffer or bigint');
+  const rescue = await f.engine.preserveRemovalHead(legacyParent, identity);
+  assert.equal(rescue, `refs/dsh-worktrees/${record.id}/gc-head`);
+  assert.equal(await f.engine.preserveRemovalHead(legacyParent, identity), rescue, 'repeated preservation only verifies the exact rescue ref');
+  await f.engine.removeManagedCheckout(legacyParent, identity);
+  assert.equal(await lstat(record.checkoutRoot).then(() => true, () => false), false);
+  assert.equal(await lstat(identity.adminDir).then(() => true, () => false), false);
+  assert.equal(await f.engine.removalState(legacyParent, f.local, identity), 'absent');
+  assert.equal((await f.git(f.local, 'rev-parse', rescue)).toString().trim(), finalHead);
+  const after = (await f.git(f.local, 'for-each-ref', '--format=%(refname) %(objectname)')).toString().split('\n');
+  for (const row of refs.toString().trim().split('\n')) assert.ok(after.includes(row), `shared reference retained: ${row}`);
+  await assertSourceReceipt(f, source);
+  const remove = f.calls.slice(start).find(call => call.args.includes('worktree') && call.args.includes('remove'));
+  assert.equal(remove.cwd, f.local); assert.equal(remove.args.at(-1), record.checkoutRoot); noBroadCleanup(f.calls.slice(start));
+});
+
+test('GC physical root authority tolerates missing effective subdirectory and conflicted index stages', async t => {
+  const f = await removalFixture(t, 'conflicted-gc'); const { record } = f;
+  assert.equal(await realpath(record.effectiveCwd), record.effectiveCwd);
+  assert.equal(path.resolve(record.effectiveCwd), record.effectiveCwd); await rm(record.effectiveCwd, { recursive: true, force: false });
+  const blob = (await f.git(f.local, 'rev-parse', `${record.baseOid}:project/file.txt`)).toString().trim();
+  await f.exec({ cwd: record.checkoutRoot, args: ['update-index', '--index-info'], stdin: `0 ${'0'.repeat(40)}\tproject/file.txt\n100644 ${blob} 1\tproject/file.txt\n100644 ${blob} 2\tproject/file.txt\n100644 ${blob} 3\tproject/file.txt\n` });
+  await assert.rejects(f.engine.verify(record));
+  const identity = await f.engine.inspectRemoval(record, f.local);
+  await f.engine.preserveRemovalHead(record, identity); await f.engine.removeManagedCheckout(record, identity);
+  assert.equal(await f.engine.removalState(record, f.local, identity), 'absent');
+});
+
+test('GC detached final HEAD, superseded private reflog commits and private commit refs all remain reachable', async t => {
+  const f = await removalFixture(t, 'detached-gc'); const { record } = f;
+  await writeFile(path.join(record.checkoutRoot, 'detached'), 'first\n'); await f.git(record.checkoutRoot, 'add', '.'); await f.git(record.checkoutRoot, 'commit', '-m', 'detached first');
+  const superseded = (await f.git(record.checkoutRoot, 'rev-parse', 'HEAD')).toString().trim();
+  await writeFile(path.join(record.checkoutRoot, 'detached'), 'amended\n'); await f.git(record.checkoutRoot, 'add', '.'); await f.git(record.checkoutRoot, 'commit', '--amend', '-m', 'detached amended');
+  await f.git(record.checkoutRoot, 'update-ref', 'refs/worktree/private', superseded);
+  const identity = await f.engine.inspectRemoval(record, f.local);
+  assert.equal(identity.branch, null); assert.ok(identity.retainedHeads.includes(superseded)); assert.notEqual(identity.head, superseded);
+  await f.engine.preserveRemovalHead(record, identity); await f.engine.removeManagedCheckout(record, identity);
+  assert.equal((await f.git(f.local, 'rev-parse', `refs/dsh-worktrees/${record.id}/gc-head`)).toString().trim(), identity.head);
+  assert.equal((await f.git(f.local, 'rev-parse', `refs/dsh-worktrees/${record.id}/gc-retained/${superseded}`)).toString().trim(), superseded);
+  assert.equal((await f.git(f.local, 'cat-file', '-t', superseded)).toString().trim(), 'commit');
+});
+
+for (const tamper of ['locked', 'index.lock', 'HEAD.lock', 'backlink', 'commondir', 'base', 'base-symbolic', 'pointer-symlink', 'nested', 'submodule']) test(`GC refuses ${tamper} before deletion`, async t => {
+  const f = await removalFixture(t, `refuse-${tamper.replaceAll('.', '-')}`); const { record } = f;
+  const admin = (await f.git(record.checkoutRoot, 'rev-parse', '--absolute-git-dir')).toString().trim();
+  if (tamper === 'locked') await f.git(f.local, 'worktree', 'lock', '--reason', 'fixture lock', record.checkoutRoot);
+  else if (tamper.endsWith('.lock')) await writeFile(path.join(admin, tamper), 'fixture admin lock\n');
+  else if (tamper === 'backlink') await writeFile(path.join(admin, 'gitdir'), `${path.join(f.local, '.git')}\n`);
+  else if (tamper === 'commondir') await writeFile(path.join(admin, 'commondir'), `${f.remote}\n`);
+  else if (tamper === 'base') {
+    const changed = (await f.git(f.local, 'commit-tree', `${record.baseOid}^{tree}`, '-p', record.baseOid, '-m', 'changed base')).toString().trim();
+    await f.git(f.local, 'update-ref', record.baseRef, changed);
+  } else if (tamper === 'base-symbolic') await f.git(f.local, 'symbolic-ref', record.baseRef, 'refs/heads/topic/full/name');
+  else if (tamper === 'pointer-symlink') {
+    const pointer = path.join(record.checkoutRoot, '.git'); const backup = path.join(f.root, 'pointer-backup');
+    await writeFile(backup, await readFile(pointer)); assert.equal(path.resolve(pointer), pointer); await rm(pointer); await symlink(backup, pointer);
+  } else if (tamper === 'nested') { const nested = path.join(record.checkoutRoot, 'ignored-nested'); await mkdir(nested); await f.git(nested, 'init'); }
+  else await f.git(record.checkoutRoot, 'update-index', '--add', '--cacheinfo', '160000', record.baseOid, 'submodule');
+  const start = f.calls.length;
+  await assert.rejects(f.engine.inspectRemoval(record, f.local));
+  assert.equal(f.calls.slice(start).some(call => call.args.includes('remove') || call.args.includes('update-ref')), false);
+  assert.equal(await lstat(record.checkoutRoot).then(value => value.isDirectory()), true);
+});
+
+for (const lock of ['packed-refs.lock', 'refs/heads/topic/full/name.lock']) test(`GC refuses shared admin maintenance ${lock}`, async t => {
+  const f = await removalFixture(t, `shared-lock-${lock.startsWith('refs/') ? 'branch' : 'packed'}`);
+  await writeFile(path.join(f.repository.commonDir, lock), 'fixture shared lock\n');
+  const start = f.calls.length;
+  await assert.rejects(f.engine.inspectRemoval(f.record, f.local), code('WORKTREE_LOCKED'));
+  assert.equal(f.calls.slice(start).some(call => call.args.includes('remove') || call.args.includes('update-ref')), false);
+});
+
+test('GC refuses symbolic attached branch aliases without changing shared refs', async t => {
+  const f = await removalFixture(t, 'symbolic-head-gc');
+  await f.git(f.local, 'symbolic-ref', 'refs/heads/alias', 'refs/heads/topic/full/name');
+  await f.git(f.record.checkoutRoot, 'symbolic-ref', 'HEAD', 'refs/heads/alias');
+  const refs = await f.git(f.local, 'show-ref'); const start = f.calls.length;
+  await assert.rejects(f.engine.inspectRemoval(f.record, f.local), code('UNSUPPORTED_REF'));
+  assert.deepEqual(await f.git(f.local, 'show-ref'), refs);
+  assert.equal(f.calls.slice(start).some(call => call.args.includes('remove') || call.args.includes('update-ref')), false);
+});
+
+test('GC refuses source/path nesting, wrong exact base namespace, nonordinary and replaced pointers', async t => {
+  const f = await removalFixture(t, 'identity-gc'); const { record } = f;
+  await assert.rejects(f.engine.inspectRemoval({ ...record, checkoutRoot: f.local }, f.local), code('CHECKOUT_IDENTITY_CHANGED'));
+  await assert.rejects(f.engine.inspectRemoval({ ...record, baseRef: `refs/dsh-worktrees/other/base` }, f.local), code('BASE_CHANGED'));
+  await symlink(record.checkoutRoot, path.join(f.managed, 'checkout-alias'));
+  await assert.rejects(f.engine.inspectRemoval({ ...record, checkoutRoot: path.join(f.managed, 'checkout-alias') }, f.local), code('CHECKOUT_IDENTITY_CHANGED'));
+  const identity = await f.engine.inspectRemoval(record, f.local);
+  const pointer = path.join(record.checkoutRoot, '.git'); const saved = await readFile(pointer);
+  assert.equal(path.resolve(pointer), pointer); await rm(pointer); await writeFile(pointer, saved);
+  await assert.rejects(f.engine.preserveRemovalHead(record, identity), code('CHECKOUT_IDENTITY_CHANGED'));
+  assert.equal(await f.engine.removalState(record, f.local, identity), 'replaced');
+  assert.equal(f.calls.some(call => call.args.includes('remove')), false);
+});
+
+test('GC stale HEAD and rescue-ref replacement are refused, without overwriting any ref', async t => {
+  const f = await removalFixture(t, 'stale-head-gc'); const { record } = f;
+  const stale = await f.engine.inspectRemoval(record, f.local);
+  await f.git(record.checkoutRoot, 'commit', '--allow-empty', '-m', 'advance after inspection');
+  await assert.rejects(f.engine.preserveRemovalHead(record, stale), code('HEAD_CHANGED'));
+  const identity = await f.engine.inspectRemoval(record, f.local); await f.engine.preserveRemovalHead(record, identity);
+  await f.git(f.local, 'update-ref', `refs/dsh-worktrees/${record.id}/gc-head`, record.baseOid);
+  await assert.rejects(f.engine.removeManagedCheckout(record, identity), code('RESCUE_REF_CHANGED'));
+  assert.equal((await f.git(f.local, 'rev-parse', `refs/dsh-worktrees/${record.id}/gc-head`)).toString().trim(), record.baseOid);
+  assert.equal(await lstat(record.checkoutRoot).then(() => true), true);
+  assert.equal(f.calls.some(call => call.args.includes('remove')), false);
+});
+
+test('GC reconciliation distinguishes exact absence, partial state and replaced root; ambiguous native completion requires recovery', async t => {
+  const f = await removalFixture(t, 'reconcile-gc'); const { record } = f;
+  const identity = await f.engine.inspectRemoval(record, f.local);
+  assert.equal(await f.engine.removalState(record, f.local, identity), 'present', 'inspection phase need not have rescue refs yet');
+  await f.engine.preserveRemovalHead(record, identity);
+  assert.equal(await f.engine.removalState(record, f.local, identity), 'present');
+  const moved = path.join(f.managed, 'fixture-moved-root');
+  assert.equal(await realpath(record.checkoutRoot), record.checkoutRoot); assert.equal(path.resolve(moved), moved); await rename(record.checkoutRoot, moved);
+  assert.equal(await f.engine.removalState(record, f.local, identity), 'partial');
+  await mkdir(record.checkoutRoot); assert.equal(await f.engine.removalState(record, f.local, identity), 'replaced');
+  assert.equal(await realpath(record.checkoutRoot), record.checkoutRoot); await rm(record.checkoutRoot, { recursive: true, force: false }); assert.equal(await realpath(moved), moved); await rename(moved, record.checkoutRoot);
+  const engine = new GitOperations(async spec => { const result = await f.exec(spec); if (spec.args.includes('remove')) throw Error('fixture timeout after native completion'); return result; }, f.config);
+  await assert.rejects(engine.removeManagedCheckout(record, identity), error => error.code === 'REMOVAL_RECOVERY_REQUIRED' && error.details.checkoutMayHaveChanged);
+  assert.equal(await f.engine.removalState(record, f.local, identity), 'absent');
+  assert.equal(await f.engine.removalState(record, f.local), 'partial', 'unknown admin receipt cannot imply complete removal');
+  noBroadCleanup(f.calls);
+});
+
+test('GC revalidates admin locks after command driver discovery and respects live authorization revocation', async t => {
+  const f = await removalFixture(t, 'preflight-gc'); const { record } = f;
+  const identity = await f.engine.inspectRemoval(record, f.local); await f.engine.preserveRemovalHead(record, identity);
+  let inspected = 0; let raced = false;
+  const engine = new GitOperations(async spec => {
+    const result = await f.exec(spec);
+    if (spec.args.includes('worktree') && spec.args.includes('list') && ++inspected === 7) {
+      raced = true; await writeFile(path.join(identity.adminDir, 'index.lock'), 'fixture new lock\n');
+    }
+    return result;
+  }, f.config);
+  await assert.rejects(engine.removeManagedCheckout(record, identity)); assert.equal(raced, true);
+  assert.equal(f.calls.some(call => call.args.includes('remove')), false);
+  const lock = path.join(identity.adminDir, 'index.lock'); assert.equal(path.resolve(lock), lock); await rm(lock);
+  let authorized = true; let count = 0;
+  const guarded = new GitOperations(async spec => { const result = await f.exec(spec); if (++count === 10) authorized = false; return result; }, f.config, () => { if (!authorized) throw Error('fixture revocation'); });
+  await assert.rejects(guarded.removeManagedCheckout(record, identity));
+  assert.equal(f.calls.some(call => call.args.includes('remove')), false);
+});
+
+test('GC bounded pointer/history observations reject unsupported private refs and output limits', async t => {
+  const f = await removalFixture(t, 'bounded-gc'); const { record } = f;
+  const admin = (await f.git(record.checkoutRoot, 'rev-parse', '--absolute-git-dir')).toString().trim();
+  await f.git(record.checkoutRoot, 'symbolic-ref', 'refs/worktree/alias', 'refs/heads/topic/full/name');
+  await assert.rejects(f.engine.inspectRemoval(record, f.local), code('UNSUPPORTED_CHECKOUT'));
+  await f.git(record.checkoutRoot, 'symbolic-ref', '--delete', 'refs/worktree/alias');
+  const pointer = path.join(record.checkoutRoot, '.git'); const content = await readFile(pointer);
+  await writeFile(pointer, Buffer.alloc(f.config.maxRefBytes + 1, 120));
+  await assert.rejects(f.engine.inspectRemoval(record, f.local), code('CHECKOUT_IDENTITY_CHANGED'));
+  await writeFile(pointer, content);
+  await mkdir(path.join(admin, 'rebase-merge'));
+  await assert.rejects(f.engine.inspectRemoval(record, f.local), code('UNSUPPORTED_CHECKOUT'));
+  assert.equal(f.calls.some(call => call.args.includes('remove')), false);
+});
+
+async function localSwitchFixture(t) {
+  const f = await fixture(t);
+  await f.git(f.local, 'switch', '-c', 'reopen/selected');
+  await writeFile(path.join(f.local, 'project/file.txt'), 'selected branch bytes\n');
+  await writeFile(path.join(f.local, 'new-target'), 'selected new path\n');
+  await writeFile(path.join(f.local, 'ignored-target'), 'selected ignored-name tracked path\n');
+  await f.git(f.local, 'add', 'project/file.txt', 'new-target'); await f.git(f.local, 'add', '-f', 'ignored-target'); await f.git(f.local, 'commit', '-m', 'selected Local branch');
+  const selectedOid = (await f.git(f.local, 'rev-parse', 'HEAD')).toString().trim();
+  await f.git(f.local, 'switch', 'topic/full/name');
+  return { ...f, selectedOid };
+}
+
+test('Local current exact branch and detached selection reopen dirty/conflicted/ignored checkout without Git mutation', async t => {
+  const f = await fixture(t);
+  await f.git(f.local, 'tag', 'topic/full/name');
+  await writeFile(path.join(f.local, 'project/file.txt'), 'dirty current Local\n'); await f.git(f.local, 'add', '.');
+  await writeFile(path.join(f.local, 'untracked'), 'preserve\n'); await writeFile(path.join(f.local, 'ignored-local'), 'preserve ignored\n');
+  const before = await sourceReceipt(f); const start = f.calls.length;
+  const state = await f.engine.switchLocalBranch(f.local, f.repository.commonDir, 'topic/full/name', f.repository.head, undefined, true);
+  assert.equal(state.dirty, true); assert.equal(state.branch, 'topic/full/name'); await assertSourceReceipt(f, before);
+  assert.equal(f.calls.slice(start).some(call => call.args.some(value => ['switch', 'update-ref', 'reset', 'stash', 'fetch'].includes(value))), false);
+  const blob = (await f.git(f.local, 'rev-parse', 'HEAD:project/file.txt')).toString().trim();
+  await f.exec({ cwd: f.local, args: ['update-index', '--index-info'], stdin: `0 ${'0'.repeat(40)}\tproject/file.txt\n100644 ${blob} 1\tproject/file.txt\n100644 ${blob} 2\tproject/file.txt\n100644 ${blob} 3\tproject/file.txt\n` });
+  assert.equal((await f.engine.switchLocalBranch(f.local, f.repository.commonDir, 'topic/full/name', f.repository.head, undefined, true)).dirty, true);
+  // Test-only native HEAD change; product must not detach the selected attached branch.
+  await f.git(f.local, 'update-ref', '--no-deref', 'HEAD', f.repository.head);
+  const detachedStart = f.calls.length;
+  assert.equal((await f.engine.switchLocalBranch(f.local, f.repository.commonDir, 'HEAD', f.repository.head, undefined, true)).branch, null);
+  assert.equal(f.calls.slice(detachedStart).some(call => call.args.includes('switch')), false);
+});
+
+test('Local verifyOnly rejects a different or concurrently switched current selection without any mutation', async t => {
+  const f = await localSwitchFixture(t); const before = await sourceReceipt(f); const refs = await f.git(f.local, 'show-ref'); const start = f.calls.length;
+  await assert.rejects(f.engine.switchLocalBranch(f.local, f.repository.commonDir, 'reopen/selected', f.selectedOid, undefined, true), code('LOCAL_BRANCH_CHANGED'));
+  await assert.rejects(f.engine.switchLocalBranch(f.local, f.repository.commonDir, 'HEAD', f.repository.head, undefined, true), code('LOCAL_BRANCH_CHANGED'));
+  await assertSourceReceipt(f, before); assert.deepEqual(await f.git(f.local, 'show-ref'), refs);
+  assert.equal(f.calls.slice(start).some(call => call.args.some(value => ['switch', 'checkout', 'update-ref', 'reset', 'stash', 'merge', 'fetch'].includes(value))), false);
+  let raced = false; let changedReceipt;
+  const engine = new GitOperations(async spec => {
+    const result = await f.exec(spec);
+    if (!raced && spec.args.includes('worktree') && spec.args.includes('list')) {
+      raced = true;
+      // The external switch is fixture-owned. verifyOnly itself must not restore
+      // the previously chosen branch under privileged Host maintenance authority.
+      await f.git(f.local, 'switch', 'reopen/selected'); changedReceipt = await sourceReceipt(f);
+    }
+    return result;
+  }, f.config);
+  const raceStart = f.calls.length;
+  await assert.rejects(engine.switchLocalBranch(f.local, f.repository.commonDir, 'topic/full/name', f.repository.head, undefined, true), code('LOCAL_BRANCH_CHANGED'));
+  assert.equal(raced, true); await assertSourceReceipt(f, changedReceipt); assert.deepEqual(await f.git(f.local, 'show-ref'), refs);
+  const switchCalls = f.calls.slice(raceStart).filter(call => call.args.includes('switch'));
+  assert.equal(switchCalls.length, 1); assert.equal(switchCalls[0].args.includes('--no-pager'), false, 'only the external fixture switch executed');
+});
+
+test('Local different clean branch switches safely with exact OID and no-overwrite-ignore, preserving refs/history', async t => {
+  const f = await localSwitchFixture(t); await f.git(f.local, 'tag', 'reopen/selected', f.selectedOid);
+  const beforeRefs = await f.git(f.local, 'show-ref'); const start = f.calls.length;
+  const state = await f.engine.switchLocalBranch(f.local, f.repository.commonDir, 'reopen/selected', f.selectedOid);
+  assert.equal(state.head, f.selectedOid); assert.equal(state.branch, 'reopen/selected'); assert.equal(state.dirty, false);
+  assert.equal(await readFile(path.join(f.local, 'project/file.txt'), 'utf8'), 'selected branch bytes\n');
+  assert.deepEqual(await f.git(f.local, 'show-ref'), beforeRefs);
+  const calls = f.calls.slice(start); const mutation = calls.find(call => call.args.includes('switch'));
+  assert.ok(mutation.args.includes('--no-overwrite-ignore')); assert.ok(mutation.args.includes('--no-guess')); assert.equal(mutation.args.includes('--no-track'), false, 'no-track can implicitly create a basename branch'); assert.equal(mutation.args.at(-1), 'reopen/selected');
+  for (const forbidden of ['--force', 'reset', 'stash', 'merge', 'fetch', 'checkout', 'update-ref']) assert.equal(calls.some(call => call.args.includes(forbidden)), false);
+});
+
+for (const collision of ['dirty', 'staged', 'untracked', 'ignored']) test(`Local different branch refuses ${collision} and preserves exact source state`, async t => {
+  const f = await localSwitchFixture(t);
+  if (collision === 'dirty' || collision === 'staged') {
+    await writeFile(path.join(f.local, 'project/file.txt'), 'keep Local edits\n');
+    if (collision === 'staged') await f.git(f.local, 'add', '.');
+  } else await writeFile(path.join(f.local, collision === 'untracked' ? 'new-target' : 'ignored-target'), 'keep Local collision\n');
+  const before = await sourceReceipt(f); const start = f.calls.length;
+  await assert.rejects(f.engine.switchLocalBranch(f.local, f.repository.commonDir, 'reopen/selected', f.selectedOid), code('LOCAL_DIRTY'));
+  await assertSourceReceipt(f, before); assert.equal(f.calls.slice(start).some(call => call.args.includes('switch')), false);
+});
+
+test('Local branch-in-use, stale branch/HEAD selections and canonical repo identity changes are refused', async t => {
+  const f = await localSwitchFixture(t); const record = await f.create('local-branch-in-use');
+  await f.git(record.checkoutRoot, 'switch', 'reopen/selected');
+  const start = f.calls.length;
+  await assert.rejects(f.engine.switchLocalBranch(f.local, f.repository.commonDir, 'reopen/selected', f.selectedOid), code('BRANCH_IN_USE'));
+  await assert.rejects(f.engine.switchLocalBranch(f.local, f.repository.commonDir, 'reopen/selected', f.repository.head), code('BRANCH_CHANGED'));
+  await assert.rejects(f.engine.switchLocalBranch(f.local, f.repository.commonDir, 'HEAD', f.repository.head), code('BRANCH_CHANGED'));
+  await assert.rejects(f.engine.switchLocalBranch(f.local, f.remote, 'topic/full/name', f.repository.head), code('CHECKOUT_IDENTITY_CHANGED'));
+  await symlink(f.local, path.join(f.root, 'local-alias'));
+  await assert.rejects(f.engine.switchLocalBranch(path.join(f.root, 'local-alias'), f.repository.commonDir, 'topic/full/name', f.repository.head), code('CHECKOUT_IDENTITY_CHANGED'));
+  await assert.rejects(f.engine.switchLocalBranch(f.local, f.repository.commonDir, '--force', f.repository.head), code('INVALID_REF'));
+  assert.equal(f.calls.slice(start).some(call => call.args.includes('switch')), false);
+  assert.equal((await f.engine.status(f.local)).branch, 'topic/full/name');
+});
+
+test('Local selected branch movement at final preflight refuses mutation; ambiguous completion reports recovery', async t => {
+  const f = await localSwitchFixture(t); let counts = 0; let raced = false;
+  const moved = (await f.git(f.local, 'commit-tree', `${f.selectedOid}^{tree}`, '-p', f.selectedOid, '-m', 'selection moved')).toString().trim();
+  const engine = new GitOperations(async spec => {
+    const result = await f.exec(spec);
+    if (spec.args.includes('worktree') && spec.args.includes('list') && ++counts === 6) { raced = true; await f.git(f.local, 'update-ref', 'refs/heads/reopen/selected', moved); }
+    return result;
+  }, f.config);
+  const start = f.calls.length;
+  await assert.rejects(engine.switchLocalBranch(f.local, f.repository.commonDir, 'reopen/selected', f.selectedOid));
+  assert.equal(raced, true); assert.equal(f.calls.slice(start).some(call => call.args.includes('switch')), false);
+  await f.git(f.local, 'update-ref', 'refs/heads/reopen/selected', f.selectedOid);
+  const ambiguous = new GitOperations(async spec => { const result = await f.exec(spec); if (spec.args.includes('switch')) throw Error('fixture timeout after successful switch'); return result; }, f.config);
+  await assert.rejects(ambiguous.switchLocalBranch(f.local, f.repository.commonDir, 'reopen/selected', f.selectedOid), error => error.code === 'LOCAL_SWITCH_RECOVERY_REQUIRED' && error.details.targetMayHaveChanged);
+  assert.equal((await f.engine.status(f.local)).head, f.selectedOid);
+});
+
+test('Local branch selection refuses a tree missing the original selected subdirectory before any switch', async t => {
+  const f = await localSwitchFixture(t);
+  const emptyTree = (await f.git(f.local, 'hash-object', '-t', 'tree', '--stdin')).toString().trim();
+  const withoutProject = (await f.git(f.local, 'commit-tree', emptyTree, '-p', f.repository.head, '-m', 'without selected folder')).toString().trim();
+  await f.git(f.local, 'branch', 'without-project', withoutProject);
+  const before = await sourceReceipt(f), start = f.calls.length;
+  await assert.rejects(f.engine.switchLocalBranch(path.join(f.local, 'project'), f.repository.commonDir, 'without-project', withoutProject), code('PROJECT_SUBDIR_MISSING'));
+  await assertSourceReceipt(f, before); assert.equal(f.calls.slice(start).some(call => call.args.includes('switch')), false);
+  assert.equal(await readFile(path.join(f.local, 'project/file.txt'), 'utf8'), 'base\n');
 });

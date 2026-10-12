@@ -1,7 +1,7 @@
 # @1yefuwang1/dsh-worktrees
 
 Multi-folder projects with Local and isolated Git worktree threads for DeepSeek
-Harness. This experimental Host + Web Client package is **`0.2.18`**; new releases
+Harness. This experimental Host + Web Client package is **`0.2.20`**; new releases
 use staged npm publishing with maintainer review/2FA. It does not require Copilot, the
 catalog plugin, or the search plugin. The scoped name avoids collision with the
 unrelated npm package `dsh-worktrees`; stable tool, command and metadata names are
@@ -224,6 +224,104 @@ foreground naming order. Legacy no-`firstPrompt` tool creates may still use the
 previous post-first-message naming path (with its idle/maintenance checks); the
 new lazy UI supplies `firstPrompt` and never schedules that background rename.
 
+## Workspace cleanup
+
+**Enabled by default:** `cleanupEnabled: true`, `cleanupInactivityDays: 10`.
+Configure these in the existing plugin entry's **Workspace cleanup** card. Days are
+elapsed 24-hour durations; the allowed range is **1–3650**. Disabling cleanup stops
+new collections without disabling recovery of worktrees already reclaimed.
+
+The clock uses the newest **user-authored message** across all threads backed by
+that checkout, including native forks and subdirectory threads. Creation is the
+fallback for a thread with no messages. Merely viewing/opening a thread, title or
+project edits, assistant output, and filesystem activity do **not** reset it.
+Archive status is irrelevant; there is no auto-archive feature.
+
+The Host checks on startup, hourly, and after runtime disposal. A worktree is
+collected only when its managed identity and durable thread activity can be proved:
+
+- **Every loaded runtime defers deletion, even if idle or its browser tab is
+  closed.** Runtimes can remain loaded for the Host lifetime; cleanup can therefore
+  wait until a server restart. The plugin never retires an agent to make it eligible.
+- Protected worktrees, active jobs/terminals/reminders, queued input, and unfinished
+  creation/handoff/naming operations defer deletion. Unknown observations, locked
+  or unsupported layouts, changed identities, and orphaned checkouts with no
+  ordinary thread writer claim also defer it; the manager shows the reason.
+- Each recorded historical root is checked separately. Changing the root setting
+  never authorizes a directory sweep, nor moves existing directories.
+
+**Cleanup permanently deletes uncommitted, untracked, and ignored files.** There
+is no unsaved-file backup. Committed branches, pinned bases, final HEAD and bounded
+private commit/ref/reflog recovery references, and all conversation logs are
+retained. A single-force, exact `git worktree remove` removes the verified checkout
+and its registration; no branches, unrelated directories, source files, or broad
+Git metadata are pruned. Unsupported private state and nested repositories are
+not force-overridden. Use **Protect** or disable cleanup when outside editors or
+processes still need a checkout: arbitrary external writers are not globally
+locked by the Host. Filesystem activity is deliberately not an inactivity signal.
+
+Durable cleanup receipts distinguish a confirmed collection from an independently
+missing directory. The Host journals preservation/removal before effects and
+reconciles interrupted removal; partial or replaced identities require inspection
+rather than an automatic forced retry. Cold session writer claims and the existing
+repository queue serialize cooperating sweeps and prevent source resumption.
+No cleanup timestamp or warning is written as fabricated user intent.
+
+### Reopen a reclaimed thread
+
+Opening its history shows a persistent warning and an **explicit Local branch
+choice**, whether opened through Projects, Folder view, search, or a restored
+selection. History remains viewable; sending is blocked until recovery is ready.
+Choose from local branches, including the retained worktree branch. There is no
+remote fetch and no automatically selected branch. Detached Local HEAD is an
+explicit choice, not a fallback.
+
+- The target is the **original selected Local folder**, not a subsequently changed
+  project main/default. Missing, moved, or repointed sources are refused visibly.
+- Selecting its already-current branch is a verified no-op, even with Local
+  unsaved files. A different branch needs existing Full access, a clean/idle Local
+  checkout, an unused branch, and an unchanged commit selection. No force, reset,
+  stash, merge, or automatic application of old worktree changes is performed.
+- Recovery creates one **new internal session ID**, with the complete validated
+  history (including post-turn title/settings/goal events), normal preset/model/
+  permission/approval/plan semantics, and truthful Local backing. Goals remain
+  disarmed until explicit human resumption. The old header and log remain unchanged.
+- A journaled preallocated identity and persistent redirect make repeated recovery
+  requests and explicit **Open Local** reuse the exact same continuation, not create
+  another conversation. The redirect is a durable identity mapping, not permission
+  for automatic Client navigation: late metadata/lifecycle responses update warnings
+  and actions only, never replace a newer, pre-existing, or pending native selection.
+  Explicit **Continue on selected branch** normally opens the requested Local target.
+- Pending recovery stages the real Local target under the runtime factory's existing
+  serial initialization claim—not a nested `runMaintenance` claim or invented private
+  Agent phase. Native controls remain usable through **Open Local permission controls**;
+  queued input stays parked before turns until recovery commits. Held targets still
+  have their jobs and terminals checked; only the parked inbox and duplicate driver
+  claim are exempt. A Local-root admission fence and fresh exact owner/resource checks
+  at every managed process spawn, after asynchronous executable/sandbox lookup, prevent
+  cooperating runtimes or newly active resources from slipping into a branch switch.
+- **Ready is a durable recovery commit:** the selected Local branch is validated,
+  inherited history and Workspace association are flushed, and the ready journal is
+  saved before the factory input gate releases. A pre-commit failure retains the same
+  pending target with recovery required. A later live-factory publication failure does
+  **not** downgrade ready or allocate another ID; when observed by the recovery request,
+  it returns `CONTINUATION_PUBLICATION_FAILED` with guidance to open/resume the exact
+  existing continuation through native Session controls. A separately owned native
+  factory can report its own publication error; the same ready identity still survives.
+  Retrying explicit **Open Local** uses that identity, not another branch switch.
+  Native Host/plugin shutdown retains its normal cancellation and writer-drain semantics.
+- This runtime has no public structured chip/file-draft migration transaction.
+  Existing unsent drafts stay in an owned historical Client reference instead of
+  being flattened or silently dropped; **View historical draft** and **Open Local**
+  provide explicit navigation. Do not expect browser file drafts to survive a page
+  refresh or normal browser teardown.
+
+The warning also supplies a bounded agent reminder: inherited paths may refer to
+removed files or an older branch; verify current Local files before writing.
+Generic headless `--session-id` cannot transparently adopt these forked
+continuations in the pinned runtime. Use the Web recovery flow, or explicit
+`/worktree reopen-info` / `git_worktree` from another ordinary live conversation.
+
 ## Manager, reminders and guarded Local handoff
 
 The advanced **Worktrees** sidebar panel shows recorded checkouts, pinned bases,
@@ -248,8 +346,10 @@ There is no periodic polling; actor identity and filesystem authorization are
 unchanged, and UI errors are shown inline. Existing historical rows are not erased.
 Agent runtime-context reminders are separate from these UI queries.
 Open an exact conversation, create a branch in the worktree, protect/unprotect it,
-or archive/restore its plugin record. **Archive is not deletion**: checkout files,
-pinned base refs, sessions and logs remain. Protection prevents branch creation,
+or archive/restore its plugin record. **Archive itself is not deletion**: checkout
+files, pinned bases, sessions and logs are retained by that action. Enabled
+inactivity cleanup can subsequently reclaim the directory regardless of archive
+status. Protection also exempts a worktree from cleanup and prevents branch creation,
 handoff and archiving until explicitly removed; it is not an OS write lock.
 
 For handoff, open a conversation belonging to the chosen worktree first:
@@ -314,6 +414,11 @@ Unsupported cases fail explicitly, including:
 - remote filesystem execution providers without the required local capability
   mapping, stale previews/cursors, changed remote identities, or over-limit output.
 
+These creation/handoff limits are not a cleanliness promise for cleanup. Physical
+collection permits a dirty or conflicted index and a missing effective project
+subdirectory after exact checkout/root validation; verified-current Local recovery
+also permits dirty/conflicted no-ops. Actual branch changes remain clean-only.
+
 Hooks, external diff/fsmonitor and recursive submodule behavior are suppressed
 for plugin Git operations. This is not a claim that arbitrary configured Git
 transports or external writers are globally sandboxed in Full access.
@@ -339,10 +444,13 @@ are transient, even though snapshot files and durable operation/worktree records
 are retained. Deferred naming receipts are durable and tied to the exact original
 first message, not later messages or inherited/replaced history.
 
-There is no physical worktree-delete operation. Disabling/removing the plugin
-does not remove checkout files or rewrite original session logs. Any manual Git
-cleanup is a separate user-owned task after inspecting identities and retained
-records; do not infer cleanup authority from an archive flag.
+There is no agent-facing manual delete action. Configured inactivity cleanup is
+narrowly scoped Host maintenance over verified recorded checkouts; it never
+borrows creator permissions or creates a privileged placeholder agent. Disabling/
+removing the plugin does not itself remove checkout files or rewrite logs, but it
+also removes the recovery UI and admission fences. Archive itself is metadata-only
+and does not create cleanup authority; enabled cleanup uses its own inactivity,
+protection, identity, and activity checks.
 
 ## Install from this repository
 
@@ -356,7 +464,7 @@ After the staged release is approved and appears on npm, install the scoped
 package (the similarly named unscoped package is unrelated):
 
 ```sh
-dsh plugin --profile <profile> add @1yefuwang1/dsh-worktrees@0.2.18
+dsh plugin --profile <profile> add @1yefuwang1/dsh-worktrees@0.2.20
 ```
 
 For local development or while release approval is pending, build explicitly from
@@ -364,7 +472,7 @@ the private monorepo root, then opt into a local leaf installation:
 
 ```sh
 pnpm install --frozen-lockfile --ignore-scripts
-pnpm --filter @1yefuwang1/dsh-worktrees run build
+pnpm --config.ignore-scripts=true --filter @1yefuwang1/dsh-worktrees run build
 # Alters the chosen profile only if you choose to run it:
 dsh plugin --profile <profile> add -w packages/worktrees
 ```
@@ -412,6 +520,8 @@ through normal profile composition/settings, not the plugin's package files.
 | Field | Default | Meaning |
 | --- | --- | --- |
 | `root` | Harness home `worktrees/` | Persisted native settings field for new worktree directories; absolute Host path, outside source repositories; snapshots retain their load-time root |
+| `cleanupEnabled` | `true` | Live enable/disable for automatic inactive-worktree collection, including unsaved files |
+| `cleanupInactivityDays` | `10` | Live whole elapsed days without user messages, from 1 to 3650; any loaded runtime or known active work defers cleanup |
 | `gitExecutable` | `git` | Executable resolved by the managed subprocess provider |
 | `defaultRemote` / `defaultBranch` | `origin` / `main` | Initial preferences, never an allowlist |
 | `commandTimeoutMs` | `30000` | Git command deadline |
@@ -433,7 +543,11 @@ means `list`. IDs and operation/preview IDs are UUIDs. Example read operations:
 ```
 
 Actions: `list`, `status`, `branches`, `create`, `start`, `branch`, `protect`,
-`archive`, `preview`, `export`, `handoff`. `repoPath` defaults to the caller's
+`archive`, `preview`, `export`, `handoff`, `reopen-info`, `reopen`. Recovery inspection
+requires the historical `sourceSessionId`; optional `cursor`/`limit` page one
+cached Local branch generation. `reopen` requires that ID and an explicitly
+user-selected `localBranch`/`localOid`. It returns the exact Local continuation
+and GC warning facts, not an applied patch or recreated checkout. `repoPath` defaults to the caller's
 execution directory where supported. `create` requires a new `operationId` and
 either `branchSource: "local"` with `localBranch` (plus `localOid` to refuse a
 moved selection), or a remote and `remoteBranch` (the backwards-compatible default
@@ -452,7 +566,10 @@ new-session service; it is never a fallback actor for Git operations. The explic
 project `start` operation remains available to commands and tools.
 Versioned results are `{v:1,ok:true,data:...}` or
 `{v:1,ok:false,error:{code,message}}`; transport and decode failures are shown inline.
-Explicit commands remain normally logged.
+Explicit commands remain normally logged. The quiet `/api/dsh-worktrees/recovery`
+route inspects historical sources cold and uses cancellable, event-driven lifecycle
+waits; it never resolves the deleted-directory Agent first. Explicit Local recovery
+uses the real requested continuation's current policy for any branch switch.
 
 `/project` (one JSON action object) and `workspace_project` share the project
 controller: `list` (optional `projectId` filter), `create`, `update`, `remove`,
@@ -489,11 +606,18 @@ pnpm --filter @1yefuwang1/dsh-worktrees run test:types
 pnpm --filter @1yefuwang1/dsh-worktrees run test:pack
 ```
 
-Unit/protocol tests and temporary local-Git fixtures are not a live GUI, remote
-credential or transport-compatibility probe. Client tests are static/pure protocol
-checks, not a fake DOM or screenshot renderer. Browser interaction, visible slot
-registration and light/dark appearance still require verification in the installed
-GUI; they were unavailable during initial Client implementation.
+Unit/protocol, real React interaction tests, and temporary local-Git fixtures are
+not a live GUI, remote credential, or transport-compatibility probe. Cleanup tests
+use fake clocks/owned fixtures and exercise storage, leases, holds, crash recovery,
+authenticated quiet RPC, and immutable history/settings. Actual pinned AgentLoop,
+native Session controller, goals/presets/policies and JSONL persistence fixtures
+exercise real create/resume initialization claims, native permission changes, queued
+input, ready-journal/publication failures, exact-ID retry, and shutdown writer drains.
+Production Local-claim tests cover held resources, new/resumed/replaced owners,
+canonical aliases, cancellation, and asynchronous lookup-to-spawn races. No user
+checkout is reclaimed by the test suite. Browser interaction, visible slot registration, and
+light/dark appearance still require verification in the installed GUI; synthetic
+render checks do not establish that verification.
 
 Release tags use `@1yefuwang1/dsh-worktrees-vX.Y.Z`, matching this leaf's full scoped
 name and version. The shared release gate/staged OIDC workflow never publishes the

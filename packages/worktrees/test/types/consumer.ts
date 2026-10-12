@@ -1,8 +1,8 @@
 import { Config, apply, GitOperations as RootGitOperations, WorktreeError, ProjectController as RootProjectController, type WorktreeConfig as RootConfig, type CommandEnvelope, type ProjectRecord as RootProjectRecord } from '@1yefuwang1/dsh-worktrees';
 import { ProjectController, parseProjectRequest, projectParameterSchema, resolveMainFolder, type ProjectRequest, type ProjectThreadBinding, type ProjectSnapshot, type ProjectStartResult, type ProjectRemoveResult } from '@1yefuwang1/dsh-worktrees/projects';
-import { GitOperations } from '@1yefuwang1/dsh-worktrees/git';
+import { GitOperations, type RemovalIdentity, type RemovalState } from '@1yefuwang1/dsh-worktrees/git';
 import { NAMING_DEFAULTS, namingConfig, safeSlug } from '@1yefuwang1/dsh-worktrees/naming';
-import type { WorktreeConfig, GitExecutor, GitRunSpec, GitRunResult, RepositoryInfo, RemoteBranches, LocalBranches, BranchSource, CheckoutState, CreateCheckoutInput, CreatedCheckout, SnapshotInput, WorktreePreview, WorktreeRecord, SessionSettings, SessionResult, WorktreeRequest, WorktreeAction, OperationRecord, OperationPhase } from '@1yefuwang1/dsh-worktrees/types';
+import type { WorktreeConfig, GitExecutor, GitRunSpec, GitRunResult, RepositoryInfo, RemoteBranches, LocalBranches, BranchSource, CheckoutState, CreateCheckoutInput, CreatedCheckout, SnapshotInput, WorktreePreview, WorktreeRecord, SessionSettings, SessionResult, WorktreeRequest, WorktreeAction, OperationRecord, OperationPhase, WorktreeCleanupSummary, WorktreeReopenInfo, WorktreeReopenResult } from '@1yefuwang1/dsh-worktrees/types';
 import type { Context } from '@deepseek-ai/cordis';
 
 // Compile-only consumer of the exported declarations, never executed against Git.
@@ -37,6 +37,16 @@ const localBranches: Promise<LocalBranches> = git.localBranches(repository.root)
 const localCreateInput: CreateCheckoutInput = { id: record.id, repository, destination: record.checkoutRoot, branchSource: localSource, localBranch: 'main', localOid: repository.head, baseRef: record.baseRef };
 const localCreated: Promise<CreatedCheckout> = git.create(localCreateInput);
 const localRequest: WorktreeRequest = { action: 'create', operationId: operation.id, branchSource: 'local', localBranch: 'HEAD', localOid: repository.head };
+const cleanupConfig: RootConfig = { ...config, cleanupEnabled: true, cleanupInactivityDays: 10 };
+declare const cleanup: WorktreeCleanupSummary;
+declare const reopenInfo: WorktreeReopenInfo;
+declare const reopened: WorktreeReopenResult;
+declare const removalIdentity: RemovalIdentity;
+const reclaimState: Promise<RemovalState> = git.removalState(record, repository.root, removalIdentity);
+const verifyLocal: Promise<CheckoutState> = git.switchLocalBranch(repository.root, repository.commonDir, 'main', repository.head, undefined, true);
+const recoveryQuery: WorktreeRequest = { action: 'reopen-info', sourceSessionId: operation.sourceSessionId, limit: 100 };
+const recoveryRequest: WorktreeRequest = { action: 'reopen', sourceSessionId: operation.sourceSessionId, localBranch: 'main', localOid: repository.head };
+void [cleanupConfig, cleanup.phase, reopenInfo.revision, reopenInfo.pendingSessionId, reopened.cwd, reclaimState, verifyLocal, recoveryQuery, recoveryRequest];
 // @ts-expect-error source modes cannot silently mix local selection and remote fetch fields
 const mixedCreateInput: CreateCheckoutInput = { ...localCreateInput, remote: 'origin' };
 void [localBranches, localCreated, localRequest, mixedCreateInput];
