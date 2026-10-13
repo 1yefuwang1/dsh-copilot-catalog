@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -860,9 +860,16 @@ test('GC bounded pointer/history observations reject unsupported private refs an
   await assert.rejects(f.engine.inspectRemoval(record, f.local), code('UNSUPPORTED_CHECKOUT'));
   await f.git(record.checkoutRoot, 'symbolic-ref', '--delete', 'refs/worktree/alias');
   const pointer = path.join(record.checkoutRoot, '.git'); const content = await readFile(pointer);
-  await writeFile(pointer, Buffer.alloc(f.config.maxRefBytes + 1, 120));
+  // Git marks this existing pointer hidden on Windows, where opening with 'w'
+  // fails. Mutate it in place with 'r+' and truncate explicitly for both sizes.
+  const replacePointer = async bytes => {
+    const handle = await open(pointer, 'r+');
+    try { await handle.truncate(0); await handle.writeFile(bytes); }
+    finally { await handle.close(); }
+  };
+  await replacePointer(Buffer.alloc(f.config.maxRefBytes + 1, 120));
   await assert.rejects(f.engine.inspectRemoval(record, f.local), code('CHECKOUT_IDENTITY_CHANGED'));
-  await writeFile(pointer, content);
+  await replacePointer(content);
   await mkdir(path.join(admin, 'rebase-merge'));
   await assert.rejects(f.engine.inspectRemoval(record, f.local), code('UNSUPPORTED_CHECKOUT'));
   assert.equal(f.calls.some(call => call.args.includes('remove')), false);
