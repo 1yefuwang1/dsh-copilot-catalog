@@ -656,6 +656,37 @@ async function assertSourceReceipt(f, before) {
   assert.deepEqual(await sourceReceipt(f), before);
 }
 
+test('GC normalizes Git admin path separators without accepting different, relative or aliased identities', async t => {
+  const f = await removalFixture(t, 'admin-path-gc'); const { record } = f;
+  const admin = await realpath((await f.git(record.checkoutRoot, 'rev-parse', '--absolute-git-dir')).toString().trim());
+  const alias = path.join(f.root, 'admin-alias'); await symlink(admin, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  const start = f.calls.length;
+  let observations = 0;
+  const reporting = reported => new GitOperations(async spec => {
+    const result = await f.exec(spec);
+    if (!spec.args.includes('--absolute-git-dir')) return result;
+    observations++;
+    return { ...result, stdout: Buffer.from(`${reported}\n`) };
+  }, f.config);
+  // Git for Windows emits '/', while Node's canonical paths use '\\'. Repeated
+  // separators also exercise the same normalization on POSIX, so this regresses
+  // the raw-string comparison even when the test is not running on Windows.
+  const forward = admin.split(path.sep).join('/');
+  const repeated = `${path.dirname(admin).split(path.sep).join('/')}//${path.basename(admin)}`;
+  for (const reported of [forward, repeated]) {
+    const identity = await reporting(reported).inspectRemoval(record, f.local);
+    assert.equal(identity.adminDir, admin);
+    assert.equal(identity.checkoutRoot, record.checkoutRoot);
+    assert.equal(identity.commonDir, record.commonDir);
+  }
+  for (const reported of [path.join(path.dirname(admin), 'different-admin'), path.relative(record.checkoutRoot, admin), alias]) {
+    await assert.rejects(reporting(reported).inspectRemoval(record, f.local), code('CHECKOUT_IDENTITY_CHANGED'));
+  }
+  assert.equal(observations, 5, 'every case reached the Git admin identity comparison');
+  assert.equal(f.calls.slice(start).some(call => call.args.includes('remove') || call.args.includes('update-ref')), false);
+  assert.equal(await lstat(record.checkoutRoot).then(value => value.isDirectory()), true);
+});
+
 test('GC removes authorized dirty, staged, untracked and ignored fixture bytes while retaining every shared ref and Source Local', async t => {
   const f = await removalFixture(t, 'dirty-gc'); const { record } = f;
   await f.engine.createBranch(record, 'feature/retained-gc');

@@ -665,7 +665,10 @@ export class GitOperations {
       if (!pointer.data.startsWith('gitdir: ') || !pointer.data.endsWith('\n') || /[\0\r\n]/u.test(pointer.data.slice(8, -1))) fail('CHECKOUT_IDENTITY_CHANGED', 'The managed .git pointer is invalid.');
       const adminDir = path.resolve(info.root, pointer.data.slice(8, -1));
       const adminIdentity = await this.directoryIdentity(adminDir);
-      if (path.dirname(adminDir) !== path.join(info.commonDir, 'worktrees') || line((await this.run(info.root, ['rev-parse', '--absolute-git-dir'], signal)).stdout) !== adminDir) fail('CHECKOUT_IDENTITY_CHANGED', 'The worktree admin identity changed.');
+      // Git for Windows emits forward slashes; normalize native path syntax without
+      // resolving filesystem aliases or relaxing the canonical directory identity above.
+      const reportedAdmin = path.normalize(line((await this.run(info.root, ['rev-parse', '--absolute-git-dir'], signal)).stdout));
+      if (path.dirname(adminDir) !== path.join(info.commonDir, 'worktrees') || reportedAdmin !== adminDir) fail('CHECKOUT_IDENTITY_CHANGED', 'The worktree admin identity changed.');
       const backlink = await this.metadataIdentity(path.join(adminDir, 'gitdir'));
       const commonPointer = await this.metadataIdentity(path.join(adminDir, 'commondir'));
       for (const value of [backlink.data, commonPointer.data]) if (!value.endsWith('\n') || /[\0\r\n]/u.test(value.slice(0, -1))) fail('CHECKOUT_IDENTITY_CHANGED', 'The worktree admin mapping is invalid.');

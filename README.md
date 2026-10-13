@@ -186,8 +186,8 @@ errors do not downgrade it. Explicit Continue/Open Local retains navigation auth
 Cleanup still discards unsaved checkout files after messaging-only inactivity while
 retaining Git branches and conversation history; loaded runtimes and active/protected
 work defer it. Existing local/remote starting branches, themed controls, multi-folder
-projects and guarded handoff are retained. This is an unreleased development version;
-npm availability requires staged-release approval. The unrelated unscoped npm name is
+projects and guarded handoff are retained. This release uses staged npm publishing;
+npm availability requires maintainer review/2FA approval. The unrelated unscoped npm name is
 not an alias for this plugin.
 
 The [release workflow](.github/workflows/publish.yml) installs/verifies with pnpm,

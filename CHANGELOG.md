@@ -1,6 +1,6 @@
 # Monorepo changelog
 
-## @1yefuwang1/dsh-worktrees 0.2.20 — Unreleased review fixes
+## @1yefuwang1/dsh-worktrees 0.2.20 — Runtime recovery and Local/navigation safety fixes
 
 - Stage Local recovery under the actual runtime factory's existing initialization
   claim, avoiding nested maintenance and preserving queued input/native controls.
@@ -12,6 +12,8 @@
   guidance rather than a recovery-required downgrade or another branch switch.
 - Let recovery metadata update warnings and explicit Open Local actions, never
   override newer or pre-existing navigation with an automatic redirect.
+- Normalize Git-reported absolute admin-path separators for Windows cleanup checks
+  without relaxing canonical path, pointer/backlink, or filesystem identity guards.
 - Add actual factory create/resume/publication-failure integration and production
   Local-claim/guard regressions instead of relying only on simplified mocks.
 

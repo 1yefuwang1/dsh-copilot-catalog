@@ -1,6 +1,6 @@
 # @1yefuwang1/dsh-worktrees changelog
 
-## 0.2.20 — Runtime recovery and Local/navigation safety fixes (unreleased)
+## 0.2.20 — Runtime recovery and Local/navigation safety fixes
 
 - Use the runtime factory's existing initialization claim as the staged input hold
   through explicit branch choice and the durable ready journal. Avoid nested
@@ -19,6 +19,8 @@
 - Remove metadata-driven navigation. Show the GC warning and explicit Open Local
   action without cancelling pre-existing, newer or not-yet-committed native
   navigation; explicit Continue still opens the requested Local continuation.
+- Normalize Git-reported absolute admin-path separators for Windows cleanup checks,
+  while retaining exact canonical identity, pointer, backlink and lock validation.
 - Add real pinned-runtime create/resume/native-control/queued-input/publication
   failure/shutdown tests, successful production claims/resource races and realistic
   native navigation races. The earlier simplified factory mocks missed a real
