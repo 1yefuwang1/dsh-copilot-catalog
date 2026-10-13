@@ -1,5 +1,14 @@
 # Monorepo changelog
 
+## Unreleased — Complete TypeScript migration
+
+- Port the browser client, repository tooling, test suites and fixtures to strict
+  TypeScript; keep the existing Host implementations and public declarations.
+- Compile the persistent browser factory into [dist/client.js](<packages/worktrees/dist/client.js>) while retaining
+  the public `./client` export and standalone package assets.
+- Run TypeScript tests with `tsx`, include tests/tooling/client in type checks,
+  and update release validation, publication allowlists and contributor commands.
+
 ## @1yefuwang1/dsh-worktrees 0.2.21 — Desktop-only native folder picker
 
 - Hide **Choose a folder…** in web Create/Manage project dialogs; require the

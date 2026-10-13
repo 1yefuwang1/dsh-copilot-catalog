@@ -51,7 +51,7 @@ GitHub's applicable account/usage policies; auxiliary searches may consume usage
 `pnpm run check:secrets` audits Git-candidate files for common provider-token formats,
 Copilot session tokens, JWTs, private keys, credential-bearing URLs,
 hard-coded credential-like literals and
-sensitive filenames. `node scripts/check-secrets.mjs --staged` checks the actual
+sensitive filenames. `pnpm exec tsx scripts/check-secrets.ts --staged` checks the actual
 index. Only specifically reviewed synthetic literals in the known package test
 trees are allowed; suspected values are never printed. This is defense in depth,
 not a proof that arbitrary secrets are absent. Review source and each tarball.

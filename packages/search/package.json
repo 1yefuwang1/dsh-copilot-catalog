@@ -6,27 +6,52 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
-    "./provider": { "types": "./dist/provider.d.ts", "import": "./dist/provider.js" },
-    "./responses": { "types": "./dist/responses.d.ts", "import": "./dist/responses.js" },
-    "./auth": { "types": "./dist/auth.d.ts", "import": "./dist/auth.js" },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./provider": {
+      "types": "./dist/provider.d.ts",
+      "import": "./dist/provider.js"
+    },
+    "./responses": {
+      "types": "./dist/responses.d.ts",
+      "import": "./dist/responses.js"
+    },
+    "./auth": {
+      "types": "./dist/auth.d.ts",
+      "import": "./dist/auth.js"
+    },
     "./package.json": "./package.json"
   },
-  "files": ["dist/", "cordis.patch.yml", "README.md", "CHANGELOG.md", "LICENSE"],
+  "files": [
+    "dist/",
+    "cordis.patch.yml",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "pnpm run build && node --test test/auth.test.mjs test/refresh.test.mjs test/plugin.test.mjs test/provider.test.mjs test/responses.test.mjs",
-    "check": "pnpm run typecheck && node ../../scripts/check.mjs",
-    "check:secrets": "node ../../scripts/check-secrets.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p test/tsconfig.json",
+    "test": "pnpm run build && node --import tsx --test test/auth.test.ts test/refresh.test.ts test/plugin.test.ts test/provider.test.ts test/responses.test.ts",
+    "check": "pnpm run typecheck && tsx ../../scripts/check.ts",
+    "check:secrets": "tsx ../../scripts/check-secrets.ts",
     "verify": "pnpm run check:secrets && pnpm run check && pnpm run test && pnpm run test:integration && pnpm run test:types && pnpm run test:pack",
-    "test:integration": "pnpm run build && node --test test/integration/runtime.test.mjs",
+    "test:integration": "pnpm run build && node --import tsx --test test/integration/runtime.test.ts",
     "test:types": "pnpm run build && tsc -p test/types/tsconfig.json",
-    "test:pack": "pnpm run build && node ../../scripts/check-pack.mjs .",
+    "test:pack": "pnpm run build && tsx ../../scripts/check-pack.ts .",
     "prepare": "pnpm run build",
     "prepublishOnly": "pnpm run verify"
   },
-  "keywords": ["deepseek-harness", "dsh", "cordis-plugin", "github-copilot", "web-search", "oauth"],
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "cordis-plugin",
+    "github-copilot",
+    "web-search",
+    "oauth"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -34,9 +59,17 @@
     "directory": "packages/search"
   },
   "homepage": "https://github.com/1yefuwang1/dsh-copilot-catalog/tree/main/packages/search#readme",
-  "bugs": { "url": "https://github.com/1yefuwang1/dsh-copilot-catalog/issues" },
-  "engines": { "node": ">=22.19.0", "dsh": "0.2.0-rc.2" },
-  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" },
+  "bugs": {
+    "url": "https://github.com/1yefuwang1/dsh-copilot-catalog/issues"
+  },
+  "engines": {
+    "node": ">=22.19.0",
+    "dsh": "0.2.0-rc.2"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.0.4",
     "@deepseek-ai/dsh-credentials": "0.2.0-rc.2",
@@ -55,5 +88,10 @@
     "@deepseek-ai/schemastery": "3.18.4",
     "@earendil-works/pi-ai": "0.87.1"
   },
-  "dsh": { "manifestVersion": 1, "bundle": { "patch": "./cordis.patch.yml" } }
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
 }

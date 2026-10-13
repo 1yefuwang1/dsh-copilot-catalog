@@ -46,17 +46,22 @@ from a leaf, or add a dependency on an unpublished/private workspace package.
 
 Run peer integration after changing dependency versions; widen compatibility
 ranges only after verifying actual runtime identity, account routing and public
-exports. Own source is strict-checked; upstream declaration bodies use
-`skipLibCheck`.
+exports. All maintained implementations, the browser client, tests and repository
+tooling are strict-checked; upstream declaration bodies use `skipLibCheck`.
+Tests run directly from TypeScript with `node --import tsx --test`. Local imports
+use `.js` specifiers for ESM compatibility; `tsx` resolves their TypeScript source.
+The browser client is compiled separately as a plain script into
+[dist/client.js](<packages/worktrees/dist/client.js>) so published packages do not
+need a TypeScript loader. Do not edit generated JavaScript.
 
 Update the explicit publication module allowlists in
-[check-pack.mjs](scripts/check-pack.mjs) when adding emitted source modules.
+[check-pack.ts](<scripts/check-pack.ts>) when adding emitted source modules.
 Generated package output, tarballs and cache directories are ignored and must not
 be committed. Builds are explicit; install with dependency lifecycle scripts off.
 A public package's tarball must work independently of the private root.
 
-[check-secrets.mjs](scripts/check-secrets.mjs) scans live Git candidates;
-`node scripts/check-secrets.mjs --staged` checks the actual index. Only specific
+[check-secrets.ts](<scripts/check-secrets.ts>) scans live Git candidates;
+`pnpm exec tsx scripts/check-secrets.ts --staged` checks the actual index. Only specific
 reviewed synthetic literals under known package test trees are exempt. Never
 print suspected values or expand exemptions merely to silence a finding.
 

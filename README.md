@@ -1,8 +1,9 @@
 # DSH plugins
 
 A **pnpm monorepo with three independently installable DeepSeek Harness plugins**.
-Host halves use strict TypeScript/ESM with declarations; the worktree package also
-contains a persistent plain-JS Web Client. The worktree plugin is packaged as
+All maintained code—including Host implementations, the Web Client, tests and
+repository tooling—uses strict TypeScript. Published Host modules are ESM with
+declarations; the worktree Web Client is compiled to a persistent browser factory. The worktree plugin is packaged as
 `@1yefuwang1/dsh-worktrees@0.2.21`; npm availability follows maintainer approval
 of the staged release.
 
@@ -122,7 +123,7 @@ pnpm --dir packages/search pack --pack-destination ../../artifacts --config.igno
 `pnpm run verify` checks:
 
 1. Git-candidate credentials; suspected values are never printed.
-2. Strict types, portable source, tooling syntax and standalone manifests.
+2. Strict types for implementations, Web Client, tests and tooling; portable source and standalone manifests.
 3. Monorepo/release targeting and path isolation.
 4. All packages' synthetic unit/protocol tests.
 5. Real DSH/pi-ai peer integration with mocked requests and temporary local-Git fixtures.

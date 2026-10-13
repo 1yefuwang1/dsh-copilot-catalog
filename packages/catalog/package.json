@@ -6,9 +6,18 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
-    "./catalog": { "types": "./dist/catalog.d.ts", "import": "./dist/catalog.js" },
-    "./discovery": { "types": "./dist/discovery.d.ts", "import": "./dist/discovery.js" },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./catalog": {
+      "types": "./dist/catalog.d.ts",
+      "import": "./dist/catalog.js"
+    },
+    "./discovery": {
+      "types": "./dist/discovery.d.ts",
+      "import": "./dist/discovery.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -20,14 +29,14 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "pnpm run build && node --test test/catalog.test.mjs test/discovery.test.mjs test/plugin.test.mjs test/secrets.test.mjs",
-    "check": "pnpm run typecheck && node ../../scripts/check.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p test/tsconfig.json",
+    "test": "pnpm run build && node --import tsx --test test/catalog.test.ts test/discovery.test.ts test/plugin.test.ts test/secrets.test.ts",
+    "check": "pnpm run typecheck && tsx ../../scripts/check.ts",
     "verify": "pnpm run check:secrets && pnpm run check && pnpm run test && pnpm run test:integration && pnpm run test:types && pnpm run test:pack",
-    "check:secrets": "node ../../scripts/check-secrets.mjs",
+    "check:secrets": "tsx ../../scripts/check-secrets.ts",
     "test:types": "pnpm run build && tsc -p test/types/tsconfig.json",
-    "test:integration": "pnpm run build && node --test test/integration/runtime.test.mjs test/integration/enterprise.test.mjs",
-    "test:pack": "pnpm run build && node ../../scripts/check-pack.mjs .",
+    "test:integration": "pnpm run build && node --import tsx --test test/integration/runtime.test.ts test/integration/enterprise.test.ts",
+    "test:pack": "pnpm run build && tsx ../../scripts/check-pack.ts .",
     "prepare": "pnpm run build",
     "prepublishOnly": "pnpm run verify"
   },

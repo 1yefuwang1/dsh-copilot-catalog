@@ -29,5 +29,5 @@ jobs:
           run_install: false
       - name: Install without dependency lifecycle scripts
         run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Verify both plugins and monorepo tooling
+      - name: Verify all plugins and TypeScript tooling
         run: pnpm run verify

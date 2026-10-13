@@ -492,7 +492,7 @@ pnpm --dir packages/worktrees pack --pack-destination ../../artifacts --config.i
 ```
 
 The root Git URL is not an installable plugin. The package contains compiled ESM,
-declarations, its plain-JS Client factory, bundle patch, metadata, docs and license;
+declarations, its TypeScript-compiled Client factory, bundle patch, metadata, docs and license;
 there are no required `prepare` or install-time build scripts. Follow the plugin
 manager's activation/restart result and refresh the existing GUI when needed;
 no automatic Client updates without the normal development watcher are promised.

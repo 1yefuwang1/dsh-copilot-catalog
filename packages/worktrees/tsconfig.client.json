@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "None",
+    "moduleDetection": "legacy",
+    "moduleResolution": "Node10",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": [],
+    "rootDir": ".",
+    "outDir": "dist",
+    "strict": true,
+    "noImplicitAny": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": false,
+    "noEmitOnError": true
+  },
+  "include": ["client.ts", "client.types.d.ts"]
+}
