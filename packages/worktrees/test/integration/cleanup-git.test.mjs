@@ -141,7 +141,8 @@ test('default cleanup coordinator, managed real Git and strict JSON receipts rec
   assert.equal(receipt.identity.checkoutRoot, created.checkoutRoot); assert.equal(receipt.identity.head, committedHead); assert.equal(receipt.identity.branch, branch); assert.equal(receipt.identity.sourceRoot, local); assert.equal(receipt.identity.commonDir, repository.commonDir);
   assert.equal(worktrees.worktrees.get(record.id).state, 'missing'); assert.equal(writers.size, 0); assert.equal(writerCloses, 1); assert.ok(observationDisposals >= 2);
   await assert.rejects(lstat(created.checkoutRoot), error => error.code === 'ENOENT'); await assert.rejects(lstat(receipt.identity.adminDir), error => error.code === 'ENOENT');
-  const registrations = (await git(local, 'worktree', 'list', '--porcelain', '-z')).toString().split('\0').filter(value => value.startsWith('worktree ')).map(value => value.slice(9)); assert.deepEqual(registrations, [local]);
+  // Git uses forward slashes on Windows; compare canonical filesystem paths.
+  const registrations = await Promise.all((await git(local, 'worktree', 'list', '--porcelain', '-z')).toString().split('\0').filter(value => value.startsWith('worktree ')).map(value => realpath(value.slice(9)))); assert.deepEqual(registrations, [local]);
   assert.deepEqual(await Promise.all(localFiles.map(file => readFile(join(local, file)))), localBefore.files); assert.deepEqual(await readFile(join(repository.commonDir, 'index')), localBefore.index);
   assert.deepEqual(await git(local, 'symbolic-ref', 'HEAD'), localBefore.branch); assert.deepEqual(await git(local, 'rev-parse', 'HEAD'), localBefore.head); assert.deepEqual(await git(local, 'status', '--porcelain=v1', '-z', '--untracked-files=all'), localBefore.status);
   assert.equal((await git(local, 'rev-parse', '--verify', record.baseRef)).toString().trim(), record.baseOid); assert.equal((await git(local, 'rev-parse', '--verify', `refs/heads/${branch}`)).toString().trim(), committedHead);
