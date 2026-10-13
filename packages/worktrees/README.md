@@ -129,8 +129,13 @@ checkout or session creation. Observations are cached for the exact actor bindin
 selected folder and connection generation. Target/view/panel changes, reconnect
 and disposal abort stale reads. Main/title/token changes do not poll Git; failed
 checks leave Local usable. Fresh configure/Send discovery remains authoritative
-and can revoke an earlier positive. If New was already selected, revocation
-preserves that intent and refuses Send safely until you explicitly choose Local.
+and can revoke an earlier positive. Leaving and returning to an unsent draft or
+reconnecting rechecks availability neutrally: **New worktree** remains selected,
+and a successful check does not leave a stale failure. An actual failed check
+shows a repository warning, not creating/naming progress. The progress panel
+appears only after native Send starts preparation. If New was already selected,
+revocation preserves that intent and refuses Send safely until availability is
+verified again or you explicitly choose Local; it never silently sends locally.
 A positive observation is not a permission grant or guarantee of remote/fetched-
 tree support; normal creation checks still apply.
 

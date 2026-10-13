@@ -15,7 +15,7 @@ window.__ModuleLoader__.load({
       switchProjectsView: 'Switch to Projects View', switchWorkspaceView: 'Switch to Workspace View',
       'time.now': 'now', 'time.minutes': '{n}min', 'time.hours': '{n}h', 'time.days': '{n}d', 'time.months': '{n}mo', 'time.years': '{n}y', 'date.ymd': '{y}-{m}-{d}', lastActive: 'Last active {time}',
       projects: 'Projects', folderView: 'Folder view', newProject: 'New project', editProject: 'Manage project', projectName: 'Project name', project: 'Project', folders: 'Folders', folder: 'Folder', addFolder: 'Add folder', chooseDirectory: 'Choose a folder…', browse: 'Browse folders', absolutePath: 'Absolute Host directory path', save: 'Save', newThread: 'New thread', threadMode: 'Thread mode', threadActions: 'Thread actions', threadDetails: 'Thread details', unassigned: 'Other threads', showMore: 'Show {n} more sessions', showLess: 'Show less', filterThreads: 'Search threads or projects', allThreads: 'All threads', archivedOnly: 'Archived only', hideArchived: 'Hide archived', untitled: 'Untitled', blankThread: 'New thread', collapse: 'Collapse project', expand: 'Expand project', waiting: 'Waiting for interaction', done: 'Finished, not yet viewed', localThread: 'Local thread', worktreeThread: 'Worktree thread', draftWarning: 'This draft contains text or attachments. Keep it in this thread before choosing another project or folder.', chooseFolder: 'Choose a folder', createFolder: 'Create folder', folderName: 'Folder name', chooseThisFolder: 'Use this folder', noProjects: 'Add a project to organize your threads.',
-      repoUnavailable: 'Worktree mode is unavailable or unverified for this folder. Choose Local to continue.',
+      repoUnavailable: 'Worktree mode is unavailable or unverified for this folder. Choose Local to continue.', checkingRepository: 'Checking worktree availability…',
       projectChanged: 'The project or selected folder changed. Choose Local or keep the current folder before selecting New worktree again.', keepCurrentFolder: 'Keep current folder',
       removeProject: 'Remove project', removeProjectConfirm: 'Remove this project?', removeProjectHelp: 'Only the project metadata will be removed. All folders, files, conversations and worktrees will be kept. Conversations remain available under Other threads and in Folder view.',
       mainFolder: 'Main folder', main: 'Main', chooseMainFolder: 'Select the main folder', mainFolderRequired: 'Choose a main folder from the project source folders.', mainFolderHelp: 'Default for new conversations. You can choose another folder before sending.', conversationFolder: 'Conversation folder',
@@ -53,7 +53,7 @@ window.__ModuleLoader__.load({
       switchProjectsView: '切换到项目视图', switchWorkspaceView: '切换到工作区视图',
       'time.now': '刚刚', 'time.minutes': '{n}分钟', 'time.hours': '{n}小时', 'time.days': '{n}天', 'time.months': '{n}个月', 'time.years': '{n}年', 'date.ymd': '{y}年{m}月{d}日', lastActive: '最后活跃于 {time}',
       projects: '项目', folderView: '文件夹视图', newProject: '新建项目', editProject: '管理项目', projectName: '项目名称', project: '项目', folders: '文件夹', folder: '文件夹', addFolder: '添加文件夹', chooseDirectory: '选择文件夹…', browse: '浏览文件夹', absolutePath: '主机绝对目录路径', save: '保存', newThread: '新建对话', threadMode: '对话模式', threadActions: '对话操作', threadDetails: '对话详情', unassigned: '其他对话', showMore: '展开其余 {n} 个会话', showLess: '收起', filterThreads: '搜索对话或项目', allThreads: '所有对话', archivedOnly: '仅已归档', hideArchived: '隐藏已归档', untitled: '未命名', blankThread: '新对话', collapse: '收起项目', expand: '展开项目', waiting: '等待交互', done: '已完成，尚未查看', localThread: '本地对话', worktreeThread: '工作树对话', draftWarning: '此草稿包含文字或附件。请先保留当前对话，再选择其他项目或文件夹。', chooseFolder: '选择文件夹', createFolder: '创建文件夹', folderName: '文件夹名称', chooseThisFolder: '使用此文件夹', noProjects: '添加项目以组织您的对话。',
-      repoUnavailable: '此文件夹的工作树模式不可用或尚未验证，请选择本地模式继续。',
+      repoUnavailable: '此文件夹的工作树模式不可用或尚未验证，请选择本地模式继续。', checkingRepository: '正在检查工作树可用性…',
       projectChanged: '项目或选定文件夹已更改，请先选择本地模式或保留当前文件夹，再重新选择新建工作树。', keepCurrentFolder: '保留当前文件夹',
       removeProject: '移除项目', removeProjectConfirm: '移除此项目？', removeProjectHelp: '仅移除项目元数据，所有文件夹、文件、对话和工作树都会保留。对话仍可在“其他对话”和“文件夹视图”中访问。',
       mainFolder: '主文件夹', main: '主目录', chooseMainFolder: '选择主文件夹', mainFolderRequired: '请从项目源文件夹中选择一个主文件夹。', mainFolderHelp: '新对话默认使用此文件夹，发送前仍可选择其他文件夹。', conversationFolder: '对话文件夹',
@@ -1150,7 +1150,10 @@ window.__ModuleLoader__.load({
         if (!state.sessionId || repositoryAllowed(state.sessionId)) return;
         query?.abort(); ++generation; branchCache.clear();
         if (state.mode === 'new') for (const lease of leases.values()) lease.cancelNew();
-        publish({ loading: false, status: null, branches: null, remote: '', branch: '', branchOid: '', query: '', ...(state.mode === 'new' ? { error: t('repoUnavailable') } : {}) });
+        // Invalidation (leaving the composer, reconnecting or a new probe) is
+        // not a failed Git check. Render that observation separately; never latch
+        // it into operation errors or overwrite a real setup/source failure.
+        publish({ loading: false, status: null, branches: null, remote: '', branch: '', branchOid: '', query: '' });
       });
       function selectionChanged() {
         if (!selectedSource || state.sessionId !== selectedSource.sessionId || (state.mode === 'new' && state.sourceChanged)) return;
@@ -1500,7 +1503,7 @@ window.__ModuleLoader__.load({
     function ChoicePicker({ label, value, items, disabled, onChange, icon }) {
       const [open, setOpen] = React.useState(false), root = React.useRef(null), trigger = React.useRef(null), id = React.useId();
       React.useEffect(() => { if (!open) return; const menu = root.current.querySelector('[role=menu]'); (menu?.querySelector('[aria-checked=true]:not(:disabled)') || menu?.querySelector('[role=menuitemradio]:not(:disabled)'))?.focus(); }, [open]);
-      const dismiss = () => { setOpen(false); trigger.current?.focus(); }, current = items.find(item => item.value === value), selectable = items.filter(item => !item.disabled).length > 1;
+      const dismiss = () => { setOpen(false); trigger.current?.focus(); }, current = items.find(item => item.value === value), selectable = items.some(item => !item.disabled && item.value !== value);
       return h('div', { ref: root, className: 'dsh-wt-choice', onBlur: event => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }, onKeyDown: event => { if (event.key === 'Escape' && open) { event.preventDefault(); event.stopPropagation(); dismiss(); } } },
         h(Button, { ref: trigger, className: 'dsh-wt-control', disabled, 'aria-label': label, 'aria-haspopup': selectable ? 'menu' : undefined, 'aria-expanded': selectable ? open : undefined, 'aria-controls': open ? id : undefined, title: current?.title, onClick: () => selectable ? setOpen(!open) : onChange(value) }, icon, h('span', { className: 'dsh-wt-control-text' }, current?.label || label), selectable && h(ChevronIcon)),
         open && h('div', { id, role: 'menu', 'aria-label': label, className: 'dsh-wt-choice-menu', onKeyDown: menuKeys }, ...items.map(item => h(Button, { key: item.value, role: 'menuitemradio', 'aria-checked': value === item.value, disabled: item.disabled, className: 'dsh-wt-choice-item', title: item.title, onClick: () => { onChange(item.value); dismiss(); } }, h('span', { className: 'dsh-wt-choice-check', 'aria-hidden': true }, value === item.value ? '✓' : ''), item.label))));
@@ -1532,30 +1535,36 @@ window.__ModuleLoader__.load({
       const snapshot = useSession(value => value), empty = useInput(inputEmpty), ready = sourceEligible(snapshot), panel = usePanelInfo(value => value.activePanelId), workspaces = useWorkspaces(value => value);
       const recoverySource = recovery?.store || emptyRecoveryStore, recoveryState = React.useSyncExternalStore(recoverySource.subscribe, recoverySource.getSnapshot), verified = recoveryVerified(recoveryState, sessionId);
       const state = React.useSyncExternalStore(flow.store.subscribe, flow.store.getSnapshot);
-      React.useSyncExternalStore(repositories.store.subscribe, repositories.store.getSnapshot);
+      const repository = React.useSyncExternalStore(repositories.store.subscribe, repositories.store.getSnapshot);
       const metadata = React.useSyncExternalStore(projects.store.subscribe, projects.store.getSnapshot), context = projects.context(sessionId);
       const [folderError, setFolderError] = React.useState('');
       React.useEffect(() => { if (!verified || panel || !snapshot.blank || snapshot.subagent !== null) return; try { flow.observe(sessionId); } catch { /* New mode reports the guarded ABI refusal. */ } void repositories.ensure(sessionId); return () => repositories.withdraw(sessionId); }, [flow, repositories, sessionId, ready, verified, panel, snapshot.blank, snapshot.subagent, snapshot.openState, snapshot.removed, context?.project.id, context?.folder.id, context?.folder.path]);
       if (!verified || panel || !snapshot.blank || snapshot.subagent !== null) return null;
       const backing = projectBacking(metadata, workspaces, sessionId), worktree = backing.mode === 'worktree', record = backing.record;
       const selected = state.sessionId === sessionId, busy = selected && state.busy, main = projectMainFolder(context?.project), canWorktree = repositories.enabled(sessionId), blockedNew = selected && state.mode === 'new' && (!canWorktree || state.sourceChanged);
+      const observingNew = blockedNew && !state.sourceChanged && repository.target?.sessionId === sessionId;
+      const repositoryWarning = observingNew && repository.phase === 'unavailable' && !state.error;
       return h('div', { className: 'dsh-wt dsh-wt-row dsh-wt-create-controls' }, h(Styles),
         context?.project.folders.length > 1 && h('select', { className: 'dsh-wt-conversation-folder', 'aria-label': t('conversationFolder'), value: context.folder.id, disabled: busy || !empty || !sourceEligible(snapshot), title: !empty ? t('draftWarning') : context.folder.path,
           onChange: event => { setFolderError(''); try { chooseConversationFolder(ctx, projects, flow, sessionId, event.target.value); } catch (failure) { setFolderError(report(t, failure)); } } }, ...context.project.folders.map(folder => h('option', { key: folder.id, value: folder.id, title: folder.path }, folder.title + (folder.id === main?.id ? ' · ' + t('main') : '')))),
         folderError && h('span', { className: 'dsh-wt-create-error', role: 'alert' }, folderError),
-        h(ChoicePicker, { key: sessionId + ':' + (blockedNew ? 'blocked' : canWorktree ? 'git' : 'local'), label: t('threadMode'), value: !blockedNew && canWorktree && selected && state.mode === 'new' ? 'new' : worktree ? 'worktree' : 'local', disabled: busy || !sourceEligible(snapshot), icon: h(FolderIcon, { size: 14 }), items: [
+        h(ChoicePicker, { key: sessionId + ':' + (blockedNew ? 'blocked' : canWorktree ? 'git' : 'local'), label: t('threadMode'), value: selected && state.mode === 'new' ? 'new' : worktree ? 'worktree' : 'local', disabled: busy || !sourceEligible(snapshot), icon: h(FolderIcon, { size: 14 }), items: [
           { value: 'local', label: t('local'), disabled: worktree && !context?.folder },
           ...(worktree ? [{ value: 'worktree', label: t('worktreeThread') }] : []),
-          ...(!blockedNew && canWorktree ? [{ value: 'new', label: t('new') }] : []),
+          ...(blockedNew || canWorktree ? [{ value: 'new', label: t('new'), disabled: blockedNew }] : []),
         ], onChange: mode => flow.select(sessionId, mode) }),
         worktree && h('span', { className: 'dsh-wt-muted', title: backing.effectiveCwd }, record?.branch || t('worktreeThread')),
         !blockedNew && canWorktree && !worktree && h(BranchPicker, { key: sessionId + ':' + (context?.folder.id || ''), state, sessionId, flow, disabled: busy || !sourceEligible(snapshot), t, currentBranch: repositories.store.getSnapshot().status?.repository.branch || 'HEAD' }),
+        observingNew && repository.phase === 'checking' && h('span', { className: 'dsh-wt-muted', role: 'status' }, t('checkingRepository')),
+        repositoryWarning && h('span', { className: 'dsh-wt-create-error', role: 'alert' }, t('repoUnavailable')),
         selected && state.error && h('span', { className: 'dsh-wt-create-error', role: 'alert' }, state.error,
           state.op && h(React.Fragment, null, ' · ', h('code', null, state.op.id), h(Button, { disabled: state.loading, onClick: () => { void flow.reconcile(sessionId); } }, t('reconcile')), state.op.result?.sessionId && h(Button, { onClick: () => flow.openTarget(sessionId) }, t('open')))));
     }
     function SetupProgress({ sessionId, flow, t }) {
       const state = React.useSyncExternalStore(flow.store.subscribe, flow.store.getSnapshot);
-      if (state.sessionId !== sessionId || (!state.busy && !state.error && !state.steps.length)) return null;
+      // Configuration and availability warnings belong in the controls. Setup
+      // steps exist only after a native Send has actually begun preparation.
+      if (state.sessionId !== sessionId || (!state.busy && !state.phase && !state.steps.length)) return null;
       const labels = { preparing: 'preparingMessage', fetching: 'fetchingLatest', creating: 'creatingWorktree', naming: 'namingBranch', opening: 'openingConversation', ready: 'setupReady', attachments: 'stagingAttachments', sending: 'startingConversation', complete: 'setupReady', failed: 'setupFailed' };
       const active = state.phase, failed = active === 'failed' ? state.failedAt : undefined;
       const completed = new Set(state.steps.filter(step => step.stage !== failed).map(step => step.stage));

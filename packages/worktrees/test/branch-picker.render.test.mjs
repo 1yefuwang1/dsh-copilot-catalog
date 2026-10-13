@@ -33,7 +33,7 @@ assert.equal(source.split(marker).length, 2, 'the actual factory has one export 
 // Expose existing declarations in memory only. React, hooks, picker components,
 // guards, flow, cache and event handlers are all the shipped implementations.
 vm.runInNewContext(source.replace(marker,
-  '      renderTest: { ChoicePicker, BranchPicker, NewWorktreeControls, createWorktreeFlow, createRepositoryAvailability, Styles, en },\n' + marker), {
+  '      renderTest: { ChoicePicker, BranchPicker, NewWorktreeControls, SetupProgress, createWorktreeFlow, createRepositoryAvailability, Styles, en },\n' + marker), {
   window: { __ModuleLoader__: { load(value) { module = value; } } },
   AbortController, AbortSignal, crypto: webcrypto,
 }, { filename: clientUrl.pathname });
@@ -71,21 +71,22 @@ async function mount(t, element) {
   await act(async () => root.render(element));
   return { container, outside, root };
 }
-async function controls(t, { git = true, repository = status, localGeneration = local, branchReply } = {}) {
+async function controls(t, { git = true, repository = status, localGeneration = local, branchReply, statusReply, draft = empty, context: initialContext } = {}) {
   const calls = [], cleanups = new Set();
   function effect(factory) { const cleanup = factory(); let live = true; const stop = () => { if (live) { live = false; cleanups.delete(stop); return cleanup(); } }; cleanups.add(stop); return stop; }
-  const session = observable(blank), state = observable(empty), list = observable({ byId: { source: { retainedBy: { mainView: 1 } } } });
+  const session = observable(blank), state = observable(draft), panel = observable({ activePanelId: undefined }), list = observable({ byId: { source: { retainedBy: { mainView: 1 } } } });
   const binding = { ctx: { effect }, session };
   const nativeSink = async (_text, _ids, _mode, _signal) => { assert.fail('rendering or choosing options must not submit a prompt'); };
   const input = { state, deps: { actx: binding.ctx, defaultSink: nativeSink, inputTriggers: () => undefined } };
   const block = observable(undefined), metadata = observable({ projects: [], bindings: [], records: [] });
-  const projects = { store: metadata, context: () => undefined };
+  let context = initialContext;
+  const projects = { store: metadata, context: () => context };
   const workspaces = { items: [{ workspaceId: 'repo', path: '/repo', sessionIds: ['source'] }], archivedSessionIds: [], pinnedSessionIds: [] };
   const runtime = { effect, get: name => { assert.equal(name, 'conversation'); return { input: { for: () => input }, blocks: { storeFor: () => block, set: (_id, value) => block.publish(value) } }; },
     sessions: { list, binding: () => binding }, uiSession: { sessionStatus: observable(new Map()) }, workspaces: { list: observable(workspaces) },
     connection: { generation: observable({ id: 1 }), rpc: { async call(channel, endpoint, payload, signal) {
       assert.equal(channel, '/api'); assert.equal(endpoint, 'dsh-worktrees/execute'); assert.equal(payload.actorId, 'source'); calls.push({ request: payload.request, signal });
-      if (payload.request.action === 'status') return git ? success(repository) : { ok: true, value: { v: 1, ok: false, error: { code: 'GIT_FAILED', message: 'Not a Git repository' } } };
+      if (payload.request.action === 'status') return statusReply ? statusReply(payload.request, signal) : git ? success(repository) : { ok: true, value: { v: 1, ok: false, error: { code: 'GIT_FAILED', message: 'Not a Git repository' } } };
       assert.equal(payload.request.action, 'branches');
       if (branchReply) { const reply = branchReply(payload.request); if (reply) return reply; }
       if (payload.request.branchSource === 'local') return success(payload.request.cursor ? { ...localGeneration, nextCursor: undefined, items: [{ name: 'feature/local', oid: 'feature-oid' }, { name: 'release', oid: 'release-oid' }] } : localGeneration);
@@ -93,13 +94,14 @@ async function controls(t, { git = true, repository = status, localGeneration = 
     } } },
   };
   const repositories = real.createRepositoryAvailability(runtime, projects), flow = real.createWorktreeFlow(runtime, tKey => tKey, projects, repositories);
-  const mounted = await mount(t, React.createElement(real.NewWorktreeControls, {
+  const mounted = await mount(t, React.createElement(React.Fragment, null, React.createElement(real.NewWorktreeControls, {
     sessionId: 'source', runtime, projects, repositories, flow, t: key => real.en[key] || key,
     useSession: selector => selector(session.getSnapshot()), useInput: selector => selector(state.getSnapshot()),
-    usePanelInfo: selector => selector({ activePanelId: undefined }), useWorkspaces: selector => selector(workspaces),
-  }));
+    usePanelInfo: selector => selector(React.useSyncExternalStore(panel.subscribe, panel.getSnapshot)), useWorkspaces: selector => selector(workspaces),
+  }), React.createElement(real.SetupProgress, { sessionId: 'source', flow, t: key => real.en[key] || key })));
   t.after(async () => { await act(async () => { await flow.dispose(); repositories.dispose(); await Promise.allSettled([...cleanups].map(stop => stop())); }); assert.equal(input.deps.defaultSink, nativeSink); });
-  return { ...mounted, calls, flow, repositories,
+  return { ...mounted, calls, flow, repositories, panel, runtime, input, block,
+    contextChanged(next) { context = next; metadata.publish({ ...metadata.getSnapshot(), revision: calls.length }); },
     mode: () => mounted.container.querySelector('button[aria-label="Thread mode"]'),
     branch: () => mounted.container.querySelector('button[aria-haspopup=dialog]'),
     popup: () => mounted.container.querySelector('.dsh-wt-base-options'),
@@ -120,6 +122,104 @@ test('non-Git Local and Git modes render the same themed ChoicePicker, never a n
   assert.deepEqual(options.map(item => item.textContent.replace('✓', '')), ['Local', 'New worktree']);
   const count = git.calls.length; await click(options[1]); assert.equal(git.flow.store.getSnapshot().mode, 'new', git.flow.store.getSnapshot().error); assert.equal(git.mode().textContent, 'New worktree'); assert.equal(git.calls.length, count);
   assert.equal(git.container.querySelector('.dsh-wt-choice-menu'), null); assert.equal(document.activeElement, git.mode());
+});
+
+test('returning to an unsent New draft rechecks neutrally, keeps intent and never renders fake setup progress', async t => {
+  for (const cause of ['panel', 'reconnect']) {
+    let delayed = false, complete;
+    const draft = { ...empty, draft: 'keep native @reference draft', attachmentIds: ['file-one', 'image-two'] };
+    const fixture = await controls(t, { draft, statusReply() { return delayed ? new Promise(resolve => { complete = resolve; }) : success(status); } });
+    await click(fixture.mode()); await click(button(fixture.container, 'New worktree'));
+    const initial = fixture.calls.length;
+    assert.equal(fixture.container.querySelector('.dsh-wt-progress'), null);
+    delayed = true;
+    await act(async () => {
+      if (cause === 'panel') fixture.panel.publish({ activePanelId: 'settings' });
+      else fixture.runtime.connection.generation.publish(undefined);
+    });
+    assert.equal(fixture.flow.store.getSnapshot().error, '');
+    assert.equal(fixture.container.querySelector('.dsh-wt-progress'), null);
+    await act(async () => {
+      if (cause === 'panel') fixture.panel.publish({ activePanelId: undefined });
+      else fixture.runtime.connection.generation.publish({ id: 2 });
+    });
+    assert.equal(fixture.repositories.store.getSnapshot().phase, 'checking');
+    assert.equal(fixture.mode().textContent, 'New worktree', 'an unavailable cached check must not pretend intent is Local');
+    assert.equal(fixture.branch(), null);
+    assert.equal(fixture.container.querySelector('[role=alert]'), null);
+    assert.equal(fixture.container.querySelector('.dsh-wt-progress'), null);
+    await act(async () => complete(success(status)));
+    assert.equal(fixture.repositories.enabled('source'), true); assert.equal(fixture.mode().textContent, 'New worktree');
+    assert.ok(fixture.branch()); assert.equal(fixture.container.querySelector('[role=alert]'), null);
+    assert.equal(fixture.container.querySelector('.dsh-wt-progress'), null);
+    assert.equal(fixture.calls.length, initial + 1); assert.ok(fixture.calls.every(call => call.request.action === 'status'));
+    assert.equal(fixture.input.state.getSnapshot(), draft); assert.equal(fixture.block.getSnapshot(), undefined);
+  }
+});
+
+test('explicit Local during a pending recheck stays Local after late success or failure and preserves the draft', async t => {
+  for (const accepted of [true, false]) {
+    let delayed = false, complete;
+    const draft = { ...empty, draft: 'keep native draft', attachmentIds: ['file-one'] };
+    const fixture = await controls(t, { draft, statusReply() { return delayed ? new Promise(resolve => { complete = resolve; }) : success(status); } });
+    await click(fixture.mode()); await click(button(fixture.container, 'New worktree'));
+    delayed = true;
+    await act(async () => fixture.panel.publish({ activePanelId: 'settings' }));
+    await act(async () => fixture.panel.publish({ activePanelId: undefined }));
+    assert.equal(fixture.container.querySelector('[role=status]').textContent, 'Checking worktree availability…');
+    await click(fixture.mode()); assert.equal(fixture.container.querySelector('[role=menuitemradio][aria-checked=true]').disabled, true);
+    assert.equal(document.activeElement.textContent, 'Local', 'focus skips the disabled selected New item');
+    await click(button(fixture.container, 'Local'));
+    assert.equal(fixture.mode().textContent, 'Local'); assert.equal(fixture.flow.store.getSnapshot().mode, 'local');
+    await act(async () => complete(accepted ? success(status) : { ok: true, value: { v: 1, ok: false, error: { code: 'GIT_FAILED', message: 'Not available' } } }));
+    assert.equal(fixture.flow.store.getSnapshot().mode, 'local'); assert.equal(fixture.mode().textContent, 'Local');
+    assert.equal(fixture.container.querySelector('[role=alert]'), null); assert.equal(fixture.container.querySelector('.dsh-wt-progress'), null);
+    assert.equal(fixture.input.state.getSnapshot(), draft); assert.equal(fixture.block.getSnapshot(), undefined);
+    assert.ok(fixture.calls.every(call => call.request.action === 'status'));
+  }
+});
+
+test('changed-source New controls keep their warning and still offer explicit Local without progress', async t => {
+  const folder = { id: 'folder', path: '/repo', title: 'Source' }, project = { id: 'project', folders: [folder] };
+  const fixture = await controls(t, { context: { project, folder, binding: { mode: 'local' } }, statusReply: () => success({ ...status, projectPath: '/repo' }) });
+  await click(fixture.mode()); await click(button(fixture.container, 'New worktree'));
+  await act(async () => fixture.contextChanged(undefined));
+  assert.equal(fixture.flow.store.getSnapshot().sourceChanged, true);
+  assert.equal(fixture.mode().textContent, 'New worktree'); assert.equal(fixture.branch(), null);
+  assert.equal(fixture.container.querySelector('[role=alert]').textContent, 'projectChanged');
+  assert.equal(fixture.container.querySelector('.dsh-wt-progress'), null);
+  await click(fixture.mode()); assert.equal(fixture.container.querySelector('[role=menuitemradio][aria-checked=true]').disabled, true);
+  await click(button(fixture.container, 'Local'));
+  assert.equal(fixture.mode().textContent, 'Local'); assert.equal(fixture.flow.store.getSnapshot().sourceChanged, false);
+  assert.equal(fixture.container.querySelector('[role=alert]'), null);
+  assert.ok(fixture.calls.every(call => call.request.action === 'status'));
+});
+
+test('a failed unsent recheck shows only the repository warning, keeps New intent and offers explicit Local', async t => {
+  let failed = false;
+  const fixture = await controls(t, { statusReply() { return failed ? { ok: true, value: { v: 1, ok: false, error: { code: 'GIT_FAILED', message: 'Repository no longer available' } } } : success(status); } });
+  await click(fixture.mode()); await click(button(fixture.container, 'New worktree'));
+  failed = true;
+  await act(async () => fixture.panel.publish({ activePanelId: 'settings' }));
+  await act(async () => fixture.panel.publish({ activePanelId: undefined }));
+  assert.equal(fixture.repositories.store.getSnapshot().phase, 'unavailable');
+  assert.equal(fixture.mode().textContent, 'New worktree'); assert.equal(fixture.branch(), null);
+  assert.match(fixture.container.querySelector('[role=alert]').textContent, /Worktree mode is unavailable/);
+  assert.equal(fixture.container.querySelectorAll('[role=alert]').length, 1);
+  assert.equal(fixture.container.querySelector('.dsh-wt-progress'), null, 'no Send means no creating/naming steps');
+  await click(fixture.mode()); assert.equal(fixture.container.querySelector('[role=menuitemradio][aria-checked=true]').disabled, true);
+  await click(button(fixture.container, 'Local'));
+  assert.equal(fixture.mode().textContent, 'Local'); assert.equal(fixture.container.querySelector('[role=alert]'), null);
+  assert.ok(fixture.calls.every(call => call.request.action === 'status'));
+});
+
+test('SetupProgress ignores configuration-only errors but retains actual submitted failures', async t => {
+  const state = observable({ sessionId: 'source', busy: false, phase: '', steps: [], error: 'Configuration failed', branchSource: 'local', op: null });
+  const fixture = await mount(t, React.createElement(real.SetupProgress, { sessionId: 'source', flow: { store: state }, t: key => real.en[key] || key }));
+  assert.equal(fixture.container.querySelector('.dsh-wt-progress'), null);
+  await act(async () => state.publish({ ...state.getSnapshot(), phase: 'failed', failedAt: 'creating' }));
+  assert.match(fixture.container.querySelector('[role=status]').textContent, /Worktree preparation failed/);
+  assert.equal(fixture.container.querySelector('[role=alert]').textContent, 'Configuration failed');
 });
 
 test('real BranchPicker loads local cursor pages, marks current branch and auto-closes a choice without a close button', async t => {

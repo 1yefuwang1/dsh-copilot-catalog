@@ -1,5 +1,18 @@
 # @1yefuwang1/dsh-worktrees changelog
 
+## Unreleased — Unsent worktree draft revalidation
+
+- Treat composer withdrawal, navigation and reconnect as invalidated Git
+  observations, not failed worktree preparation. Successful rechecks leave no
+  stale warning and do not overwrite real setup or changed-source failures.
+- Keep selected **New worktree** intent visible while checking/unavailable, with
+  a neutral checking status and an explicit **Local** escape. Never submit,
+  create a checkout or silently send locally on returning to an unsent draft.
+- Render creating/naming progress only after native Send starts preparation;
+  configuration and actual availability warnings stay in composer controls.
+- Cover panel/navigation/reconnect lifecycle, draft/files preservation, negative
+  rechecks, explicit Local selection and real failure retention in Client tests.
+
 ## 0.2.21 — Desktop-only native folder picker
 
 - Hide **Choose a folder…** in web Create/Manage project dialogs. Require the

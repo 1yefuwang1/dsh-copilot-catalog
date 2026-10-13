@@ -383,7 +383,7 @@ test('lease restoration is identity-safe and never overwrites a competing writer
   await run.lease.close(); assert.equal(run.input.deps.defaultSink, replacement);
 });
 
-function transaction({ deferredSetup = false, setupFailure, deferredUpload = false, admission = 'success', deferredSourceUpload = false, draft = '', attachments = [], withoutRepositoryGate = false, context: initialContext, records = [], sourceCwd = '/repo/services/api' } = {}) {
+function transaction({ deferredSetup = false, setupFailure, deferredUpload = false, admission = 'success', deferredSourceUpload = false, draft = '', attachments = [], withoutRepositoryGate = false, realRepositoryGate = false, context: initialContext, records = [], sourceCwd = '/repo/services/api' } = {}) {
   const calls = [], events = [], admissions = [], sourceAdmissions = [], opened = [], references = [], cleanups = new Set();
   const empty = { draft: '', draftRev: 7, attachmentIds: [], phase: 'plain', queue: [], occurrences: [] };
   const src = observable({ ...empty, draft, attachmentIds: attachments }), dst = observable({ ...empty });
@@ -440,7 +440,7 @@ function transaction({ deferredSetup = false, setupFailure, deferredUpload = fal
   let projectContext = initialContext;
   const projects = { store: metadata, context: () => projectContext, rememberWorktree() {}, rememberRecords() {} };
   const availability = observable({ available: true });
-  const repositories = { store: availability, enabled: id => id === 'source' && availability.getSnapshot().available, unavailable() { availability.publish({ available: false }); } };
+  const repositories = realRepositoryGate ? helpers.createRepositoryAvailability(ctx, projects) : { store: availability, enabled: id => id === 'source' && availability.getSnapshot().available, unavailable() { availability.publish({ available: false }); } };
   const flow = helpers.createWorktreeFlow(ctx, key => key, projects, withoutRepositoryGate ? undefined : repositories); flow.observe('source');
   return { flow, ctx, srcInput, src, dst, calls, events, admissions, sourceAdmissions, opened, references, generation, metadata, fileUploads, blocks, nativeSink, repositories,
     contextChanged(next) { projectContext = next; const before = metadata.getSnapshot(); metadata.publish({ ...before, projects: next ? [next.project] : [], bindings: next?.binding ? [next.binding] : [], revision: (before.revision || 0) + 1 }); },
@@ -448,7 +448,7 @@ function transaction({ deferredSetup = false, setupFailure, deferredUpload = fal
     select(mode) { flow.select('source', mode); }, send(text = 'first task', ids = attachments, mode = 'queue') { return srcInput.deps.defaultSink(text, ids, mode, new AbortController().signal); },
     complete() { setupPending.pending.resolve(completeSetup(setupPending.request)); }, navigate() { navigation.abort(); },
     uploaded() { const next = { ...fileUploads.getSnapshot() }; for (const [id, item] of Object.entries(next)) next[id] = { ...item, status: 'ready' }; fileUploads.publish(next); },
-    async dispose() { await flow.dispose(); await Promise.allSettled([...cleanups].map(cleanup => cleanup())); } };
+    async dispose() { await flow.dispose(); repositories.dispose?.(); await Promise.allSettled([...cleanups].map(cleanup => cleanup())); } };
 }
 
 function repositoryFixture({ delayed = false, reply } = {}) {
@@ -534,6 +534,49 @@ test('withdrawing a composer/panel observation cancels its probe and same-id con
   f.repository.unavailable('source', {}, undefined); assert.equal(f.repository.enabled('source'), true, 'unrelated binding feedback cannot revoke this target');
   f.repository.unavailable('source', f.bindings.get('source'), { projectId: 'project', folderId: 'chosen', path: '/repo/chosen' }); assert.equal(f.repository.enabled('source'), false);
   await f.repository.ensure('source'); assert.equal(f.calls.length, 2, 'fresh status rejection is cached without a re-probe loop'); f.dispose();
+});
+
+test('unsent New intent survives panel withdrawal, navigation and reconnect without a stale failure or admission', async () => {
+  for (const cause of ['panel', 'navigation', 'reconnect']) {
+    const run = transaction({ realRepositoryGate: true, context: ownedContext, draft: 'keep native @reference draft', attachments: ['file-one', 'image-two'] });
+    try {
+      await run.repositories.ensure('source'); run.select('new'); const before = structuredClone(run.src.getSnapshot());
+      if (cause === 'panel') run.repositories.withdraw('source');
+      if (cause === 'navigation') run.ctx.sessions.list.publish({ byId: {} });
+      if (cause === 'reconnect') run.generation.publish(undefined);
+      assert.equal(run.repositories.enabled('source'), false);
+      assert.equal(run.flow.store.getSnapshot().error, '', 'invalidation is not a failed repository check');
+      assert.equal(run.flow.store.getSnapshot().mode, 'new');
+      assert.equal(run.flow.store.getSnapshot().phase, ''); assert.equal(run.flow.store.getSnapshot().op, null);
+      if (cause === 'navigation') run.ctx.sessions.list.publish({ byId: { source: { retainedBy: { mainView: 1 } } } });
+      if (cause === 'reconnect') run.generation.publish({ id: 2 });
+      await run.repositories.ensure('source');
+      assert.equal(run.repositories.enabled('source'), true); assert.equal(run.flow.store.getSnapshot().error, '');
+      assert.equal(run.flow.store.getSnapshot().mode, 'new'); assert.equal(run.flow.store.getSnapshot().sourceChanged, false);
+      assert.deepEqual(run.src.getSnapshot(), before); assert.equal(run.blocks.get('source').getSnapshot(), undefined);
+      assert.ok(run.calls.every(call => call.endpoint === 'dsh-worktrees/execute' && call.payload.request.action === 'status'));
+      assert.equal(run.sourceAdmissions.length, 0); assert.equal(run.admissions.length, 0); assert.equal(run.references.length, 0);
+      assert.equal((await run.send('explicit first Send')).kind, 'success'); await settle();
+      assert.equal(run.sourceAdmissions.length, 0); assert.equal(run.admissions.length, 1);
+      assert.equal(run.calls.filter(call => call.endpoint === 'dsh-worktrees/prepare').length, 1);
+    } finally { await run.dispose(); }
+  }
+});
+
+test('revalidation does not erase a real preparation failure or a changed-source warning', async () => {
+  for (const cause of ['failure', 'project']) {
+    const run = transaction({ realRepositoryGate: true, context: ownedContext, setupFailure: { ok: true, value: { v: 1, ok: false, error: { code: 'GIT_FAILED', message: 'Preparation refused' } } } });
+    try {
+      await run.repositories.ensure('source'); run.select('new');
+      if (cause === 'failure') { assert.equal((await run.send()).kind, 'error'); await settle(); }
+      if (cause === 'project') run.contextChanged(undefined);
+      const error = run.flow.store.getSnapshot().error; assert.ok(error);
+      run.repositories.withdraw('source'); await run.repositories.ensure('source');
+      assert.equal(run.repositories.enabled('source'), true); assert.equal(run.flow.store.getSnapshot().error, error);
+      if (cause === 'project') { assert.equal(run.flow.store.getSnapshot().sourceChanged, true); assert.equal((await run.send()).kind, 'error'); }
+      assert.equal(run.sourceAdmissions.length, 0); assert.equal(run.admissions.length, 0);
+    } finally { await run.dispose(); }
+  }
 });
 
 test('missing availability dependency denies New/configure but Local remains the native sink', async () => {
@@ -647,7 +690,7 @@ test('themed worktree mode and branch pickers require positive target availabili
   const controls = source.slice(source.indexOf('    function NewWorktreeControls('), source.indexOf('    function SetupProgress('));
   assert.match(controls, /canWorktree = repositories.enabled\(sessionId\), blockedNew = selected && state.mode === 'new' && \(!canWorktree \|\| state.sourceChanged\)/);
   assert.match(controls, /h\(ChoicePicker, \{[^\n]+label: t\('threadMode'\)/);
-  assert.match(controls, /!blockedNew && canWorktree \? \[\{ value: 'new'/);
+  assert.match(controls, /blockedNew \|\| canWorktree \? \[\{ value: 'new', label: t\('new'\), disabled: blockedNew/);
   assert.match(controls, /!blockedNew && canWorktree && !worktree && h\(BranchPicker/);
   assert.match(controls, /\{ value: 'local', label: t\('local'\)/);
   assert.match(controls, /onChange: mode => flow.select\(sessionId, mode\)/);
