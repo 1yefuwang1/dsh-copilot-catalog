@@ -3,7 +3,7 @@
 A **pnpm monorepo with three independently installable DeepSeek Harness plugins**.
 Host halves use strict TypeScript/ESM with declarations; the worktree package also
 contains a persistent plain-JS Web Client. The worktree plugin is packaged as
-`@1yefuwang1/dsh-worktrees@0.2.20`; npm availability follows maintainer approval
+`@1yefuwang1/dsh-worktrees@0.2.21`; npm availability follows maintainer approval
 of the staged release.
 
 | Package | Purpose | DSH behavior |
@@ -178,9 +178,10 @@ A release selects **one package**, never the root or multiple packages at once:
 The tag must match its leaf version and repository identity. Catalog is currently
 `0.2.2`, adding GHE Cloud endpoint support; published versions cannot be republished. Search is currently
 `0.1.2`, adding GHE Cloud endpoint support alongside the Copilot stream-ID compatibility fix.
-Worktrees is `@1yefuwang1/dsh-worktrees@0.2.20`, correcting real factory staging,
-held-target resource checks, Local runtime admission/spawn guards, and late navigation
-races in the unreleased cleanup/Local-recovery work. Ready recovery commits durable
+Worktrees is `@1yefuwang1/dsh-worktrees@0.2.21`, hiding the native **Choose a folder…**
+option on web while preserving desktop picking, Host folder browsing where supported,
+and manual path entry. It retains the factory staging, held-target resource checks,
+Local runtime admission/spawn guards, and navigation fixes from `0.2.20`. Ready recovery commits durable
 branch/history/Workspace facts and the existing continuation identity; later publication
 errors do not downgrade it. Explicit Continue/Open Local retains navigation authority.
 Cleanup still discards unsaved checkout files after messaging-only inactivity while

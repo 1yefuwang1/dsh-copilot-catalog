@@ -756,8 +756,8 @@ test('project dialog declares the compact reference layout and a separately stag
 });
 
 test('each add entry follows the picker capability the session actually composes', async () => {
-  // Each session is a separate global realm; the Host composes either the native
-  // chooser (pick only) or the in-app browser (list only), never both.
+  // Each session is a separate global realm. Only a desktop bridge advertises
+  // native picking; the Host's listing capability independently enables browsing.
   const classError = (() => {
     const from = source.indexOf('    class WorktreeError extends Error');
     const to = source.indexOf('    }', from) + '    }'.length;
@@ -786,10 +786,17 @@ test('each add entry follows the picker capability the session actually composes
   assert.equal(desktop.pick, '/desktop/folder');
   assert.equal(hostAsks, 0, 'the second source stays untouched while the first answers');
 
-  // A session with no bridge falls back to the Host verb.
-  const server = await session({ __ctx: { uiWorkspace: { pickDirectory: async () => '/host/folder', listDirectory: unbrowseable } } });
-  assert.equal(server.modes, 'path,native');
-  assert.equal(server.pick, '/host/folder');
+  // Web: the Host method exists even without native capability. Do not expose
+  // or invoke it, including on a Host where the method could return a path.
+  const webHostPicker = () => { assert.fail('web must not invoke the native Host chooser'); };
+  const server = await session({ __ctx: { uiWorkspace: { pickDirectory: webHostPicker, listDirectory: unbrowseable } } });
+  assert.equal(server.modes, 'path');
+  assert.equal(server.pick, null);
+  for (const bridge of [null, {}, { pick: 'not-a-function' }]) {
+    const unavailable = await session({ __ctx: { uiWorkspace: { pickDirectory: webHostPicker, listDirectory: unbrowseable } }, __DSH_DIRECTORY_PICKER__: bridge });
+    assert.equal(unavailable.modes, 'path');
+    assert.equal(unavailable.pick, null);
+  }
 
   // A cancelled first source is an answer, not a handover: the second dialog must
   // not open behind the operator's back.
@@ -807,10 +814,10 @@ test('each add entry follows the picker capability the session actually composes
   const syncThrow = await session({ __ctx: { uiWorkspace: { pickDirectory: async () => '/host/folder', listDirectory: unbrowseable } }, __DSH_DIRECTORY_PICKER__: { pick: () => { throw new Error('bridge exploded'); } } });
   assert.equal(syncThrow.pick, '/host/folder');
 
-  // Remote/SSH or a Host that composed the browse backend: listing works too.
-  const remote = await session({ __ctx: { uiWorkspace: { pickDirectory: async () => '/host/folder', listDirectory: async () => ({ path: '/home' }) } } });
-  assert.equal(remote.modes, 'path,native,browse');
-  assert.equal(remote.pick, '/host/folder');
+  // Web with Host listing keeps the in-app browser, not the native chooser.
+  const remote = await session({ __ctx: { uiWorkspace: { pickDirectory: webHostPicker, listDirectory: async () => ({ path: '/home' }) } } });
+  assert.equal(remote.modes, 'path,browse');
+  assert.equal(remote.pick, null);
 
   // Both dialogs cancelled: a null pick, not an error.
   const cancelled = await session({ __ctx: { uiWorkspace: { pickDirectory: async () => null, listDirectory: unbrowseable } }, __DSH_DIRECTORY_PICKER__: { pick: async () => null } });

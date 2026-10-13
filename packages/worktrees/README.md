@@ -1,7 +1,7 @@
 # @1yefuwang1/dsh-worktrees
 
 Multi-folder projects with Local and isolated Git worktree threads for DeepSeek
-Harness. This experimental Host + Web Client package is **`0.2.20`**; new releases
+Harness. This experimental Host + Web Client package is **`0.2.21`**; new releases
 use staged npm publishing with maintainer review/2FA. It does not require Copilot, the
 catalog plugin, or the search plugin. The scoped name avoids collision with the
 unrelated npm package `dsh-worktrees`; stable tool, command and metadata names are
@@ -45,8 +45,11 @@ native Workspace membership, a working-directory change or a permission grant.
   picks are ignored and over-limit batches are refused without dropping entries.
   The source dropdown names each interaction — **Browse for folders** (the in-app
   multi-select dialog), **Choose a folder…** (the system dialog, one folder per
-  pick) and **Enter a folder path** — and offers each only where the session's
-  composed directory picker can serve it. A loopback desktop composes the system
+  pick, desktop app only) and **Enter a folder path** — and offers each only where
+  the session can serve it. The native option requires the desktop shell's picker
+  bridge; a web browser never offers it, even when the Host exposes a picker method.
+  Web keeps the in-app browser where Host listing works, otherwise path entry.
+  A loopback desktop composes the system
   chooser only, so it gets **Choose a folder…** and path entry; the in-app browser
   appears where the Host lists directories (remote, SSH or browse-composed
   sessions). Since the picker choice is composed at boot, it is not a setting. The dropdown
@@ -464,7 +467,7 @@ After the staged release is approved and appears on npm, install the scoped
 package (the similarly named unscoped package is unrelated):
 
 ```sh
-dsh plugin --profile <profile> add @1yefuwang1/dsh-worktrees@0.2.20
+dsh plugin --profile <profile> add @1yefuwang1/dsh-worktrees@0.2.21
 ```
 
 For local development or while release approval is pending, build explicitly from

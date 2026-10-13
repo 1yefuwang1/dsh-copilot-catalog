@@ -1,5 +1,14 @@
 # @1yefuwang1/dsh-worktrees changelog
 
+## 0.2.21 — Desktop-only native folder picker
+
+- Hide **Choose a folder…** in web Create/Manage project dialogs. Require the
+  desktop shell's callable picker bridge instead of treating the always-present
+  Host picker method as native capability; keep desktop picking/fallback and
+  web folder browsing/manual path entry.
+- Cover web option visibility, defaults and stale-selection refusal alongside
+  existing desktop picking/cancellation/fallback render tests.
+
 ## 0.2.20 — Runtime recovery and Local/navigation safety fixes
 
 - Use the runtime factory's existing initialization claim as the staged input hold

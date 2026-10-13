@@ -51,18 +51,20 @@ function loadEditor(bridge) {
   }).renderTest;
 }
 
-async function mountEditor(t, { host, bridge, project } = {}) {
+async function mountEditor(t, { host, bridge, project, listDirectory } = {}) {
   const calls = { host: 0, bridge: 0, mutation: 0 };
   const runtime = { uiWorkspace: {
-    async listDirectory() { throw new Error('This fixture has no browse capability.'); },
+    listDirectory: listDirectory || (async () => { throw new Error('This fixture has no browse capability.'); }),
     ...(host ? { pickDirectory() { calls.host += 1; return host(); } } : {}),
   } };
   const shell = bridge ? { pick() { calls.bridge += 1; return bridge(); } } : undefined;
   const { ProjectEditor, nativeFolderPicker } = loadEditor(shell);
   const picker = nativeFolderPicker(runtime);
-  if (host || bridge) {
+  if (bridge) {
     assert.equal(typeof picker, 'function');
     assert.equal(picker.pick, undefined, 'the actual helper returns a callable, not { pick() }');
+  } else {
+    assert.equal(picker, undefined, 'web has no native chooser, even when the Host method exists');
   }
   const container = document.createElement('div');
   document.body.append(container);
@@ -109,17 +111,34 @@ async function mountEditor(t, { host, bridge, project } = {}) {
 // original picker.pick mismatch cannot disappear behind the void click handler.
 test('real ProjectEditor adds a bridge-only callable that has no .pick property', async t => {
   const editor = await mountEditor(t, { bridge: async () => '/bridge/folder' });
+  assert.equal(editor.select.value, 'native', 'desktop still defaults to its native chooser');
   await editor.selectNative(); await editor.add();
   assert.deepEqual(editor.rows(), ['/bridge/folder']);
   assert.deepEqual(editor.calls, { host: 0, bridge: 1, mutation: 0 });
   assert.equal(editor.alert(), '');
 });
 
-test('real ProjectEditor adds a Host-service-only folder', async t => {
-  const editor = await mountEditor(t, { host: async () => '/host/folder' });
-  await editor.selectNative(); await editor.add();
-  assert.deepEqual(editor.rows(), ['/host/folder']);
-  assert.deepEqual(editor.calls, { host: 1, bridge: 0, mutation: 0 });
+for (const project of [undefined, { id: 'saved-project', title: 'Saved', folders: [{ id: 'folder', path: '/existing/folder' }] }]) {
+  test(`web ${project ? 'Manage' : 'Create'} project hides the native option despite a Host picker method`, async t => {
+    const editor = await mountEditor(t, { project, host: () => { assert.fail('web must not invoke the native Host chooser'); } });
+    assert.deepEqual([...editor.select.options].map(option => option.value), ['path']);
+    assert.equal(editor.select.value, 'path');
+    assert.ok(editor.container.querySelector('.dsh-wt-project-path input'), 'manual path entry remains available');
+    assert.deepEqual(editor.calls, { host: 0, bridge: 0, mutation: 0 });
+    assert.equal(editor.alert(), '');
+  });
+}
+
+test('web with Host listing defaults to Browse for folders and keeps manual path entry', async t => {
+  const editor = await mountEditor(t, {
+    host: () => { assert.fail('web must not invoke the native Host chooser'); },
+    listDirectory: async () => ({ path: '/home', crumbs: [{ path: '/home', name: 'home' }], entries: [] }),
+  });
+  assert.deepEqual([...editor.select.options].map(option => option.value), ['browse', 'path']);
+  assert.equal(editor.select.value, 'browse');
+  await editor.add();
+  assert.ok(editor.container.querySelector('.dsh-wt-folder-picker'), 'Add opens the in-app folder browser');
+  assert.deepEqual(editor.calls, { host: 0, bridge: 0, mutation: 0 });
   assert.equal(editor.alert(), '');
 });
 
@@ -185,7 +204,7 @@ test('a synchronous picker refusal is visible instead of escaping void choose()'
 });
 
 test('the dispatch guard visibly refuses a stale native selection when no picker exists', async t => {
-  const editor = await mountEditor(t);
+  const editor = await mountEditor(t, { host: () => { assert.fail('a stale web selection must not invoke the native Host chooser'); } });
   assert.equal(editor.select.value, 'path');
   assert.ok(![...editor.select.options].some(option => option.value === 'native'));
   // A native option is intentionally unavailable here. Inject one DOM option only

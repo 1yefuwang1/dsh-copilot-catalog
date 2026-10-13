@@ -1,5 +1,13 @@
 # Monorepo changelog
 
+## @1yefuwang1/dsh-worktrees 0.2.21 — Desktop-only native folder picker
+
+- Hide **Choose a folder…** in web Create/Manage project dialogs; require the
+  desktop shell's callable picker bridge instead of the Host picker method.
+- Preserve desktop choosing/cancellation/fallback, web folder browsing where
+  supported, and manual absolute-path entry. Update unavailable-option guidance
+  and add web visibility/default/stale-selection regressions.
+
 ## @1yefuwang1/dsh-worktrees 0.2.20 — Runtime recovery and Local/navigation safety fixes
 
 - Stage Local recovery under the actual runtime factory's existing initialization
@@ -108,4 +116,4 @@ Package history and versions are independent:
 
 - [Catalog changelog](packages/catalog/CHANGELOG.md) — `0.2.2` GHE Cloud endpoint support; earlier versions previously published.
 - [Search changelog](<packages/search/CHANGELOG.md>) — `0.1.2` GHE Cloud endpoint support; `0.1.1` first public native-search release and streaming compatibility fix.
-- [Worktrees changelog](<packages/worktrees/CHANGELOG.md>) — `@1yefuwang1/dsh-worktrees@0.2.20`; unreleased review fixes for staged Local recovery, owner/resource guards and explicit-only navigation, requiring staged-release approval before npm availability.
+- [Worktrees changelog](<packages/worktrees/CHANGELOG.md>) — `@1yefuwang1/dsh-worktrees@0.2.21`; desktop-only native folder picking with web browsing/manual path entry retained, requiring staged-release approval before npm availability.
