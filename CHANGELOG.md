@@ -1,5 +1,14 @@
 # Monorepo changelog
 
+## dsh-copilot-catalog 0.2.5 — agent interaction identity
+
+- Normalize normal inference/search `Openai-Intent` and `X-Interaction-Type` to
+  `conversation-agent`, rewriting the generic `conversation-edits` value while
+  preserving explicit subagent/compaction (and other specialized) metadata.
+- Set `X-GitHub-Api-Version: 2026-08-01` on all matched requests, including search
+  and model discovery, matching copilot-api; model discovery remains `model-access`.
+  All 0.2.4 identity, installation, and mode behavior is unchanged.
+
 ## dsh-copilot-catalog 0.2.4 — Copilot wire identity
 
 - Add a refcounted process-wide `fetch` interceptor that removes DSH's

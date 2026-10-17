@@ -67,7 +67,7 @@ async function verifyRequests({ record, profile = {}, explicitKey, ambientKey, e
       assert.equal(request.headers.get('Editor-Version'), 'vscode/1.140.0');
       assert.equal(request.headers.get('Editor-Plugin-Version'), 'copilot-chat/0.68.0');
       assert.equal(request.headers.get('Copilot-Integration-Id'), 'vscode-chat');
-      assert.equal(request.headers.get('X-GitHub-Api-Version'), '2026-06-01');
+      assert.equal(request.headers.get('X-GitHub-Api-Version'), '2026-08-01');
       assert.equal(request.headers.get('Openai-Intent'), 'model-access');
       assert.equal(request.headers.get('X-Interaction-Type'), 'model-access');
       assert.equal(request.headers.get('Content-Type'), null);
@@ -88,8 +88,8 @@ async function verifyRequests({ record, profile = {}, explicitKey, ambientKey, e
     assert.equal(request.headers.get('Editor-Plugin-Version'), 'copilot-chat/0.68.0');
     assert.equal(request.headers.get('Copilot-Integration-Id'), 'vscode-chat');
     assert.equal(request.headers.get('X-GitHub-Api-Version'), '2026-08-01');
-    assert.equal(request.headers.get('Openai-Intent'), 'conversation-edits');
-    assert.equal(request.headers.get('X-Interaction-Type'), 'conversation-edits');
+    assert.equal(request.headers.get('Openai-Intent'), 'conversation-agent');
+    assert.equal(request.headers.get('X-Interaction-Type'), 'conversation-agent');
     assert.equal(request.headers.get('X-Initiator'), 'user');
     assert.equal(request.headers.get('X-VSCode-User-Agent-Library-Version'), 'electron-fetch');
     assert.equal([...request.headers.keys()].some((name) => name.startsWith('x-stainless-')), false);

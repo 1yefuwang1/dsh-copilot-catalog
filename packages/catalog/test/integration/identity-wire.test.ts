@@ -120,8 +120,8 @@ test('all three pi-ai Copilot transports carry the identity without Stainless fi
     assert.equal(request.headers.get('authorization'), `Bearer ${AUTHORIZATION}`);
     assert.equal(request.headers.get('content-type'), 'application/json');
     assert.equal(request.headers.get('x-github-api-version'), '2026-08-01');
-    assert.equal(request.headers.get('openai-intent'), 'conversation-edits');
-    assert.equal(request.headers.get('x-interaction-type'), 'conversation-edits');
+    assert.equal(request.headers.get('openai-intent'), 'conversation-agent');
+    assert.equal(request.headers.get('x-interaction-type'), 'conversation-agent');
     assert.equal(request.headers.get('x-initiator'), 'user');
     assert.match(request.headers.get('x-request-id') ?? '', /^[0-9a-f-]{36}$/iu);
     assert.equal(request.headers.get('x-agent-task-id'), request.headers.get('x-request-id'));
@@ -133,7 +133,7 @@ test('all three pi-ai Copilot transports carry the identity without Stainless fi
   assert.equal(messages.headers.get('anthropic-dangerous-direct-browser-access'), null);
 });
 
-test('search-style behavior pins survive: API version and intent are not rewritten', async () => {
+test('search-style API version and generic intent normalize to copilot-api values', async () => {
   await withInterceptor(async () => {
     await globalThis.fetch('https://api.individual.githubcopilot.com/responses', {
       method: 'POST',
@@ -152,9 +152,9 @@ test('search-style behavior pins survive: API version and intent are not rewritt
   });
   const request = captured[0]!;
   assertIdentity(request.headers);
-  assert.equal(request.headers.get('x-github-api-version'), '2026-06-01');
-  assert.equal(request.headers.get('openai-intent'), 'conversation-edits');
-  assert.equal(request.headers.get('x-interaction-type'), 'conversation-edits');
+  assert.equal(request.headers.get('x-github-api-version'), '2026-08-01');
+  assert.equal(request.headers.get('openai-intent'), 'conversation-agent');
+  assert.equal(request.headers.get('x-interaction-type'), 'conversation-agent');
   assert.equal(request.headers.get('x-initiator'), 'agent');
   assert.equal(request.headers.get('x-request-id'), 'caller-request');
   assert.equal(request.headers.get('x-agent-task-id'), 'caller-request');
@@ -176,7 +176,7 @@ test('model discovery uses model-access and removes request-only headers', async
   });
   const request = captured[0]!;
   assertIdentity(request.headers);
-  assert.equal(request.headers.get('x-github-api-version'), '2026-06-01');
+  assert.equal(request.headers.get('x-github-api-version'), '2026-08-01');
   assert.equal(request.headers.get('openai-intent'), 'model-access');
   assert.equal(request.headers.get('x-interaction-type'), 'model-access');
   assert.equal(request.headers.get('content-type'), null);

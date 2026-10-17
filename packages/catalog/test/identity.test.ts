@@ -80,9 +80,9 @@ test('full inference rewrites identity, removes SDK headers, and preserves proto
   const url = new URL('https://api.individual.githubcopilot.com/v1/messages?beta=true');
   assert.equal(rewriteCopilotRequestHeaders(url, requestHeaders, FULL), true);
   assertIdentityHeaders(requestHeaders);
-  assert.equal(requestHeaders.get('x-github-api-version'), '2026-06-01');
-  assert.equal(requestHeaders.get('openai-intent'), 'conversation-edits');
-  assert.equal(requestHeaders.get('x-interaction-type'), 'conversation-edits');
+  assert.equal(requestHeaders.get('x-github-api-version'), '2026-08-01');
+  assert.equal(requestHeaders.get('openai-intent'), 'conversation-agent');
+  assert.equal(requestHeaders.get('x-interaction-type'), 'conversation-agent');
   assert.equal(requestHeaders.get('x-interaction-id'), 'caller-interaction');
   assert.equal(requestHeaders.get('x-request-id'), 'caller-request');
   assert.equal(requestHeaders.get('x-agent-task-id'), 'caller-task');
@@ -96,7 +96,7 @@ test('full inference rewrites identity, removes SDK headers, and preserves proto
   }
 });
 
-test('full model discovery uses model-access, preserves the pinned API version, and clears request-only headers', () => {
+test('full model discovery uses model-access, emits 2026-08-01, and clears request-only headers', () => {
   const requestHeaders = headers({
     authorization: AUTHORIZATION,
     'content-type': 'application/json',
@@ -108,7 +108,7 @@ test('full model discovery uses model-access, preserves the pinned API version, 
   const url = new URL('https://api.enterprise.githubcopilot.com/models');
   assert.equal(rewriteCopilotRequestHeaders(url, requestHeaders, FULL), true);
   assertIdentityHeaders(requestHeaders);
-  assert.equal(requestHeaders.get('x-github-api-version'), '2026-06-01');
+  assert.equal(requestHeaders.get('x-github-api-version'), '2026-08-01');
   assert.equal(requestHeaders.get('openai-intent'), 'model-access');
   assert.equal(requestHeaders.get('x-interaction-type'), 'model-access');
   assert.equal(requestHeaders.get('x-request-id'), 'caller-request');

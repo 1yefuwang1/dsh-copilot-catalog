@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.5 — agent interaction identity
+
+- Normalize normal Copilot inference and search intent headers to
+  `Openai-Intent: conversation-agent` and `X-Interaction-Type: conversation-agent`,
+  rewriting pi-ai/search's generic `conversation-edits` value. Explicit subagent,
+  compaction, and other specialized interaction metadata is still preserved.
+- Set `X-GitHub-Api-Version: 2026-08-01` on every matched request, including search
+  and model discovery, matching copilot-api; model discovery remains `model-access`.
+  Keep the 0.2.4 identity/SDK-fingerprint behavior, modes, Config, credentials,
+  routing, and model descriptors unchanged.
+
 ## 0.2.4 — Copilot wire identity
 
 - Install a process-wide `fetch` interceptor while the catalog adapter is mounted

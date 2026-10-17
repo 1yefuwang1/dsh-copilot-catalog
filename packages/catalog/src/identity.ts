@@ -46,6 +46,8 @@ const HEADER_VALUE_UNSAFE = /[\u0000-\u001f\u007f]/u;
 const INVALID_MACS = new Set(['00:00:00:00:00:00', 'ff:ff:ff:ff:ff:ff', 'ac:de:48:00:11:22']);
 const COPILOT_REQUEST_PATHS = ['/models', '/chat/completions', '/responses', '/v1/messages', '/embeddings'] as const;
 const REMOVED_HEADERS = ['openai-organization', 'openai-project', 'anthropic-dangerous-direct-browser-access'] as const;
+/** Generic edits/agent intents normalize to agent; specialized operations win. */
+const GENERIC_INTERACTIONS = new Set(['conversation-edits', 'conversation-agent']);
 const GHE_COPILOT_HOST = /^copilot-api\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.ghe\.com$/u;
 
 function assertIdentityValue(value: string, name: string): void {
@@ -164,11 +166,12 @@ function isModelAccessPath(pathname: string): boolean {
 }
 
 /**
- * Rewrite only Copilot identity and SDK-fingerprint headers.
+ * Rewrite Copilot identity, interaction, and SDK-fingerprint headers.
  *
- * Behavior-affecting headers (`X-GitHub-Api-Version`, `Openai-Intent`,
- * `X-Interaction-Type`) are preserved when nonempty; they are filled only
- * when absent, except for model discovery, which uses model-access.
+ * Normal inference/search is normalized to copilot-api's agent identity and
+ * `X-GitHub-Api-Version: 2026-08-01`; explicit subagent/compaction (or other
+ * specialized) interaction metadata is preserved. Model discovery uses
+ * model-access.
  */
 export function rewriteCopilotRequestHeaders(url: URL, headers: Headers, identity: CopilotWireIdentity): boolean {
   if (!isTrustedCopilotUrl(url) || !isCopilotRequestPath(url.pathname)) return false;
@@ -189,7 +192,7 @@ export function rewriteCopilotRequestHeaders(url: URL, headers: Headers, identit
   if (editorDeviceId === undefined || machineId === undefined || sessionId === undefined) {
     throw new TypeError('Full Copilot wire identity requires device, machine, and session IDs');
   }
-  if (!headers.get('x-github-api-version')?.trim()) headers.set('x-github-api-version', identity.githubApiVersion);
+  headers.set('x-github-api-version', identity.githubApiVersion);
   headers.set('editor-device-id', editorDeviceId);
   headers.set('vscode-machineid', machineId);
   headers.set('vscode-sessionid', sessionId);
@@ -207,9 +210,15 @@ export function rewriteCopilotRequestHeaders(url: URL, headers: Headers, identit
     return true;
   }
 
-  const intent = headers.get('openai-intent')?.trim() || 'conversation-agent';
-  if (!headers.get('openai-intent')?.trim()) headers.set('openai-intent', intent);
-  if (!headers.get('x-interaction-type')?.trim()) headers.set('x-interaction-type', intent);
+  // DSH's main loop is agent mode. Normalize pi-ai/search's generic
+  // conversation-edits value, but keep explicit subagent/compaction (or other
+  // specialized) interaction metadata from the caller.
+  const normalizeInteraction = (value: string | null | undefined): string => {
+    const trimmed = value?.trim();
+    return trimmed && !GENERIC_INTERACTIONS.has(trimmed) ? trimmed : 'conversation-agent';
+  };
+  headers.set('openai-intent', normalizeInteraction(headers.get('openai-intent')));
+  headers.set('x-interaction-type', normalizeInteraction(headers.get('x-interaction-type')));
   return true;
 }
 
