@@ -90,20 +90,40 @@ export function parseProjectRequest(input: unknown): ProjectRequest {
   if (!parsed.success) throw new WorktreeError('INVALID_REQUEST', 'Invalid project action or fields. Use absolute existing folder paths.');
   return parsed.data;
 }
-const uuidParameter = { type: 'string', format: 'uuid' };
-const idParameter = { type: 'string', minLength: 1, maxLength: 256, pattern: '^[^\\u0000-\\u001f\\u007f]+$' };
-const folderParameter = { type: 'array', minItems: 1, maxItems: 32, items: { type: 'string', minLength: 1, maxLength: 4096, description: 'Absolute path to an existing local directory. Canonical duplicates are rejected.' } };
-const titleParameter = { type: 'string', minLength: 1, maxLength: 120 };
-const mainFolderParameter = { type: 'string', minLength: 1, maxLength: 4096 };
-const variant = (action: string, properties: Record<string, unknown>, requiredFields: string[]) => ({ type: 'object', additionalProperties: false, properties: { action: { const: action, type: 'string' }, ...properties }, required: ['action', ...requiredFields] });
-/** Plain JSON schema, not a Zod object. Folder updates replace the complete folder array. */
-export const parameterSchema: Record<string, unknown> = { type: 'object', oneOf: [
-  variant('list', { projectId: uuidParameter }, []), variant('create', { id: uuidParameter, title: titleParameter, folders: folderParameter, mainFolder: { ...mainFolderParameter, description: 'Absolute existing source directory in folders (canonical match); omitted uses the first folder.' } }, ['id', 'title', 'folders']),
-  { ...variant('update', { projectId: uuidParameter, title: titleParameter, folders: folderParameter, mainFolder: { ...mainFolderParameter, description: 'Absolute existing source directory in resulting folders (canonical match). Omitted retains the main, or uses the sole remaining folder; supply a replacement to remove the main when multiple folders remain.' } }, ['projectId']), anyOf: [{ required: ['title'] }, { required: ['folders'] }, { required: ['mainFolder'] }] },
-  variant('remove', { projectId: { ...uuidParameter, description: 'Remove only project metadata and membership. Folders, files, conversations and worktrees remain; use a fresh UUID to re-add.' } }, ['projectId']),
-  variant('bind', { projectId: uuidParameter, folderId: idParameter, sessionId: idParameter }, ['projectId', 'folderId', 'sessionId']),
-  variant('start', { operationId: uuidParameter, projectId: uuidParameter, folderId: { ...idParameter, description: 'Override the main folder for this new start. Omitted uses the main; replay reuses the original receipt folder and session.' } }, ['operationId', 'projectId']),
-] };
+const uuidParameter = { type: 'string', description: 'UUID.' };
+const idParameter = { type: 'string', description: 'Opaque identifier of 1-256 characters without control characters.' };
+const folderParameter = {
+  type: 'array',
+  description: 'One to 32 absolute paths to existing local directories (each 1-4096 characters). Canonical duplicates are rejected; update replaces the complete folder array.',
+  items: { type: 'string', description: 'Absolute path to an existing local directory. Canonical duplicates are rejected.' },
+};
+const titleParameter = { type: 'string', description: 'Project title of 1-120 characters.' };
+const mainFolderParameter = { type: 'string' };
+/**
+ * Plain JSON schema, not a Zod object: one flat object with a root properties bucket,
+ * inside the registry's supported SDK subset. Per-action requirements stay in the
+ * parser and in the action description.
+ */
+export const parameterSchema: Record<string, unknown> = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['list', 'create', 'update', 'remove', 'bind', 'start'],
+      description: 'Required fields by action: list - none, projectId optional; create - id, title, folders, mainFolder optional; update - projectId plus at least one of title, folders or mainFolder; remove - projectId; bind - projectId, folderId, sessionId; start - operationId, projectId, folderId optional. Fields not listed for the chosen action are rejected.',
+    },
+    projectId: { ...uuidParameter, description: 'Project UUID from workspace_project list. Used by list (optional), update, remove, bind and start; git_worktree create is the action that pairs projectId with folderId. remove deletes only project metadata and membership: folders, files, conversations and worktrees remain, so use a fresh UUID to re-add.' },
+    id: { ...uuidParameter, description: 'New project UUID for create.' },
+    title: titleParameter,
+    folders: folderParameter,
+    mainFolder: { ...mainFolderParameter, description: 'Absolute existing directory in folders (canonical match), 1-4096 characters. On create, omitted uses the first folder. On update, a directory in the resulting folders; omitted retains the main or uses the sole remaining folder, and supplying a replacement removes the main when multiple folders remain.' },
+    folderId: { ...idParameter, description: 'Project folder ID from workspace_project list, 1-256 characters without control characters; used by bind and start only. On start it overrides the main folder for this new start; omitted uses the main, and replay reuses the original receipt folder and session.' },
+    sessionId: { ...idParameter, description: 'Thread session ID of 1-256 characters without control characters; bind attaches that thread to the project folder.' },
+    operationId: { ...uuidParameter, description: 'Start-operation UUID. Replay reuses the original receipt folder and session.' },
+  },
+  required: ['action'],
+};
 export const projectParameterSchema = parameterSchema;
 function contained(root: string, path: string): boolean { const part = relative(root, path); return part === '' || (!part.startsWith(`..${sep}`) && part !== '..' && !isAbsolute(part)); }
 

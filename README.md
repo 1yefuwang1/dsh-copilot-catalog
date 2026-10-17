@@ -1,16 +1,17 @@
 # DSH plugins
 
-A **pnpm monorepo with three independently installable DeepSeek Harness plugins**.
+A **pnpm monorepo with four independently installable DeepSeek Harness plugins**.
 All maintained code—including Host implementations, the Web Client, tests and
 repository tooling—uses strict TypeScript. Published Host modules are ESM with
 declarations; the worktree Web Client is compiled to a persistent browser factory. The worktree plugin is packaged as
-`@1yefuwang1/dsh-worktrees@0.2.21`; npm availability follows maintainer approval
+`@1yefuwang1/dsh-worktrees@0.2.22`; npm availability follows maintainer approval
 of the staged release.
 
 | Package | Purpose | DSH behavior |
 | --- | --- | --- |
 | [dsh-copilot-catalog](packages/catalog/README.md) | Account-aware Copilot model discovery | Wraps/replaces the standard pi-ai adapter; preserves its public configuration and credential key |
 | [dsh-copilot-search](<packages/search/README.md>) | Copilot native Responses web search | Registers `github-copilot-search`; does not replace an LLM adapter |
+| [dsh-copilot-tool-schema](<packages/tool-schema/README.md>) | Copilot Gemini tool-declaration guard | Adds a missing root `properties` bucket for configured Copilot Gemini routes; additive listener, no adapter replacement |
 | [@1yefuwang1/dsh-worktrees](<packages/worktrees/README.md>) | Multi-folder projects with Local/worktree threads | Adds metadata-only project grouping, main-folder defaults/reminders, native first-Send worktree setup and branch naming, configurable inactivity cleanup, explicit branch-choice Local recovery with staged input and exact-ID reuse, and guarded handoff; no core or LLM adapter changes |
 
 The repository root is **private development tooling**, not a DSH plugin. Install
@@ -37,6 +38,7 @@ Use DSH's Plugins page or CLI for the intended profile:
 ```sh
 dsh plugin --profile <profile> add dsh-copilot-catalog
 dsh plugin --profile <profile> add dsh-copilot-search
+dsh plugin --profile <profile> add dsh-copilot-tool-schema
 ```
 
 The Copilot plugins work separately or together. Search reuses
@@ -108,6 +110,7 @@ Local linking, **only if you choose to alter a DSH profile**:
 ```sh
 dsh plugin --profile <profile> add -w packages/catalog
 dsh plugin --profile <profile> add -w packages/search
+dsh plugin --profile <profile> add -w packages/tool-schema
 dsh plugin --profile <profile> add -w packages/worktrees
 ```
 
@@ -157,10 +160,11 @@ auxiliary Copilot usage; a returned-source cap does not cap backend searches/cos
 ```text
 packages/
   catalog/          dsh-copilot-catalog: source, tests, bundle and package docs
+  tool-schema/      dsh-copilot-tool-schema: Copilot Gemini tool-declaration guard
   search/           dsh-copilot-search: source, tests, bundle and package docs
   worktrees/        @1yefuwang1/dsh-worktrees: Host, Client, Git, tests and docs
 scripts/            validation, credential audit and release targeting
-pnpm-workspace.yaml the three plugin workspaces
+pnpm-workspace.yaml the four plugin workspaces
 pnpm-lock.yaml      reproducible root and leaf dependency graph
 ```
 
@@ -174,12 +178,13 @@ A release selects **one package**, never the root or multiple packages at once:
 
 - `dsh-copilot-catalog-vX.Y.Z`
 - `dsh-copilot-search-vX.Y.Z`
+- `dsh-copilot-tool-schema-vX.Y.Z`
 - `@1yefuwang1/dsh-worktrees-vX.Y.Z`
 
 The tag must match its leaf version and repository identity. Catalog is currently
 `0.2.2`, adding GHE Cloud endpoint support; published versions cannot be republished. Search is currently
 `0.1.2`, adding GHE Cloud endpoint support alongside the Copilot stream-ID compatibility fix.
-Worktrees is `@1yefuwang1/dsh-worktrees@0.2.21`, hiding the native **Choose a folder…**
+Tool schema is `dsh-copilot-tool-schema@0.1.0`, an additive Copilot Gemini tool-declaration guard. Worktrees is `@1yefuwang1/dsh-worktrees@0.2.22`, flattening the project-tool declaration and hiding the native **Choose a folder…**
 option on web while preserving desktop picking, Host folder browsing where supported,
 and manual path entry. It retains the factory staging, held-target resource checks,
 Local runtime admission/spawn guards, and navigation fixes from `0.2.20`. Ready recovery commits durable

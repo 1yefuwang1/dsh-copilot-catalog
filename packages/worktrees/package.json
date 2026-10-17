@@ -1,6 +1,6 @@
 {
   "name": "@1yefuwang1/dsh-worktrees",
-  "version": "0.2.21",
+  "version": "0.2.22",
   "description": "Multi-folder projects with Local and isolated Git worktree threads, configurable inactivity cleanup, warning/branch-choice Local recovery and guarded handoff.",
   "type": "module",
   "main": "./dist/index.js",

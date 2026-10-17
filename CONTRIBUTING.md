@@ -8,7 +8,8 @@ pnpm run verify
 ```
 
 The root is private tooling. Runtime source/tests live in
-[catalog](packages/catalog/README.md), [search](packages/search/README.md) and
+[catalog](packages/catalog/README.md), [search](packages/search/README.md),
+[tool schema](packages/tool-schema/README.md) and
 [worktrees](packages/worktrees/README.md), each with its own manifest, bundle,
 declarations, output and release version. Keep
 [pnpm-lock.yaml](pnpm-lock.yaml) committed. Do not add npm lockfiles, run installs
@@ -65,7 +66,7 @@ A public package's tarball must work independently of the private root.
 reviewed synthetic literals under known package test trees are exempt. Never
 print suspected values or expand exemptions merely to silence a finding.
 
-CI verifies all three packages and root release targeting. Maintainers release one
+CI verifies all four packages and root release targeting. Maintainers release one
 package using `<package-name>-v<version>` tags after updating that leaf's changelog
 and manifest. Catalog 0.2.0 has already been published; do not republish it.
 The workflow stages only the selected leaf and preserves explicit npm review/2FA

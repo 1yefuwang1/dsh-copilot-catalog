@@ -1,7 +1,7 @@
 # @1yefuwang1/dsh-worktrees
 
 Multi-folder projects with Local and isolated Git worktree threads for DeepSeek
-Harness. This experimental Host + Web Client package is **`0.2.21`**; new releases
+Harness. This experimental Host + Web Client package is **`0.2.22`**; new releases
 use staged npm publishing with maintainer review/2FA. It does not require Copilot, the
 catalog plugin, or the search plugin. The scoped name avoids collision with the
 unrelated npm package `dsh-worktrees`; stable tool, command and metadata names are
@@ -472,7 +472,7 @@ After the staged release is approved and appears on npm, install the scoped
 package (the similarly named unscoped package is unrelated):
 
 ```sh
-dsh plugin --profile <profile> add @1yefuwang1/dsh-worktrees@0.2.21
+dsh plugin --profile <profile> add @1yefuwang1/dsh-worktrees@0.2.22
 ```
 
 For local development or while release approval is pending, build explicitly from

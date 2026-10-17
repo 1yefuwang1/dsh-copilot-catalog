@@ -30,7 +30,7 @@ export interface WorkspacePackage extends ReleaseCandidate {
 }
 
 export const root = fileURLToPath(new URL('../', import.meta.url));
-export const workspacePaths = Object.freeze(['packages/catalog', 'packages/search', 'packages/worktrees']);
+export const workspacePaths = Object.freeze(['packages/catalog', 'packages/search', 'packages/tool-schema', 'packages/worktrees']);
 
 /** Git may check out YAML with CRLF on Windows; validate complete rows, not LF substrings. */
 export function assertWorkspaceDefinition(definition: string): void {

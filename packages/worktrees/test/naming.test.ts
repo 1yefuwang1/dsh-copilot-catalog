@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { fallbackName, generateWorktreeName, namingConfig, safeSlug } from '../dist/naming.js';
 import { Config } from '../dist/index.js';
-import { parseRequest, parameterSchema } from '../dist/schema.js';
+import { parseRequest, parameterSchema, stripToolSchemaHints } from '../dist/schema.js';
 import { worktreeDomain } from '../dist/store.js';
 import type { WorktreeConfig } from '../dist/types.js';
 import type { HostDouble } from './controller-types.js';
@@ -179,8 +179,29 @@ test('firstPrompt is bounded and create-only, and tool parameters remain plain J
   assert.throws(() => parseRequest({ ...input, firstPrompt: 'a'.repeat(65537) }), error => error instanceof Error && 'code' in error && error.code === 'INVALID_REQUEST');
   assert.throws(() => parseRequest({ action: 'status' as const, firstPrompt: 'task' }), error => error instanceof Error && 'code' in error && error.code === 'INVALID_REQUEST');
   assert.deepEqual(JSON.parse(JSON.stringify(parameterSchema)), parameterSchema);
-  assert.equal((parameterSchema as {properties: {firstPrompt: {maxLength: number}}}).properties.firstPrompt.maxLength, 65536);
+  const firstPrompt = (parameterSchema as { properties: { firstPrompt: { maxLength?: number; description?: string } } }).properties.firstPrompt;
+  assert.equal(firstPrompt.maxLength, undefined);
+  assert.match(firstPrompt.description ?? '', /65536/u);
   assert.equal('~standard' in parameterSchema, false);
+  assert.equal('$schema' in parameterSchema, false);
+});
+
+test('tool schema projection keeps data and property names while dropping hints', () => {
+  const projected = stripToolSchemaHints({
+    $schema: 'https://json-schema.org/draft/2020-12/schema', $id: 'urn:example',
+    type: 'object', minLength: 1, pattern: '^x$',
+    properties: {
+      pattern: { type: 'string', pattern: '^x$' },
+      format: { type: 'string', format: 'uuid', minimum: 1, exclusiveMaximum: 9 },
+      minimum: { type: 'number', minimum: 0, maxItems: 2 },
+    },
+    required: ['pattern'], enum: ['pattern'], default: { pattern: 'kept' },
+  });
+  assert.deepEqual(projected, {
+    type: 'object',
+    properties: { pattern: { type: 'string' }, format: { type: 'string' }, minimum: { type: 'number' } },
+    required: ['pattern'], enum: ['pattern'], default: { pattern: 'kept' },
+  });
 });
 
 test('storage domain stays v1 with optional additive naming fields', () => {

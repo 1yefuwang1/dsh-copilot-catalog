@@ -16,6 +16,10 @@ const policies: Record<string, Policy> = {
     modules: ['index', 'auth', 'endpoint', 'errors', 'plugin', 'provider', 'refresh', 'responses', 'runtime', 'types'],
     extras: [], maxBytes: 150_000,
   },
+  'dsh-copilot-tool-schema': {
+    modules: ['index', 'plugin', 'schema', 'types'],
+    extras: [], maxBytes: 150_000,
+  },
   '@1yefuwang1/dsh-worktrees': {
     modules: ['index', 'types', 'errors', 'runtime', 'schema', 'store', 'sessions', 'context', 'service', 'git', 'naming', 'rpc', 'projects', 'project-store', 'project-rpc', 'project-context', 'quiet-rpc', 'first-message', 'cleanup-store', 'cleanup', 'recovery-rpc'],
     // Readable TypeScript-emitted Client formatting brings the unchanged 50-file

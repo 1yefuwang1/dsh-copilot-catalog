@@ -506,7 +506,12 @@ test('project remove shares exact quiet RPC/tool/command execution and retains l
   assert.deepEqual(native.pins, [source.id]); assert.deepEqual(native.archived, [source.id]); assert.deepEqual(native.sessionIds, [source.id]); assert.equal(native.path, f.root);
   assert.ok(!(await f.host.systemPrompt.assemble({ scope: source })).contexts.some(value => value.name === 'dsh-worktrees:project' && value.text));
   const schema = required(f.host.tools.schemas(source).find(tool => tool.name === 'workspace_project'));
-  assert.equal((schema.parameters.oneOf as unknown[]).length, 6); assert.equal(f.host.tools.executionMode({ name: 'workspace_project', arguments: request, agent: source, callId: toolCallId('project-sdk-remove-mode'), signal }).kind, 'exclusive');
+  const parameters = schema.parameters as { oneOf?: unknown; properties: { action: { enum: string[] } } };
+  assert.equal('oneOf' in parameters, false);
+  assert.deepEqual(parameters.properties.action.enum, ['list', 'create', 'update', 'remove', 'bind', 'start']);
+  assert.equal(f.host.tools.executionMode({ name: 'workspace_project', arguments: request, agent: source, callId: toolCallId('project-sdk-remove-mode'), signal }).kind, 'exclusive');
+  assert.equal(f.host.tools.executionMode({ name: 'workspace_project', arguments: { action: 'list' }, agent: source, callId: toolCallId('project-sdk-list-mode'), signal }).kind, 'parallel');
+  assert.equal(f.host.tools.executionMode({ name: 'workspace_project', arguments: { action: 'list', title: 'mutation field' }, agent: source, callId: toolCallId('project-sdk-mixed-mode'), signal }).kind, 'exclusive');
   const unknown = await rpc({ action: 'remove', projectId: randomUUID() }); assert.equal(unknown.value.error.code, 'PROJECT_NOT_FOUND');
   const invalid = await rpc({ ...request, deleteFolders: true }); assert.equal(invalid.ok, false); assert.equal(invalid.error.code, 'INVALID_RPC_REQUEST');
   const noCaller = await f.host.tools.execute({ name: 'workspace_project', callId: toolCallId('project-sdk-remove-no-caller'), arguments: request, signal }); assert.equal(noCaller.isError, true);

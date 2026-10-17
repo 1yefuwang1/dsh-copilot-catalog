@@ -8,7 +8,7 @@ import { findCredentialIssues } from '../check-secrets.js';
 import { publicationPolicy, validatePublicationMetadata, validatePublicationSize } from '../check-pack.js';
 
 const repository = '1yefuwang1/dsh-copilot-catalog';
-const candidates = ['catalog', 'search', 'worktrees'].map((name) => ({ path: `packages/${name}`, manifest: {
+const candidates = ['catalog', 'search', 'tool-schema', 'worktrees'].map((name) => ({ path: `packages/${name}`, manifest: {
   name: name === 'worktrees' ? '@1yefuwang1/dsh-worktrees' : `dsh-copilot-${name}`, version: name === 'catalog' ? '0.2.0' : '0.1.0',
   repository: { url: `git+https://github.com/${repository}.git`, directory: `packages/${name}` },
 } }));
@@ -46,7 +46,7 @@ test('workspace validation accepts LF, CRLF, CR, mixed endings and no final newl
     assert.doesNotThrow(() => assertWorkspaceDefinition(rows.join(ending)));
     assert.doesNotThrow(() => assertWorkspaceDefinition(rows.join(ending) + ending));
   }
-  assert.doesNotThrow(() => assertWorkspaceDefinition('packages:\r\n  - packages/catalog\n  - packages/search\r  - packages/worktrees'));
+  assert.doesNotThrow(() => assertWorkspaceDefinition('packages:\r\n  - packages/catalog\n  - packages/search\r  - packages/tool-schema\n  - packages/worktrees'));
 });
 
 test('workspace validation rejects every missing, substring-only or commented package row', () => {
@@ -58,10 +58,10 @@ test('workspace validation rejects every missing, substring-only or commented pa
   }
 });
 
-test('the private root is not a publication target and all three leaves resolve portably', async () => {
-  assert.deepEqual(workspacePaths, ['packages/catalog', 'packages/search', 'packages/worktrees']);
+test('the private root is not a publication target and all four leaves resolve portably', async () => {
+  assert.deepEqual(workspacePaths, ['packages/catalog', 'packages/search', 'packages/tool-schema', 'packages/worktrees']);
   const leaves = await packages();
-  assert.deepEqual(leaves.map(({ manifest }) => manifest.name), ['dsh-copilot-catalog', 'dsh-copilot-search', '@1yefuwang1/dsh-worktrees']);
+  assert.deepEqual(leaves.map(({ manifest }) => manifest.name), ['dsh-copilot-catalog', 'dsh-copilot-search', 'dsh-copilot-tool-schema', '@1yefuwang1/dsh-worktrees']);
   for (const path of workspacePaths) {
     const selected = await packages(resolve(root, path));
     assert.equal(selected.length, 1);
@@ -80,7 +80,8 @@ test('publication content paths cannot escape their selected package', () => {
 test('versioned package tags select exactly one package, never the legacy root tag', () => {
   assert.equal(releasePackage('dsh-copilot-catalog-v0.2.0', candidates), candidates[0]);
   assert.equal(releasePackage('dsh-copilot-search-v0.1.0', candidates), candidates[1]);
-  assert.equal(releasePackage('@1yefuwang1/dsh-worktrees-v0.1.0', candidates), candidates[2]);
+  assert.equal(releasePackage('dsh-copilot-tool-schema-v0.1.0', candidates), candidates[2]);
+  assert.equal(releasePackage('@1yefuwang1/dsh-worktrees-v0.1.0', candidates), candidates[3]);
   for (const tag of ['v0.2.0', 'dsh-worktrees-v0.1.0', '1yefuwang1-dsh-worktrees-v0.1.0', 'dsh-copilot-search-v0.2.0', 'dsh-copilot-search-v0.1.0\n', '@1yefuwang1/dsh-worktrees-v0.2.0', '@1yefuwang1/dsh-worktrees-v0.1.0\n', 'dsh-copilot-worktrees-v0.1.0', undefined]) {
     assert.throws(() => releasePackage(tag, candidates), /Release tag/u);
   }
@@ -91,12 +92,15 @@ test('release metadata must match its actual GitHub repository and package direc
   assert.deepEqual(releaseIdentity('dsh-copilot-search-v0.1.0', repository, candidates), {
     package: 'dsh-copilot-search', version: '0.1.0', directory: 'packages/search',
   });
+  assert.deepEqual(releaseIdentity('dsh-copilot-tool-schema-v0.1.0', repository, candidates), {
+    package: 'dsh-copilot-tool-schema', version: '0.1.0', directory: 'packages/tool-schema',
+  });
   assert.deepEqual(releaseIdentity('@1yefuwang1/dsh-worktrees-v0.1.0', repository, candidates), {
     package: '@1yefuwang1/dsh-worktrees', version: '0.1.0', directory: 'packages/worktrees',
   });
   assert.throws(() => releaseIdentity('dsh-copilot-search-v0.1.0', 'someone/else', candidates), /repository/u);
   assert.throws(() => releaseIdentity('@1yefuwang1/dsh-worktrees-v0.1.0', 'someone/else', candidates), /repository/u);
-  const unknown = structuredClone(candidates[2]!);
+  const unknown = structuredClone(candidates[3]!);
   unknown.manifest.name = '@1yefuwang1/dsh-worktrees-extra';
   assert.throws(() => releaseIdentity('@1yefuwang1/dsh-worktrees-extra-v0.1.0', repository, [unknown]), /Invalid release package identity/u);
   assert.throws(() => releaseIdentity('dsh-copilot-search-v0.1.0', `${repository}\n`, candidates), /repository/u);
@@ -114,11 +118,12 @@ test('release workflow stages one pnpm package with provenance and no stored tok
   assert.doesNotMatch(workflow, /run: npm |secrets\.(?:NPM_TOKEN|NODE_AUTH_TOKEN)/u);
 });
 
-test('publication allowlists and bounds preserve both old leaves and explicitly add worktree Client assets', () => {
+test('publication allowlists and bounds preserve every existing leaf and explicitly add worktree Client assets', () => {
   const common = ['CHANGELOG.md', 'LICENSE', 'README.md', 'cordis.patch.yml', 'package.json'];
   const modules = {
     'dsh-copilot-catalog': ['index', 'catalog', 'discovery', 'plugin', 'runtime', 'types'],
     'dsh-copilot-search': ['index', 'auth', 'endpoint', 'errors', 'plugin', 'provider', 'refresh', 'responses', 'runtime', 'types'],
+    'dsh-copilot-tool-schema': ['index', 'plugin', 'schema', 'types'],
     '@1yefuwang1/dsh-worktrees': ['index', 'types', 'errors', 'runtime', 'schema', 'store', 'sessions', 'context', 'service', 'git', 'naming', 'rpc', 'projects', 'project-store', 'project-rpc', 'project-context', 'quiet-rpc', 'first-message', 'cleanup-store', 'cleanup', 'recovery-rpc'],
   };
   for (const [name, names] of Object.entries(modules)) {

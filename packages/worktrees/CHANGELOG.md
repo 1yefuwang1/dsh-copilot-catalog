@@ -1,6 +1,21 @@
 # @1yefuwang1/dsh-worktrees changelog
 
-## Unreleased — Unsent worktree draft revalidation
+## 0.2.22 — Unsent draft revalidation and a strict-API-safe tool declaration
+
+- Replace the six-arm `oneOf` project-tool declaration with one flat object schema
+  that declares a root `properties` bucket. The failing declaration was isolated to
+  the missing bucket, not to `oneOf`: the shipped raw request returned a plain-text
+  HTTP 400, the same declaration with `properties: {}` added returned 200 while still
+  carrying `oneOf`, and deleting `oneOf` without the bucket still returned 400
+  (enterprise account; gemini-3.7-flash and gemini-4-argon). The flattened form was
+  measured at 200 for the full tool set on both models.
+- Move per-action requirements, UUID meanings and the folder/length limits into the
+  action and field descriptions; the strict Zod union, the project parser and the
+  fail-closed concurrency classifier are unchanged.
+- Project tool-facing parameters onto the registry's supported SDK subset so the
+  TypeScript and Python renderers emit typed declarations, not `unknown`; runtime
+  validation keeps every constraint.
+
 
 - Treat composer withdrawal, navigation and reconnect as invalidated Git
   observations, not failed worktree preparation. Successful rechecks leave no

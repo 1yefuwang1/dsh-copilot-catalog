@@ -1,0 +1,10 @@
+# Additive listener: this bundle never replaces an adapter or another plugin's settings.
+- insert:
+    - id: copilot-tool-schema
+      name: dsh-copilot-tool-schema
+      config:
+        providers:
+          - github-copilot
+        families:
+          - gemini
+        logFixes: false

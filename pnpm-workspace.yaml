@@ -1,6 +1,7 @@
 packages:
   - packages/catalog
   - packages/search
+  - packages/tool-schema
   - packages/worktrees
 
 # Dependency lifecycle scripts are not needed to build these plugins.

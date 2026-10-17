@@ -1,0 +1,93 @@
+{
+  "name": "dsh-copilot-tool-schema",
+  "version": "0.1.0",
+  "description": "Copilot Gemini tool-declaration guard for DeepSeek Harness: supplies a missing root properties bucket for configured routes.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./plugin": {
+      "types": "./dist/plugin.d.ts",
+      "import": "./dist/plugin.js"
+    },
+    "./schema": {
+      "types": "./dist/schema.d.ts",
+      "import": "./dist/schema.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/",
+    "cordis.patch.yml",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p test/tsconfig.json",
+    "test": "pnpm run build && node --import tsx --test test/schema.test.ts test/plugin.test.ts",
+    "test:integration": "pnpm run build && node --import tsx --test test/integration/scoped.test.ts test/integration/runtime.test.ts test/integration/wire.test.ts",
+    "test:types": "pnpm run build && tsc -p test/types/tsconfig.json",
+    "test:pack": "pnpm run build && tsx ../../scripts/check-pack.ts .",
+    "check": "pnpm run typecheck && tsx ../../scripts/check.ts",
+    "verify": "pnpm run check:secrets && pnpm run check && pnpm run test && pnpm run test:integration && pnpm run test:types && pnpm run test:pack",
+    "check:secrets": "tsx ../../scripts/check-secrets.ts",
+    "prepare": "pnpm run build",
+    "prepublishOnly": "pnpm run verify"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "cordis-plugin",
+    "github-copilot",
+    "tool-schema",
+    "gemini"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/1yefuwang1/dsh-copilot-catalog.git",
+    "directory": "packages/tool-schema"
+  },
+  "homepage": "https://github.com/1yefuwang1/dsh-copilot-catalog/tree/main/packages/tool-schema#readme",
+  "bugs": {
+    "url": "https://github.com/1yefuwang1/dsh-copilot-catalog/issues"
+  },
+  "engines": {
+    "node": ">=22.19.0",
+    "dsh": "0.2.0-rc.2"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.0.4",
+    "@deepseek-ai/dsh-system-prompt": "0.2.0-rc.2",
+    "@deepseek-ai/schemastery": "~3.18.4"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/dsh-agent": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-scope": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-session": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-system-prompt": "0.2.0-rc.2",
+    "@deepseek-ai/schemastery": "3.18.4"
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
+

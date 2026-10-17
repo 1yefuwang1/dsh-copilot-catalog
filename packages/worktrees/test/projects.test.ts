@@ -159,7 +159,12 @@ test('strict actions and existing absolute canonical paths reject duplicates, ma
   const f = await fixture(t); const id = randomUUID(); const base = { action: 'create' as const, id, title: 'Name', folders: [f.paths.a] };
   for (const request of [null, [], {}, { action: 'remove' as const, projectId: 'not-a-uuid' }, { ...base, title: ' ' }, { ...base, title: 'x'.repeat(121) }, { ...base, folders: [] }, { ...base, folders: Array(33).fill(f.paths.a) }, { ...base, folders: ['relative'] }, { ...base, permissions: 'full' }, { action: 'list' as const, folderId: id }, { action: 'update' as const, projectId: id }, { ...base, folders: ['/tmp/line\nbreak'] }]) assert.throws(() => parseProjectRequest(request), errorCode('INVALID_REQUEST'));
   let accessor = false; const request = { action: 'list' as const }; Object.defineProperty(request, 'evil', { enumerable: true, get() { accessor = true; return 1; } }); assert.throws(() => parseProjectRequest(request)); assert.equal(accessor, false);
-  assert.ok(!JSON.stringify(parameterSchema).includes('~standard')); assert.equal(parameterSchema.oneOf.length, 6);
+  assert.ok(!JSON.stringify(parameterSchema).includes('~standard'));
+  const declared = parameterSchema as { properties: Record<string, { enum?: string[]; description?: string; type?: unknown; format?: unknown }>; required?: string[] };
+  assert.equal('oneOf' in declared, false); assert.equal('properties' in declared, true);
+  assert.deepEqual(declared.properties.action!.enum, ['list', 'create', 'update', 'remove', 'bind', 'start']);
+  assert.deepEqual(declared.required, ['action']);
+  assert.equal(JSON.stringify(declared).includes('"format"'), false);
   await assert.rejects(f.invoke({ ...base, folders: [resolve(f.directory, 'missing')] }), errorCode('INVALID_PROJECT_PATH'));
   const file = resolve(f.directory, 'regular'); await writeFile(file, 'file'); await assert.rejects(f.invoke({ ...base, folders: [file] }), errorCode('INVALID_PROJECT_PATH'));
   const alias = resolve(f.directory, 'alias'); await symlink(f.paths.a, alias); await assert.rejects(f.invoke({ ...base, folders: [f.paths.a, alias] }), errorCode('DUPLICATE_PROJECT_FOLDER'));
@@ -310,10 +315,13 @@ test('main-folder parser and additive v1 schema accept legacy records, reject ex
   for (const request of [{ action: 'create' as const, id, title: 'New', folders: ['/source/a'], mainFolder: '/source/a' }, { action: 'update' as const, projectId: id, mainFolder: '/source/b' }, { action: 'start' as const, projectId: id, operationId: randomUUID() }]) assert.deepEqual(parseProjectRequest(request), request);
   for (const mainFolder of ['relative', '', '/line\nbreak', null, 1]) assert.throws(() => parseProjectRequest({ action: 'update' as const, projectId: id, mainFolder }), errorCode('INVALID_REQUEST'));
   assert.throws(() => parseProjectRequest({ action: 'update' as const, projectId: id, mainFolderId: 'folder-a' }), errorCode('INVALID_REQUEST'));
-  const create = parameterSchema.oneOf.find(value => value.properties.action!.const === 'create');
-  const update = parameterSchema.oneOf.find(value => value.properties.action!.const === 'update');
-  const start = parameterSchema.oneOf.find(value => value.properties.action!.const === 'start');
-  assert.equal(create!.properties.mainFolder!.type, 'string'); assert.ok(!create!.required.includes('mainFolder')); assert.ok(update!.anyOf.some(value => value.required.includes('mainFolder'))); assert.ok(!start!.required.includes('folderId')); assert.match(start!.properties.folderId!.description, /receipt/u);
+  const properties = (parameterSchema as { properties: Record<string, { type?: unknown; description?: string }>; required?: string[] }).properties;
+  const required = (parameterSchema as { required?: string[] }).required ?? [];
+  assert.equal(properties.mainFolder!.type, 'string'); assert.equal(required.includes('mainFolder'), false);
+  assert.match(properties.mainFolder!.description ?? '', /On create, omitted uses the first folder/u);
+  assert.match(properties.mainFolder!.description ?? '', /resulting folders/u);
+  assert.match(properties.action!.description ?? '', /at least one of title, folders or mainFolder/u);
+  assert.equal(required.includes('folderId'), false); assert.match(properties.folderId!.description ?? '', /receipt/u);
   assert.equal(projectDomain.version, 1);
 });
 
@@ -441,10 +449,10 @@ test('strict remove exposes only project UUID and metadata-only semantics', () =
   assert.deepEqual(parseProjectRequest(request), request);
   for (const projectId of ['', 'folder-id', null, 1]) assert.throws(() => parseProjectRequest({ ...request, projectId }), errorCode('INVALID_REQUEST'));
   for (const field of ['id', 'folders', 'folderId', 'deleteFolders', 'recursive', 'force', 'permissions', 'origin', 'actorId', 'settings']) assert.throws(() => parseProjectRequest({ ...request, [field]: true }), errorCode('INVALID_REQUEST'));
-  const remove = parameterSchema.oneOf.find(value => value.properties.action!.const === 'remove');
-  assert.equal(remove!.additionalProperties, false); assert.deepEqual(remove!.required, ['action', 'projectId']);
-  assert.deepEqual(Object.keys(remove!.properties), ['action', 'projectId']); assert.equal(remove!.properties.projectId!.format, 'uuid');
-  assert.match(remove!.properties.projectId!.description, /only project metadata/u); assert.match(remove!.properties.projectId!.description, /remain/u);
+  const remove = parameterSchema as { additionalProperties?: unknown; required?: string[]; properties: Record<string, { format?: unknown; description?: string }> };
+  assert.equal(remove.additionalProperties, false); assert.deepEqual(remove.required, ['action']);
+  assert.equal(remove.properties.projectId!.format, undefined);
+  assert.match(remove.properties.projectId!.description ?? '', /only project metadata/u); assert.match(remove.properties.projectId!.description ?? '', /remain/u);
   const receipt = { id: request.projectId, folders: [{ id: 'folder', path: '/source' }], removedAt: 1 };
   assert.deepEqual(projectDomain.tables.removals.valueSchema.parse(receipt), receipt);
   assert.equal(projectDomain.tables.removals.valueSchema.safeParse({ ...receipt, title: 'Deleted title' }).success, false);

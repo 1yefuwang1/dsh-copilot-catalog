@@ -1,5 +1,19 @@
 # Monorepo changelog
 
+## Unreleased — Copilot Gemini tool declarations
+
+- Worktrees `0.2.22` replaces the six-arm project-tool `oneOf` with one flat object
+  schema that declares a root `properties` bucket. Measured on the enterprise account:
+  the shipped payload returned a plain-text HTTP 400, the same declaration with
+  `properties: {}` returned 200 while still carrying `oneOf`, and deleting `oneOf`
+  without the bucket still failed.
+- Add `dsh-copilot-tool-schema@0.1.0`: an additive `system-prompt/assemble` guard that
+  supplies a missing root `properties` bucket for configured Copilot Gemini routes,
+  with skip/fix diagnostics and best-effort logging.
+- Register the fourth leaf in the pnpm workspace, pack allowlist, release identity and
+  tooling assertions; add parser, scheduler, renderer, real-scope and offline wire
+  coverage.
+
 ## Unreleased — Complete TypeScript migration
 
 - Port the browser client, repository tooling, test suites and fixtures to strict

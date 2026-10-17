@@ -14,7 +14,7 @@ export const requestSchema = z.object({
   remote: text.optional(), remoteIdentity: text.optional(), remoteBranch: text.optional(),
   sourceSessionId: z.string().min(1).max(256).optional(), sessionMode: z.enum(['new', 'continue']).optional(),
   requireBlankSource: z.boolean().optional(), settingsHash: z.string().max(128).optional(),
-  firstPrompt: z.string().max(65536).describe('Initial task text for automatic naming; only create accepts it.').optional(),
+  firstPrompt: z.string().max(65536).describe('Initial task text for automatic naming; only create accepts it. At most 65536 characters.').optional(),
   projectId: id.describe('Logical project ID from workspace_project list; pair with folderId on create.').optional(),
   folderId: z.string().min(1).max(256).describe('Project folder ID from workspace_project list; pair with projectId on create.').optional(),
   name: text.optional(), protected: z.boolean().optional(), archived: z.boolean().optional(),
@@ -80,5 +80,37 @@ export function hashValue(value: unknown): string {
 }
 export const mutationActions = new Set<WorktreeAction>(['create', 'start', 'branch', 'protect', 'handoff', 'archive', 'reopen']);
 export const fullAccessActions = new Set<WorktreeAction>(['create', 'start', 'branch', 'preview', 'export', 'handoff']);
+const TOOL_SCHEMA_HINTS = new Set(['$schema', '$id', 'format', 'minLength', 'maxLength', 'pattern', 'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'minItems', 'maxItems']);
+/** Schema keywords whose value maps names to subschemas. */
+const SCHEMA_MAPS = new Set(['properties', '$defs', 'definitions', 'dependentSchemas']);
+/** Schema keywords whose value is one subschema. */
+const SCHEMA_VALUES = new Set(['items', 'additionalProperties', 'not', 'if', 'then', 'else', 'contains', 'propertyNames']);
+/** Schema keywords whose value is a list of subschemas. */
+const SCHEMA_LISTS = new Set(['oneOf', 'anyOf', 'allOf', 'prefixItems']);
+
+/**
+ * Drop dialect markers and non-portable hints from schema positions only, so a property
+ * named pattern, format or minimum is never mistaken for a keyword. The Zod parser keeps
+ * every constraint; this projection only shapes the model-facing declaration.
+ */
+export function stripToolSchemaHints(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripToolSchemaHints);
+  if (value === null || typeof value !== 'object') return value;
+  const output: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (TOOL_SCHEMA_HINTS.has(key)) continue;
+    if (SCHEMA_MAPS.has(key) && entry !== null && typeof entry === 'object' && !Array.isArray(entry)) {
+      output[key] = Object.fromEntries(Object.entries(entry as Record<string, unknown>).map(([name, schema]) => [name, stripToolSchemaHints(schema)]));
+    } else if (SCHEMA_VALUES.has(key)) {
+      output[key] = stripToolSchemaHints(entry);
+    } else if (SCHEMA_LISTS.has(key) && Array.isArray(entry)) {
+      output[key] = entry.map(stripToolSchemaHints);
+    } else {
+      output[key] = entry;
+    }
+  }
+  return output;
+}
+
 /** Zod attaches non-JSON ~standard helpers; the tool registry requires a plain lossless JSON snapshot. */
-export const parameterSchema: Record<string, unknown> = JSON.parse(JSON.stringify(z.toJSONSchema(requestSchema))) as Record<string, unknown>;
+export const parameterSchema: Record<string, unknown> = JSON.parse(JSON.stringify(stripToolSchemaHints(z.toJSONSchema(requestSchema)))) as Record<string, unknown>;
