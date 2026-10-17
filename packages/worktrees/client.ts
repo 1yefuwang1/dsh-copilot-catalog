@@ -38,12 +38,12 @@ window.__ModuleLoader__.load({
       loading: 'Loading…', empty: 'No worktrees in this repository.', actor: 'Open a conversation before using the worktree manager.',
       detached: 'Detached', dirty: 'Dirty', clean: 'Clean', protected: 'Protected', unprotected: 'Unprotected',
       base: 'Base', sessions: 'Conversations', state: 'State', retained: 'Archiving retains the directory and conversations; it does not delete files.',
-      operation: 'Operation', reconcile: 'Check operation status', cancelled: 'Cancelled; any created checkout is retained.',
+      operation: 'Operation', reconcile: 'Check operation status', cancelled: 'Cancelled; any created checkout is retained.', dismissRecovery: 'Dismiss recovery', dismissRecoveryHelp: 'Inspect the created conversation first. Dismissing clears this recovery record only; a later New Send creates a new worktree operation.',
       files: 'Files', binary: 'Binary', bytes: 'Bytes', patch: 'Retained patch path', copy: 'Copy path', copied: 'Path copied',
       transport: 'Transport failure',
       decode: 'Invalid or unsupported worktree response', host: 'Host refused the operation',
       blocked: 'Another plugin is using this composer; its state was left unchanged.',
-      ownership: 'Composer ownership changed; creation was cancelled.', changed: 'The source, draft, settings or navigation changed; creation was cancelled.',
+      ownership: 'Composer ownership changed; creation was cancelled.', changed: 'The source, draft or settings changed; creation was cancelled.',
       targetBusy: 'The exact destination is not an empty, idle composer; the source draft is unchanged.',
       invalidSession: 'The Host did not return an exact destination session.',
       sessionUnavailable: 'This conversation is unavailable or no longer attached to this worktree. Refresh the manager or open its history from the sidebar.',
@@ -76,11 +76,11 @@ window.__ModuleLoader__.load({
       handoffWarning: '需要完整访问权限和空闲会话。本地必须干净且位于保存的基础提交。不会拉取、重置或切换分支。这不是全局原子操作；外部写入者必须保持停止。源文件和补丁会保留。',
       actor: '请先打开对话，再使用工作树管理器。', detached: '分离检出', dirty: '有修改', clean: '干净',
       protected: '已保护', unprotected: '未保护', base: '基础', sessions: '对话', state: '状态',
-      retained: '归档会保留目录和对话，不会删除文件。', operation: '操作', reconcile: '查询操作状态', cancelled: '已取消，已创建的工作树会保留。',
+      retained: '归档会保留目录和对话，不会删除文件。', operation: '操作', reconcile: '查询操作状态', cancelled: '已取消，已创建的工作树会保留。', dismissRecovery: '忽略恢复记录', dismissRecoveryHelp: '请先检查已创建的对话。忽略只会清除此恢复记录；之后发送新消息会创建新的工作树操作。',
       files: '文件', binary: '二进制', bytes: '字节', patch: '保留的补丁路径', copy: '复制路径', copied: '路径已复制',
       transport: '传输失败', decode: '工作树响应无效或版本不受支持',
       host: '主机拒绝操作', blocked: '输入区正在由其他插件使用，未更改其状态。',
-      ownership: '输入区的所有权已更改，已取消创建。', changed: '源会话、草稿、设置或导航已更改，已取消创建。',
+      ownership: '输入区的所有权已更改，已取消创建。', changed: '源会话、草稿或设置已更改，已取消创建。',
       targetBusy: '指定目标的输入区不是空闲且空白的，源草稿保持不变。',
       sessionUnavailable: '此对话不可用或已不属于该工作树，请刷新管理器，或从侧边栏打开其历史。',
       sessionTimeout: '等待发现或打开指定对话超时，工作树和源草稿已保留，请先查询操作状态再重试。',
@@ -899,9 +899,13 @@ window.__ModuleLoader__.load({
       function tokenFor(nativeSignal: AbortSignal): WT.SinkToken {
         const existing = tokens.get(nativeSignal); if (existing) return existing;
         const controller = new AbortController(); let done: () => void = () => {};
-        const token: WT.SinkToken = { nativeSignal, controller, signal: AbortSignal.any([nativeSignal, controller.signal, shutdown.signal]), entered: false, finished: false, donePromise: new Promise<void>(resolve => { done = resolve; }), done: () => done(), choice: { mode: 'local' }, abort: () => {} };
+        // Native navigation aborts its optimistic attempt, but it is not a plugin
+        // cancellation: the captured first message still has to reach the exact
+        // prepared conversation. Only Cancel setup, reconnect, shutdown and an
+        // unattempted native gesture own this token's cancellation.
+        const token: WT.SinkToken = { nativeSignal, controller, signal: AbortSignal.any([controller.signal, shutdown.signal]), entered: false, finished: false, donePromise: new Promise<void>(resolve => { done = resolve; }), done: () => done(), choice: { mode: 'local' }, abort: () => {} };
         token.choice = hooks.capture(token.signal, controller);
-        token.abort = () => finish(token, new WorktreeError('cancelled', 'native-attempt-cancelled'));
+        token.abort = () => { if (!token.entered) finish(token, new WorktreeError('cancelled', 'native-attempt-cancelled')); };
         nativeSignal.addEventListener('abort', token.abort, { once: true }); tokens.set(nativeSignal, token);
         if (nativeSignal.aborted) token.abort();
         return token;
@@ -910,8 +914,12 @@ window.__ModuleLoader__.load({
         let token: WT.SinkToken | undefined;
         try {
           token = tokenFor(nativeSignal); token.entered = true;
-          if (closing || token.signal.aborted) throw new WorktreeError('cancelled', 'cancelled');
-          if (token.choice.mode === 'local') { await hooks.beforeLocal?.(ids, token.signal); return await track(interrupted(original.call(deps, text, ids, mode, token.signal), token.signal)); }
+          if (closing || token.finished || token.signal.aborted) throw new WorktreeError('cancelled', 'cancelled');
+          if (token.choice.mode === 'local') {
+            // Local work stays native work: its gesture abort must still stop it.
+            const local = AbortSignal.any([nativeSignal, token.signal]);
+            await hooks.beforeLocal?.(ids, local); return await track(interrupted(original.call(deps, text, ids, mode, local), local));
+          }
           return await track(hooks.submit(token.choice, text, ids, mode, token.signal));
         } catch (error) { return { kind: 'error', text: hooks.error(error) }; }
         finally { if (token) finish(token); }
@@ -930,10 +938,13 @@ window.__ModuleLoader__.load({
                 const signal = args[key === 'adjudicate' ? 1 : 2];
                 if (!object(signal) || typeof signal.aborted !== 'boolean' || typeof signal.addEventListener !== 'function' || typeof signal.removeEventListener !== 'function') throw new WorktreeError('unsupported', 'native-submit-signal', NATIVE_SUBMIT_ABI);
                 token = tokenFor(signal as unknown as AbortSignal);
-                const next = [...args]; next[key === 'adjudicate' ? 1 : 2] = token.signal;
+                // Codec/adjudication is native gesture work, not the redirected
+                // first-Send admission; a native abort must still stop it.
+                const gesture = AbortSignal.any([token.nativeSignal, token.controller.signal, shutdown.signal]);
+                const next = [...args]; next[key === 'adjudicate' ? 1 : 2] = gesture;
                 const method: unknown = Reflect.get(target, key, target);
                 if (typeof method !== 'function') throw new WorktreeError('unsupported', 'native-trigger-method', NATIVE_SUBMIT_ABI);
-                const result = await track(interrupted<unknown>(Reflect.apply(method, target, next), token.signal));
+                const result = await track(interrupted<unknown>(Reflect.apply(method, target, next), gesture));
                 if (key === 'adjudicate' && result !== undefined) finish(token);
                 return result;
               } catch (error) { if (token) { token.controller.abort(); finish(token, error); } throw error; }
@@ -1058,6 +1069,48 @@ window.__ModuleLoader__.load({
       let inspection: AbortController | undefined;
       let query: AbortController | undefined, selectedSource: { sessionId: string; binding?: WT.Binding; project?: WT.CapturedProject } | undefined, generation = 0, disposed = false;
       const publish = (patch: Partial<WT.FlowState>) => { if (disposed) return; state = { ...state, ...patch }; for (const listener of [...listeners]) listener(); };
+      type SourceView = { op: WT.WorktreeOperation | null; steps: WT.ProgressStep[]; phase: string; error: string; failedAt?: string };
+      const sourceViews = new Map<string, SourceView>(), sourceModes = new Map<string, 'new' | 'local'>(), sourceEpochs = new Map<string, number>(), reconcileRequests = new Map<string, AbortController>();
+      const sourceEpoch = (id: string) => sourceEpochs.get(id) ?? 0;
+      const bumpSourceEpoch = (id: string) => { const next = sourceEpoch(id) + 1; sourceEpochs.set(id, next); return next; };
+      const abortReconcile = (id: string) => { const active = reconcileRequests.get(id); if (active) { reconcileRequests.delete(id); active.abort(); } };
+      const viewOwned = (op: WT.WorktreeOperation) => sourceViews.get(op.sessionId)?.op === op;
+      const updateView = (op: WT.WorktreeOperation, patch: Partial<SourceView>): boolean => {
+        if (!viewOwned(op)) return false;
+        const view = sourceViews.get(op.sessionId)!;
+        sourceViews.set(op.sessionId, { ...view, ...patch, op });
+        return true;
+      };
+      // Progress and terminal state belong to the exact captured operation, not to
+      // whichever thread happens to be visible. A late op must never repaint or
+      // resurrect another source's view.
+      const publishOp = (op: WT.WorktreeOperation, patch: Partial<SourceView>) => {
+        if (!updateView(op, patch)) return;
+        if (state.sessionId === op.sessionId) publish(patch);
+      };
+      const settleOp = (op: WT.WorktreeOperation, viewPatch: Partial<SourceView>, visiblePatch: Partial<WT.FlowState>) => {
+        const owned = updateView(op, viewPatch);
+        const otherActive = [...operations].some(item => item !== op && !item.accepted);
+        publish({ ...(otherActive ? {} : { busy: false }), ...(owned && state.sessionId === op.sessionId ? visiblePatch : {}) });
+      };
+      // Navigation changes the visible source without going through the mode picker.
+      // Restore that source's captured New intent and recovery view, but never
+      // cancel, require a repository probe, or overwrite a newer operation.
+      function activate(sessionId: string): void {
+        if (disposed || state.sessionId === sessionId || projectActor(ctx.sessions.list.getSnapshot()) !== sessionId) return;
+        const binding = ctx.sessions.binding(sessionId), project = captureProject(projects.context(sessionId));
+        if (!binding) return;
+        const view = sourceViews.get(sessionId), mode = sourceModes.get(sessionId) ?? (view?.op ? 'new' : 'local');
+        const restored: Partial<WT.FlowState> = view
+          ? { op: view.op, steps: view.steps, phase: view.phase, failedAt: view.failedAt, error: view.error }
+          : { op: null, steps: [], phase: '', failedAt: undefined, error: '' };
+        // Tear down the previous source's configuration observation before
+        // publishing this source. A late configure/loadBranches response must
+        // not pass its generation fence into the newly visible thread.
+        query?.abort(); ++generation; branchCache.clear();
+        selectedSource = { sessionId, binding, project };
+        publish({ sessionId, mode, sourceChanged: false, loading: false, status: null, branches: null, branchSource: 'local', branch: '', branchOid: '', remote: '', query: '', ...restored });
+      }
       const store = { getSnapshot: () => state, subscribe: (listener: WT.Listener) => { listeners.add(listener); return () => listeners.delete(listener); } };
       const pending = (id: string) => ctx.uiSession.sessionStatus.getSnapshot().get(id)?.pendingInteraction !== undefined;
       const repositoryAllowed = (id: string | undefined) => repositories?.enabled(id) === true;
@@ -1081,18 +1134,29 @@ window.__ModuleLoader__.load({
         const current = source(sessionId); requireRepository(sessionId); requireIntent(sessionId, current);
         if (current.binding !== before.binding || !sameProject(current.project, before.project)) throw new WorktreeError('changed', 'source-changed');
       }
+      // The captured Send belongs to this exact source generation and project.
+      // Switching threads is not cancellation: the native attempt may abort and
+      // roll back its editor, but the operation still has to finish and admit the
+      // one captured first message to the prepared conversation.
       function check(op: WT.WorktreeOperation) {
-        if (disposed || op.signal.aborted || op.navigation.aborted) throw new WorktreeError('cancelled', 'cancelled');
-        const current = source(op.sessionId); requireRepository(op.sessionId);
-        if (current.binding !== op.binding || !sameProject(current.project, op.project)) throw new WorktreeError('changed', 'source-changed');
+        if (disposed || op.signal.aborted) throw new WorktreeError('cancelled', 'cancelled');
+        const binding = ctx.sessions.binding(op.sessionId);
+        if (!binding || binding !== op.binding) throw new WorktreeError('changed', 'source-changed');
+        const snapshot = binding.session.getSnapshot();
+        if (snapshot.removed || snapshot.subagent !== null || !sourceEligible(snapshot) || pending(op.sessionId)) throw new WorktreeError('changed', 'source-not-blank-idle');
+        if (!sameProject(captureProject(projects.context(op.sessionId)), op.project)) throw new WorktreeError('changed', 'source-changed');
         if (op.block.store.getSnapshot() !== op.block.owned) throw new WorktreeError('ownership', 'block-lost');
       }
       function capture(sessionId: string, binding: WT.Binding, signal: AbortSignal, controller: AbortController): WT.Choice {
+        const remembered = sourceViews.get(sessionId);
+        if (remembered?.op && !remembered.op.retryable && sourceModes.get(sessionId) !== 'local') throw new WorktreeError('recovery', 'check-created-conversation-before-retry');
         if (state.sessionId !== sessionId || state.mode !== 'new') return { mode: 'local' };
         if (state.busy) throw new WorktreeError('busy', 'first-message-already-preparing');
+        sourceModes.set(sessionId, 'new');
         requireRepository(sessionId);
         const captured = source(sessionId); requireIntent(sessionId, captured); if (captured.binding !== binding) throw new WorktreeError('changed', 'binding-changed');
-        const old = state.op;
+        const old = remembered !== undefined ? remembered.op : (state.sessionId === sessionId ? state.op : null);
+        if (old && (old.binding !== captured.binding || !sameProject(old.project, captured.project))) throw new WorktreeError('changed', 'source-changed');
         if (old && !old.retryable) throw new WorktreeError('recovery', 'check-created-conversation-before-retry');
         const intent = Object.freeze({ branchSource: state.branchSource, branchOid: state.branchOid, remote: state.remote, branch: state.branch, branches: state.branches && Object.freeze({ ...state.branches, items: Object.freeze(state.branches.items.map(item => Object.freeze({ ...item }))) }) });
         query?.abort(); ++generation; branchCache.clear();
@@ -1101,26 +1165,38 @@ window.__ModuleLoader__.load({
         let block: WT.BlockHandle;
         try { block = acquireBlock(conversation.blocks, sessionId, t('preparingMessage')); }
         catch (error) { sourceReference.release(); throw error; }
+        abortReconcile(sessionId); bumpSourceEpoch(sessionId);
         const op: WT.WorktreeOperation = { ...captured, intent, mode: 'new', id: operationId, sessionId, controller, signal, navigation, result: old?.result || null, request: old?.request || null, retryable: false, admission: 'none', reference: null, sourceReference, block, staged: false, cleanup: () => {} };
         const cancel = () => controller.abort(), changed = () => { if (op.committing) return; try { check(op); } catch { cancel(); } };
         const subscriptions = [ctx.sessions.list, binding.session, projects.store, ctx.uiSession.sessionStatus, op.block.store].map(item => item.subscribe(changed));
-        navigation.addEventListener('abort', cancel, { once: true });
-        op.cleanup = () => { navigation.removeEventListener('abort', cancel); subscriptions.splice(0).forEach(remove => remove()); op.block.release(); };
-        operations.add(op); publish({ op, busy: true, loading: false, error: '', steps: [], phase: 'preparing' }); return op;
+        op.cleanup = () => { subscriptions.splice(0).forEach(remove => remove()); op.block.release(); };
+        operations.add(op);
+        sourceViews.set(sessionId, { op, steps: [], phase: 'preparing', error: '' });
+        publish({ op, busy: true, loading: false, error: '', steps: [], phase: 'preparing' }); return op;
       }
       function settled(op: WT.Choice, preflightError?: unknown) {
         if (op?.mode !== 'new') return;
-        if (!op.sinkEntered) { op.retryable = true; publish({ busy: false, op: null, phase: '', error: preflightError ? report(t, preflightError) : '' }); }
+        if (!op.sinkEntered) {
+          op.retryable = true;
+          const owned = viewOwned(op); if (owned) sourceViews.delete(op.sessionId);
+          const otherActive = [...operations].some(item => item !== op && !item.accepted);
+          publish({ ...(otherActive ? {} : { busy: false }), ...(owned && state.sessionId === op.sessionId ? { op: null, phase: '', error: preflightError ? report(t, preflightError) : '' } : {}) });
+        }
         op.cleanup(); operations.delete(op);
         if (op.sourceReference) { if (disposed || op.accepted) op.sourceReference.release(); else releaseAfterMainOwnership(ctx, op.sourceReference, true); op.sourceReference = null; }
         if (op.reference) { if (disposed) op.reference.release(); else releaseAfterMainOwnership(ctx, op.reference, !!op.accepted); op.reference = null; }
+        if ((op.accepted || (op.retryable && !op.result)) && viewOwned(op)) sourceViews.delete(op.sessionId);
       }
+      const targetFree = (target: WT.Binding, id: string) => ctx.sessions.binding(id) === target
+        && sourceEligible(target.session.getSnapshot()) && !pending(id)
+        && inputEmpty(conversation.input.for(target.ctx).state.getSnapshot())
+        && conversation.blocks.storeFor(id).getSnapshot() === undefined;
       async function submit(op: WT.WorktreeOperation, text: string, ids: string[], mode: WT.SubmitMode, signal: AbortSignal): Promise<WT.SubmitResult> {
         op.sinkEntered = true; op.text = text; op.ids = [...ids];
         try {
           check(op);
-          if (!text.trim() && !ids.length) { publish({ busy: false, phase: '', op: null }); return { kind: 'success' }; }
-          publish({ phase: op.intent.branchSource === 'local' ? 'creating' : 'fetching' });
+          if (!text.trim() && !ids.length) { op.accepted = true; settleOp(op, { phase: 'complete', error: '' }, { phase: '', op: null }); return { kind: 'success' }; }
+          publishOp(op, { phase: op.intent.branchSource === 'local' ? 'creating' : 'fetching' });
           if (!op.result) {
             const status = await repositoryStatus(op.sessionId, op.binding, op.project, signal); check(op);
             let startingBranch: { branchSource: 'local'; localBranch: string; localOid: string } | { branchSource: 'remote'; remote: string; remoteIdentity?: string; remoteBranch: string };
@@ -1136,20 +1212,24 @@ window.__ModuleLoader__.load({
               startingBranch = { branchSource: 'remote', remote, remoteIdentity: advertised.remoteIdentity, remoteBranch: branch };
             }
             op.request = Object.freeze({ action: 'create', operationId: op.id, repoPath: projectPath(status, op.project), ...startingBranch, sourceSessionId: op.sessionId, sessionMode: 'new', requireBlankSource: true, settingsHash: status.settingsHash, firstPrompt: text, ...(op.project ? { projectId: op.project.projectId, folderId: op.project.folderId } : {}) });
-            op.result = await prepareWorktree(ctx, op.sessionId, op.request, signal, steps => publish({ steps, phase: steps.at(-1)?.stage || 'fetching' })); check(op);
+            op.result = await prepareWorktree(ctx, op.sessionId, op.request, signal, steps => publishOp(op, { steps, phase: steps.at(-1)?.stage || 'fetching' })); check(op);
           } else if (op.request?.firstPrompt !== text) throw new WorktreeError('changed', 'retry-message-changed');
           const result = op.result;
           if (result.sessionId === op.sessionId || result.worktree.state !== 'ready' || !result.worktree.branch) throw new WorktreeError('invalidSession', 'invalid-prepared-target');
           projects.rememberWorktree(result, op.project); check(op);
           const acquired = await retainDiscoveredSession(ctx, result.sessionId, signal);
           op.reference = acquired.reference; const target = acquired.binding; check(op);
-          if (!sourceEligible(target.session.getSnapshot()) || pending(result.sessionId) || !inputEmpty(conversation.input.for(target.ctx).state.getSnapshot()) || conversation.blocks.storeFor(result.sessionId).getSnapshot() !== undefined) throw new WorktreeError('targetBusy', 'target-not-empty');
-          publish({ phase: 'attachments' });
+          if (!targetFree(target, result.sessionId)) throw new WorktreeError('targetBusy', 'target-not-empty');
+          publishOp(op, { phase: 'attachments' });
           if (ids.length) { conversation.rebindDraftFiles(result.sessionId, ids); op.staged = true; await waitForDraftFiles(conversation, ids, signal); }
           check(op);
           const settings = await requestHost(ctx, op.sessionId, { action: 'status', operationId: op.id }, signal); check(op);
           if (settings.settingsHash !== result.settingsHash) throw new WorktreeError('settings', 'settings-changed-before-send');
-          publish({ phase: 'sending' }); op.admission = 'pending';
+          // The prepared destination can become occupied while staging files or
+          // checking settings. Revalidate the exact target immediately before the
+          // one admission; navigation no longer cancels A, so this race is reachable.
+          if (!targetFree(target, result.sessionId)) throw new WorktreeError('targetBusy', 'target-not-empty');
+          publishOp(op, { phase: 'sending' }); op.admission = 'pending';
           let outcome;
           try { outcome = await conversation.sendSession(target.session, text, ids, mode, signal); }
           catch (error) { op.admission = 'unknown'; throw new WorktreeError('uncertain', 'check-destination-before-resending', errorMessage(error)); }
@@ -1159,14 +1239,18 @@ window.__ModuleLoader__.load({
             op.retryable = op.admission === 'refused'; throw new WorktreeError(op.retryable ? 'host' : 'uncertain', 'prompt-' + op.admission, outcome.text || '');
           }
           op.admission = 'success'; op.accepted = true; op.committing = true;
-          publish({ busy: false, phase: 'complete', mode: 'local', op: null, error: '' });
+          settleOp(op, { phase: 'complete', error: '' }, { phase: 'complete', mode: 'local', op: null, error: '' });
+          // The conversation is complete even when the user is now reading another
+          // thread. Only an explicit return to this exact source may take the view,
+          // and only when no newer navigation claim won the race.
           later(() => { if (!disposed && !op.navigation.aborted && projectActor(ctx.sessions.list.getSnapshot()) === op.sessionId) { op.cleanup(); ctx.uiWorkspace.openSession(result.sessionId); } });
           return outcome;
         } catch (error) {
           if (op.staged && !op.accepted) { conversation.rebindDraftFiles(op.sessionId, ids); ids.forEach(id => restaged.add(id)); }
           if (op.admission === 'none' && !op.request) op.retryable = true;
-          publish({ busy: false, failedAt: state.phase, phase: 'failed', error: report(t, error), ...(op.retryable && !op.result ? { op: null } : {}) });
-          return { kind: 'error', text: report(t, error) };
+          const failedAt = sourceViews.get(op.sessionId)?.phase || state.phase, message = report(t, error);
+          settleOp(op, { phase: 'failed', error: message, failedAt }, { phase: 'failed', failedAt, error: message, ...(op.retryable && !op.result ? { op: null } : {}) });
+          return { kind: 'error', text: message };
         }
       }
       function observe(sessionId: string) {
@@ -1182,20 +1266,25 @@ window.__ModuleLoader__.load({
         const latchedNew = state.sessionId === sessionId && state.mode === 'new', keepCurrent = mode === 'worktree';
         try {
           const current = source(sessionId); if (mode === 'new') requireRepository(sessionId); observe(sessionId);
+          const cancelSourceOperations = () => { for (const op of operations) if (op.sessionId === sessionId && !op.committing) op.controller.abort(); };
           if (keepCurrent) {
             if (projectBacking(projects.store.getSnapshot(), ctx.workspaces.list.getSnapshot(), sessionId).mode !== 'worktree') throw new WorktreeError('changed', 'current-folder-not-worktree');
             mode = 'local'; // Native sink, same checkout; never navigate to a Local source folder.
           }
           if (mode === 'local' && !keepCurrent && projects.context(sessionId)?.binding.mode === 'worktree') {
             if (!inputEmpty(current.input.state.getSnapshot())) throw new WorktreeError('draftWarning', 'keep-existing-draft');
-            for (const lease of leases.values()) lease.cancelNew(); ctx.uiWorkspace.startSession(current.project!.folderId); return;
+            cancelSourceOperations(); ctx.uiWorkspace.startSession(current.project!.folderId); return;
           }
-          if (mode === 'local') { for (const lease of leases.values()) lease.cancelNew(); }
+          if (mode === 'local') cancelSourceOperations();
           const changed = state.sessionId !== sessionId || state.sourceChanged || selectedSource?.binding !== current.binding || !sameProject(selectedSource?.project, current.project);
           if (changed) { query?.abort(); ++generation; branchCache.clear(); }
+          sourceModes.set(sessionId, mode === 'new' ? 'new' : 'local');
           selectedSource = { sessionId, binding: current.binding, project: current.project };
-          const observed = repositories.store.getSnapshot().status;
-          publish({ sessionId, mode: mode === 'new' ? 'new' : 'local', sourceChanged: false, error: '', ...(changed ? { status: null, branches: null, branchSource: 'local', branch: observed?.repository.branch || '', branchOid: '', remote: '', query: '', ...(state.sessionId === sessionId ? {} : { op: null, steps: [], phase: '' }) } : {}) });
+          const observed = repositories.store.getSnapshot().status, view = sourceViews.get(sessionId);
+          const restored: Partial<WT.FlowState> = view
+            ? { op: view.op, steps: view.steps, phase: view.phase, failedAt: view.failedAt }
+            : { op: null, steps: [], phase: '', failedAt: undefined };
+          publish({ sessionId, mode: mode === 'new' ? 'new' : 'local', sourceChanged: false, error: view?.error ?? '', ...(changed ? { status: null, branches: null, branchSource: 'local', branch: observed?.repository.branch || '', branchOid: '', remote: '', query: '', ...restored } : {}) });
         } catch (error) { publish({ sessionId, mode: latchedNew ? 'new' : 'local', error: report(t, error) }); }
       }
       async function loadBranches(sessionId: string, refresh = false) {
@@ -1245,18 +1334,46 @@ window.__ModuleLoader__.load({
         } catch (error) { if (!controller.signal.aborted && seq === generation) publish({ loading: false, error: report(t, error) }); }
       }
       async function reconcile(sessionId: string) {
-        const op = state.sessionId === sessionId ? state.op : null; if (!op || state.busy) return;
+        const remembered = sourceViews.get(sessionId);
+        const op = remembered !== undefined ? remembered.op : (state.sessionId === sessionId ? state.op : null);
+        if (!op || state.busy) return;
+        const epoch = sourceEpoch(sessionId);
+        abortReconcile(sessionId);
+        const controller = new AbortController(); reconcileRequests.set(sessionId, controller);
+        const owns = () => !disposed && !controller.signal.aborted && sourceEpoch(sessionId) === epoch
+          && (sourceViews.get(sessionId)?.op ?? null) === op
+          && (state.sessionId !== sessionId || state.op === op);
         try {
-          const data = await requestHost(ctx, sessionId, { action: 'status', operationId: op.id });
+          const data = await requestHost(ctx, sessionId, { action: 'status', operationId: op.id }, controller.signal);
+          if (!owns()) return;
           if (data.worktree) projects.rememberRecords([data.worktree]);
           if (data.operation.phase === 'ready' && data.sessionId && data.worktree && string(data.operation.workspaceId) && string(data.operation.settingsHash)) { op.result = { ...data, sessionId: data.sessionId, worktree: data.worktree, workspaceId: data.operation.workspaceId, settingsHash: data.operation.settingsHash }; op.retryable = op.admission === 'none' || op.admission === 'refused'; }
-          publish({ error: data.operation.error?.message || t('retained') });
-        } catch (error) { publish({ error: report(t, error), ...(error instanceof WorktreeError && error.kind === 'host' && error.code === 'NOT_FOUND' ? { op: null } : {}) }); }
+          const message = data.operation.error?.message || t('retained');
+          updateView(op, { error: message });
+          if (state.sessionId === sessionId) publish({ error: message });
+        } catch (error) {
+          if (!owns()) return;
+          const message = report(t, error), missing = error instanceof WorktreeError && error.kind === 'host' && error.code === 'NOT_FOUND';
+          if (missing) { sourceViews.delete(sessionId); if (state.sessionId === sessionId) publish({ error: message, op: null }); }
+          else { updateView(op, { error: message }); if (state.sessionId === sessionId) publish({ error: message }); }
+        } finally {
+          if (reconcileRequests.get(sessionId) === controller) reconcileRequests.delete(sessionId);
+        }
       }
       const repositoryChanged = repositories?.store.subscribe(() => {
+        const repository = repositories.store.getSnapshot();
+        // Match an unavailable verdict to the exact captured operation, never to
+        // whichever thread happens to be visible. A probe failure for B must not
+        // abort A's preparation.
+        const unavailable = repository.phase === 'unavailable' ? repository.target : null;
+        if (unavailable) {
+          for (const op of operations) {
+            if (op.committing || op.sessionId !== unavailable.sessionId || op.binding !== unavailable.binding || !sameProject(op.project, unavailable.project)) continue;
+            op.controller.abort();
+          }
+        }
         if (!state.sessionId || repositoryAllowed(state.sessionId)) return;
         query?.abort(); ++generation; branchCache.clear();
-        if (state.mode === 'new') for (const lease of leases.values()) lease.cancelNew();
         // Invalidation (leaving the composer, reconnecting or a new probe) is
         // not a failed Git check. Render that observation separately; never latch
         // it into operation errors or overwrite a real setup/source failure.
@@ -1267,15 +1384,25 @@ window.__ModuleLoader__.load({
         const binding = ctx.sessions.binding(state.sessionId), project = captureProject(projects.context(state.sessionId));
         if (binding === selectedSource.binding && sameProject(project, selectedSource.project)) return;
         query?.abort(); ++generation; branchCache.clear();
-        if (state.mode === 'new') for (const lease of leases.values()) lease.cancelNew();
-        else selectedSource = { sessionId: state.sessionId, binding, project };
+        if (state.mode === 'new') {
+          for (const op of operations) if (op.sessionId === state.sessionId && op.binding === selectedSource.binding && sameProject(op.project, selectedSource.project) && !op.committing) op.controller.abort();
+        } else selectedSource = { sessionId: state.sessionId, binding, project };
         publish({ loading: false, status: null, branches: null, query: '', remote: '', branch: '', branchOid: '', ...(state.mode === 'new' ? { sourceChanged: true, error: t('projectChanged') } : {}) });
       }
       const projectChanged = projects.store.subscribe(selectionChanged);
-      const unselect = ctx.sessions.list.subscribe(() => { for (const op of operations) if (!op.committing && projectActor(ctx.sessions.list.getSnapshot()) !== op.sessionId) op.controller.abort(); selectionChanged(); });
-      const reconnect = ctx.connection.generation.subscribe(() => { query?.abort(); ++generation; branchCache.clear(); for (const lease of leases.values()) lease.cancelNew(); publish({ loading: false, status: null, branches: null, branch: '', branchOid: '', query: '', remote: '' }); });
-      return { store, observe, select, configure, loadBranches, reconcile,
+      // A main-view switch is not cancellation. The operation keeps its exact
+      // source reference and captured message; only its own guards and the
+      // explicit Cancel action can abort it.
+      const unselect = ctx.sessions.list.subscribe(() => { selectionChanged(); const actor = projectActor(ctx.sessions.list.getSnapshot()); if (actor !== undefined) activate(actor); });
+      const reconnect = ctx.connection.generation.subscribe(() => { for (const controller of reconcileRequests.values()) controller.abort(); reconcileRequests.clear(); query?.abort(); ++generation; branchCache.clear(); for (const lease of leases.values()) lease.cancelNew(); publish({ loading: false, status: null, branches: null, branch: '', branchOid: '', query: '', remote: '' }); });
+      return { store, observe, select, activate, configure, loadBranches, reconcile,
         cancel() { inspection?.abort(); for (const lease of leases.values()) lease.cancelNew(); },
+        dismiss(sessionId: string) {
+          if (disposed || state.busy || state.sessionId !== sessionId) return;
+          const view = sourceViews.get(sessionId); if (!view?.op || view.op.retryable) return;
+          abortReconcile(sessionId); bumpSourceEpoch(sessionId); sourceViews.delete(sessionId);
+          publish({ op: null, steps: [], phase: '', error: '', failedAt: undefined });
+        },
         setRemote(sessionId: string, remote: string) { if (!state.busy && !state.sourceChanged && state.sessionId === sessionId && repositoryAllowed(sessionId) && state.status?.remotes.some(item => item.name === remote)) { publish({ remote, query: '', branch: '', branchOid: '', branches: null }); void loadBranches(sessionId); } },
         setBranchSource(sessionId: string, branchSource: string) { if (!state.busy && !state.sourceChanged && state.sessionId === sessionId && repositoryAllowed(sessionId) && (branchSource === 'local' || branchSource === 'remote') && (branchSource === 'local' || state.remote)) { publish({ branchSource, branch: '', branchOid: '', branches: null, query: '' }); void loadBranches(sessionId); } },
         setQuery(query: string) { if (!state.busy) publish({ query }); },
@@ -1298,7 +1425,7 @@ window.__ModuleLoader__.load({
           } catch (error) { if (!signal.aborted && !disposed) publish({ error: report(t, error) }); }
           finally { stops.forEach(stop => stop()); reference?.release(); if (inspection === controller) { inspection = undefined; publish({ busy: false }); } }
         },
-        async dispose() { disposed = true; inspection?.abort(); query?.abort(); ++generation; branchCache.clear(); repositoryChanged?.(); projectChanged(); unselect(); reconnect(); for (const op of operations) op.controller.abort(); await Promise.allSettled([...leases.values()].map(lease => lease.close())); for (const lease of leases.values()) lease.stopScope?.(); leases.clear(); selectedSource = undefined; },
+        async dispose() { disposed = true; inspection?.abort(); for (const controller of reconcileRequests.values()) controller.abort(); reconcileRequests.clear(); sourceViews.clear(); sourceModes.clear(); sourceEpochs.clear(); query?.abort(); ++generation; branchCache.clear(); repositoryChanged?.(); projectChanged(); unselect(); reconnect(); for (const op of operations) op.controller.abort(); await Promise.allSettled([...leases.values()].map(lease => lease.close())); for (const lease of leases.values()) lease.stopScope?.(); leases.clear(); selectedSource = undefined; },
       };
     }
     const projectSlotName = (key: string) => PANEL + '.projects.' + key;
@@ -1658,6 +1785,16 @@ window.__ModuleLoader__.load({
           h('div', { role: 'menu', 'aria-label': t(local ? 'localBranches' : 'remoteBranches'), className: 'dsh-wt-branch-list', 'aria-busy': state.loading, onKeyDown: menuKeys }, state.loading ? h('div', { role: 'status', className: 'dsh-wt-branch-help' }, t('loading')) : matches.length ? matches.map(item => h(Button, { key: item.name, role: 'menuitemradio', 'aria-checked': branch === item.name, disabled, className: 'dsh-wt-branch-item', title: item.name, onClick: () => { if (flow.setBranch(item.name)) dismiss(); } }, h('span', { className: 'dsh-wt-choice-check', 'aria-hidden': true }, branch === item.name ? '✓' : ''), h('span', { className: 'dsh-wt-branch-name' }, item.name === 'HEAD' && local ? t('detached') + ' · HEAD' : item.name), local && item.name === (state.status?.repository.branch || 'HEAD') && h('span', { className: 'dsh-wt-branch-badge' }, t('currentBranch')))) : h('div', { className: 'dsh-wt-branch-help', role: 'status' }, t('noBranches'))),
           h('div', { className: 'dsh-wt-branch-help' }, t(local ? 'localBranchHelp' : 'remoteBranchHelp'))));
     }
+    function DismissRecoveryButton({ sessionId, op, flow, t }: { sessionId: string; op: WT.WorktreeOperation; flow: WT.Flow; t: WT.Translate }) {
+      const [open, setOpen] = React.useState(false);
+      if (op.retryable) return null;
+      return h(React.Fragment, null, h(Button, { onClick: () => setOpen(true) }, t('dismissRecovery')),
+        open && h(Dialog, { title: t('dismissRecovery'), close: () => setOpen(false), t, compact: true },
+          h('p', { className: 'dsh-wt-muted' }, t('dismissRecoveryHelp')),
+          h('div', { className: 'dsh-wt-project-footer' },
+            h(Button, { className: 'dsh-wt-cancel', onClick: () => setOpen(false) }, t('cancel')),
+            h(Button, { className: 'dsh-wt-confirm', onClick: () => { flow.dismiss(sessionId); setOpen(false); } }, t('dismissRecovery')))));
+    }
     function NewWorktreeControls({ sessionId, flow, projects, repositories, recovery, runtime: ctx, t, useSession, useInput, usePanelInfo, useWorkspaces }: WT.SessionProps) {
       const snapshot = useSession(value => value), empty = useInput(inputEmpty), ready = sourceEligible(snapshot), panel = usePanelInfo(value => value.activePanelId), workspaces = useWorkspaces(value => value);
       const recoverySource = recovery?.store || emptyRecoveryStore, recoveryState = React.useSyncExternalStore(recoverySource.subscribe, recoverySource.getSnapshot), verified = recoveryVerified(recoveryState, sessionId);
@@ -1665,7 +1802,7 @@ window.__ModuleLoader__.load({
       const repository = React.useSyncExternalStore(repositories.store.subscribe, repositories.store.getSnapshot);
       const metadata = React.useSyncExternalStore(projects.store.subscribe, projects.store.getSnapshot), context = projects.context(sessionId);
       const [folderError, setFolderError] = React.useState('');
-      React.useEffect(() => { if (!verified || panel || !snapshot.blank || snapshot.subagent !== null) return; try { flow.observe(sessionId); } catch { /* New mode reports the guarded ABI refusal. */ } void repositories.ensure(sessionId); return () => repositories.withdraw(sessionId); }, [flow, repositories, sessionId, ready, verified, panel, snapshot.blank, snapshot.subagent, snapshot.openState, snapshot.removed, context?.project.id, context?.folder.id, context?.folder.path]);
+      React.useEffect(() => { if (!verified || panel || !snapshot.blank || snapshot.subagent !== null) return; try { flow.observe(sessionId); flow.activate(sessionId); } catch { /* New mode reports the guarded ABI refusal. */ } void repositories.ensure(sessionId); return () => repositories.withdraw(sessionId); }, [flow, repositories, sessionId, ready, verified, panel, snapshot.blank, snapshot.subagent, snapshot.openState, snapshot.removed, context?.project.id, context?.folder.id, context?.folder.path]);
       if (!verified || panel || !snapshot.blank || snapshot.subagent !== null) return null;
       const backing = projectBacking(metadata, workspaces, sessionId), worktree = backing.mode === 'worktree', record = backing.record;
       const selected = state.sessionId === sessionId, busy = selected && state.busy, main = projectMainFolder(context?.project), canWorktree = repositories.enabled(sessionId), blockedNew = selected && state.mode === 'new' && (!canWorktree || state.sourceChanged);
@@ -1684,14 +1821,14 @@ window.__ModuleLoader__.load({
         !blockedNew && canWorktree && !worktree && h(BranchPicker, { key: sessionId + ':' + (context?.folder.id || ''), state, sessionId, flow, disabled: busy || !sourceEligible(snapshot), t, currentBranch: repositories.store.getSnapshot().status?.repository.branch || 'HEAD' }),
         observingNew && repository.phase === 'checking' && h('span', { className: 'dsh-wt-muted', role: 'status' }, t('checkingRepository')),
         repositoryWarning && h('span', { className: 'dsh-wt-create-error', role: 'alert' }, t('repoUnavailable')),
-        selected && state.error && h('span', { className: 'dsh-wt-create-error', role: 'alert' }, state.error,
-          state.op && h(React.Fragment, null, ' · ', h('code', null, state.op.id), h(Button, { disabled: state.loading, onClick: () => { void flow.reconcile(sessionId); } }, t('reconcile')), state.op.result?.sessionId && h(Button, { onClick: () => flow.openTarget(sessionId) }, t('open')))));
+        selected && state.error && h('div', { className: 'dsh-wt-create-error', role: 'alert' }, state.error,
+          state.op && h(React.Fragment, null, ' · ', h('code', null, state.op.id), h(Button, { disabled: state.loading, onClick: () => { void flow.reconcile(sessionId); } }, t('reconcile')), state.op.result?.sessionId && h(Button, { onClick: () => flow.openTarget(sessionId) }, t('open')), h(DismissRecoveryButton, { sessionId, op: state.op, flow, t }))));
     }
     function SetupProgress({ sessionId, flow, t }: { sessionId: string; flow: WT.Flow; t: WT.Translate }) {
       const state = React.useSyncExternalStore(flow.store.subscribe, flow.store.getSnapshot);
       // Configuration and availability warnings belong in the controls. Setup
       // steps exist only after a native Send has actually begun preparation.
-      if (state.sessionId !== sessionId || (!state.busy && !state.phase && !state.steps.length)) return null;
+      if (state.sessionId !== sessionId || (!state.phase && !state.steps.length && !state.op)) return null;
       const labels: { [key: string]: string } = { preparing: 'preparingMessage', fetching: 'fetchingLatest', creating: 'creatingWorktree', naming: 'namingBranch', opening: 'openingConversation', ready: 'setupReady', attachments: 'stagingAttachments', sending: 'startingConversation', complete: 'setupReady', failed: 'setupFailed' };
       const active = state.phase, failed = active === 'failed' ? state.failedAt : undefined;
       const completed = new Set<string>(state.steps.filter(step => step.stage !== failed).map(step => step.stage));
@@ -1699,7 +1836,7 @@ window.__ModuleLoader__.load({
         h('div', { className: 'dsh-wt-row dsh-wt-between' }, h('strong', { role: 'status', 'aria-live': 'polite' }, t(labels[active] || 'setupProgress')), state.busy && h(Button, { onClick: flow.cancel }, t('cancelSetup'))),
         h('ol', null, ...((state.op?.intent.branchSource || state.branchSource) === 'local' ? ['creating', 'naming'] : ['fetching', 'creating', 'naming']).map(stage => h('li', { key: stage, 'data-active': active === stage, 'aria-current': active === stage ? 'step' : undefined }, h('span', { 'aria-hidden': true }, failed === stage ? '× ' : completed.has(stage) && active !== stage ? '✓ ' : active === stage ? '◌ ' : '○ '), t(labels[stage] || 'setupProgress')))),
         state.error && h('p', { role: 'alert', className: 'dsh-wt-error' }, state.error),
-        !state.busy && state.op && h('div', { className: 'dsh-wt-row' }, h('code', null, state.op.id), h(Button, { onClick: () => { void flow.reconcile(sessionId); } }, t('reconcile')), state.op.result?.sessionId && h(Button, { onClick: () => flow.openTarget(sessionId) }, t('open'))));
+        !state.busy && state.op && h('div', { className: 'dsh-wt-row' }, h('code', null, state.op.id), h(Button, { onClick: () => { void flow.reconcile(sessionId); } }, t('reconcile')), state.op.result?.sessionId && h(Button, { onClick: () => flow.openTarget(sessionId) }, t('open')), h(DismissRecoveryButton, { sessionId, op: state.op, flow, t })));
     }
     function RecoveryNotice({ sessionId, recovery, t }: { sessionId: string; recovery: WT.RecoveryStore; t: WT.Translate }) {
       const state = React.useSyncExternalStore(recovery.store.subscribe, recovery.store.getSnapshot);

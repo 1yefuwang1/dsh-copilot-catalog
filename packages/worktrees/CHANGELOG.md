@@ -1,7 +1,40 @@
 # @1yefuwang1/dsh-worktrees changelog
 
-## Unreleased — Exact-session discovery and non-creating Open
+## Unreleased — Thread-switch-safe first Send and exact-session discovery
 
+- Treat switching to another thread, and the native attempt rollback it causes, as
+  navigation rather than cancellation. Keep the exact source reference and the
+  captured first message, admit it once to the prepared conversation, and only
+  defer the automatic view change while another thread is current. Explicit
+  **Cancel setup**, reconnect, disposal and timeouts still cancel. This prevents a
+  successful checkout from leaving a hidden, empty conversation with its first
+  message lost.
+- Keep operation progress and failure recovery source-keyed. Selecting Local/New in
+  another thread, a probe failure there, or a background success/refusal no longer
+  aborts or repaints the preparing source. Failed/uncertain records retain their
+  exact UUID/result and are restored on return; Local/New toggles do not erase
+  them. Add an explicit **Dismiss recovery** confirmation to end the in-memory
+  retry fence only after the created conversation is inspected.
+- Fence asynchronous **Check operation status** updates by exact operation identity
+  and a per-source epoch; dismissal and a new capture abort outstanding checks, so
+  a late response cannot resurrect a dismissed record or overwrite a new operation.
+- Restore a source's captured New intent and recovery view on ordinary main-view
+  navigation, without requiring the mode picker. Invalidate the previous source's
+  configure/loadBranches generation and re-anchor its intent guard so a late probe
+  cannot publish into the new thread. An unresolved New Send is never silently
+  downgraded to native Local; only an explicit Local/Worktree choice permits Local
+  while the recovery record remains.
+- Revalidate the exact prepared destination immediately before the one admission,
+  after file staging/settings. If it was opened, typed into, sent to, replaced or
+  became busy meanwhile, refuse as target-busy and restore the source draft/files.
+- Keep automatic opening best-effort: a newer navigation claim suppresses it, so
+  switching away and returning may require opening the prepared conversation from
+  the session UI; its exact reference remains parked until opened.
+- Add two-binding Local/New/Worktree, navigate-only recovery return, retryable
+  refusal after navigation, pending configure navigation, other-thread native
+  Local, repository failure, background success/refusal/unknown, dismissal,
+  deferred reconciliation and occupied-target regressions alongside the combined
+  reported scenario.
 - Wait for the exact prepared session to enter the browser catalog before retaining
   it, with one optional native list refresh and a bounded, abortable history-open
   wait. Preserve drafts, prepared receipts and existing send/settings guards when

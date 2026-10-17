@@ -179,9 +179,9 @@ declare namespace WT {
     branches: Branches | null; query: string; steps: ProgressStep[]; phase: string; failedAt?: string; op: WorktreeOperation | null;
   }
   interface Flow {
-    store: Store<FlowState>; observe(id: string): void; select(id: string, mode: string): void;
+    store: Store<FlowState>; observe(id: string): void; select(id: string, mode: string): void; activate(id: string): void;
     configure(id: string): Promise<void>; loadBranches(id: string, refresh?: boolean): Promise<void>;
-    reconcile(id: string): Promise<void>; cancel(): void; setRemote(id: string, remote: string): void;
+    reconcile(id: string): Promise<void>; cancel(): void; dismiss(id: string): void; setRemote(id: string, remote: string): void;
     setBranchSource(id: string, branchSource: string): void; setQuery(query: string): void; setBranch(branch: string): boolean;
     openTarget(id: string): Promise<void>; dispose(): Promise<void>;
   }

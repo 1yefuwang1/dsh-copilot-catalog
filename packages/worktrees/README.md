@@ -161,9 +161,22 @@ The prepare response and browser session-catalog events can arrive in either
 order. The Client waits for the exact prepared session to be discovered and its
 history to open, with one on-demand catalog refresh and a shared 30-second
 discovery/opening deadline (separate from Git and naming deadlines). An unrelated
-running conversation does not invalidate this wait. Cancellation, timeout or
-opening failure retains the checkout and operation identity, preserves the source
-draft through native rollback, and never automatically creates or sends again.
+running conversation does not invalidate this wait. Switching to another thread is
+not cancellation: the captured first message is still admitted once to the exact
+prepared conversation, and the view moves there only if this source is still the
+current one and no newer navigation claim won. Auto-open is therefore best-effort;
+after switching away, open the prepared conversation from the session UI. Failed
+or uncertain operations keep a source-keyed recovery record with the exact
+operation UUID and result; returning to that source by ordinary navigation
+restores its captured New intent and recovery view, so a New Send cannot allocate
+another checkout or resend automatically and is not silently downgraded to Local.
+Only an explicit **Local**/**Worktree** choice permits native Local while the
+recovery record remains. Use **Check operation status**/**Open** and, only after
+inspecting the created conversation, **Dismiss recovery** to end the in-memory
+retry fence. Explicit **Cancel setup**, a timeout
+or an opening failure retains the checkout and operation identity, preserves the
+source draft through native rollback, and never automatically creates or sends
+again.
 Use **Check operation status** and inspect the exact created conversation before
 retrying; uncertain prompt admission must not be resent blindly.
 
@@ -190,10 +203,19 @@ substitute cached commits. Only the selected project folder is isolated.
 
 Progress uses bounded, event-driven wait requests over authenticated Connection
 RPC, not periodic status polling. Preparation holds message admission and shows a
-Cancel action; it does not freeze navigation or invoke the normal LLM early.
-Failures return through native draft/chip restoration rather than a replacement
-editor. A created checkout is retained if preparation or admission is cancelled.
-Unknown admission is never blindly resent: inspect/open the exact created session.
+Cancel action; it does not freeze navigation or invoke the normal LLM early. The
+native attempt may be rolled back when its view is replaced, but the captured
+first message still reaches the prepared conversation exactly once. Operation
+progress, success and failure are source-keyed: another thread's Local/New choice
+or a repository probe cannot abort this Send, repaint that thread, or erase the
+recovery record. Only the progress view and the automatic opening of the new
+conversation are skipped. The exact prepared destination is revalidated
+immediately before the one admission: if it was opened, typed into, or sent to
+during staging/settings, the Send is refused as target-busy and the source
+draft/files are restored. Failures return through native draft/chip restoration
+rather than a replacement editor. A created checkout is retained if preparation
+or admission is cancelled. Unknown admission is never blindly resent: inspect/open
+the exact created session, then explicitly dismiss recovery if starting over.
 
 ### Guarded native submission adapter
 
@@ -481,7 +503,12 @@ Changed settings, changed request or a new fresh preparation require a new UUID.
 
 The adapter never writes/clears the source draft; native submit machinery owns
 its optimistic commit and exact chip-aware rollback. Its temporary message block
-is released after preparation/admission settlement, cancellation or disposal. If creation has an
+is released after preparation/admission settlement, explicit cancellation or
+disposal. Switching threads is not cancellation: the captured first message is
+still admitted to the prepared conversation, only automatic navigation is
+skipped, and failed/uncertain recovery identity remains attached to its source
+until accepted success, a safe retryable failure, or explicit **Dismiss
+recovery**. If creation has an
 uncertain outcome, **Check operation status** uses the same UUID before another
 creation is allowed; an exact created conversation can be opened without sending
 a message. Progress/transport receipts are scope-local and bounded to the latest

@@ -543,7 +543,7 @@ test('lease restoration is identity-safe and never overwrites a competing writer
 });
 
 function transaction({ deferredSetup = false, setupFailure, deferredUpload = false, admission = 'success', deferredSourceUpload = false, draft = '', attachments = [], withoutRepositoryGate = false, realRepositoryGate = false, context: initialContext, records = [], sourceCwd = '/repo/services/api', discoverTargetOnSetup = true, targetOnRefresh = false, deferredRefresh = false, deferredTargetReady = false, reentrantRetain = false, client = helpers }: { deferredSetup?: boolean; setupFailure?: unknown; deferredUpload?: boolean; admission?: string; deferredSourceUpload?: boolean; draft?: string; attachments?: string[]; withoutRepositoryGate?: boolean; realRepositoryGate?: boolean; context?: ProjectContext; records?: unknown[]; sourceCwd?: string; discoverTargetOnSetup?: boolean; targetOnRefresh?: boolean; deferredRefresh?: boolean; deferredTargetReady?: boolean; reentrantRetain?: boolean; client?: VmValue } = {}) {
-  const calls: RpcCall[] = [], events: string[] = [], admissions: { text: string; ids: string[]; mode: string; signal: AbortSignal }[] = [], sourceAdmissions: { text: string; ids: string[]; mode: string; signal: AbortSignal }[] = [], opened: string[] = [], references: { sessionId: string; releases?: number; released?: boolean; release: () => void }[] = [], cleanups = new Set<Cleanup>();
+  const calls: RpcCall[] = [], events: string[] = [], admissions: { text: string; ids: string[]; mode: string; signal: AbortSignal }[] = [], sourceAdmissions: { text: string; ids: string[]; mode: string; signal: AbortSignal }[] = [], dstAdmissions: { text: string; ids: string[]; mode: string; signal: AbortSignal }[] = [], opened: string[] = [], references: { sessionId: string; releases?: number; released?: boolean; release: () => void }[] = [], cleanups = new Set<Cleanup>();
   const empty: ComposerSnapshot = { draft: '', draftRev: 7, attachmentIds: [], phase: 'plain', queue: [], occurrences: [] };
   const src = observable({ ...empty, draft, attachmentIds: attachments }), dst = observable({ ...empty });
   const srcSession = observable<SessionSnapshot>({ ...blank }), dstSession = observable<SessionSnapshot>({ ...blank });
@@ -554,9 +554,10 @@ function transaction({ deferredSetup = false, setupFailure, deferredUpload = fal
   const targetReady = deferred<typeof dstBinding>(), refreshReady = deferred<void>(), retainCalls: { id: string; signal?: AbortSignal }[] = [];
   function discoverTarget() { events.push('target-catalog'); list.publish({ byId: { ...list.getSnapshot().byId, target: { retainedBy: {} } } }); }
   const nativeSink = async (text: string, ids: string[], mode: string, signal: AbortSignal) => { sourceAdmissions.push({ text, ids, mode, signal }); return { kind: 'success' }; };
+  const dstNativeSink = async (text: string, ids: string[], mode: string, signal: AbortSignal) => { dstAdmissions.push({ text, ids, mode, signal }); return { kind: 'success' }; };
   const codec = { async serializeReference(owner: string, ref: string, _signal?: AbortSignal) { events.push('native-serialize'); return `native-model:${owner}/${ref}`; }, async adjudicate() { return undefined; } };
-  const srcInput = { state: src, deps: { actx: srcBinding.ctx, defaultSink: nativeSink, inputTriggers: () => codec }, setDraft() { assert.fail('native machine owns editor mutation'); } }, dstInput = { state: dst };
-  const blocks = new Map([['source', observable<ComposerBlock>(undefined)], ['target', observable<ComposerBlock>(undefined)]]);
+  const srcInput = { state: src, deps: { actx: srcBinding.ctx, defaultSink: nativeSink, inputTriggers: () => codec }, setDraft() { assert.fail('native machine owns editor mutation'); } }, dstInput = { state: dst, deps: { actx: dstBinding.ctx, defaultSink: dstNativeSink, inputTriggers: () => codec }, setDraft() { assert.fail('native machine owns editor mutation'); } };
+  const blocks = new Map([['source', observable<ComposerBlock>(undefined)], ['target', observable<ComposerBlock>(undefined)], ['other', observable<ComposerBlock>(undefined)]]);
   const fileUploads = observable(Object.fromEntries(attachments.filter((id: string) => id.startsWith('file')).map((id: string) => [id, { status: 'ready', owner: 'source' }])));
   const descriptors = new Map(attachments.map((id: string) => [id, { id, kind: id.startsWith('file') ? 'file' : 'image', file: { name: id } }]));
   const result = { sessionId: 'target', workspaceId: 'workspace', settingsHash: status.settingsHash, worktree: { ...record, id: 'abcdefab-1234-4234-8234-123456789abc', branch: 'worktree/task-random', sessionIds: ['target'] }, operation: op };
@@ -606,15 +607,23 @@ function transaction({ deferredSetup = false, setupFailure, deferredUpload = fal
       assert.fail('unexpected request');
     } } },
   };
-  let projectContext = initialContext;
-  const projects = { store: metadata, context: () => projectContext, rememberWorktree() {}, rememberRecords() {} };
-  const availability = observable({ available: true });
-  const repositories = realRepositoryGate ? client.createRepositoryAvailability(ctx, projects) : { store: availability, enabled: (id: string) => id === 'source' && availability.getSnapshot().available, unavailable() { availability.publish({ available: false }); } };
+  let projectContext = initialContext, otherProjectContext = initialContext;
+  const projects = { store: metadata, context: (id: string) => id === 'other' ? otherProjectContext : projectContext, rememberWorktree() {}, rememberRecords() {} };
+  const currentTarget = () => ({ sessionId: 'source', binding: srcBinding, ...(projectContext ? { project: { projectId: projectContext.project.id, folderId: projectContext.folder.id, path: projectContext.folder.path } } : {}) });
+  const availability = observable({ available: true, target: currentTarget(), phase: 'ready' });
+  const repositories = realRepositoryGate ? client.createRepositoryAvailability(ctx, projects) : { store: availability, enabled: (id: string) => (id === 'source' || id === 'other') && availability.getSnapshot().available, unavailable() { availability.publish({ ...availability.getSnapshot(), target: currentTarget(), available: false, phase: 'unavailable' }); } };
   const flow = client.createWorktreeFlow(ctx, (key: string) => key, projects, withoutRepositoryGate ? undefined : repositories); flow.observe('source');
-  return { flow, ctx, srcInput, src, dst, dstSession, dstBinding, calls, events, admissions, sourceAdmissions, opened, references, retainCalls, generation, metadata, fileUploads, blocks, nativeSink, repositories, discoverTarget,
+  return { flow, ctx, srcInput, dstInput, src, dst, dstSession, dstBinding, calls, events, admissions, sourceAdmissions, dstAdmissions, opened, references, retainCalls, generation, metadata, fileUploads, blocks, nativeSink, repositories, discoverTarget,
     targetOpened() { targetReady.resolve(dstBinding); }, refreshed() { refreshReady.resolve(); },
     contextChanged(next: ProjectContext | undefined) { projectContext = next; const before = metadata.getSnapshot(); metadata.publish({ ...before, projects: next ? [next.project] : [], bindings: next?.binding ? [next.binding] : [], revision: (before.revision || 0) + 1 }); },
-    revoke() { availability.publish({ available: false }); },
+    otherContextChanged(next: ProjectContext | undefined) { otherProjectContext = next; const before = metadata.getSnapshot(); metadata.publish({ ...before, revision: (before.revision || 0) + 1 }); },
+    revoke() { availability.publish({ ...availability.getSnapshot(), target: currentTarget(), available: false, phase: 'unavailable' }); },
+    switchMainViewTo(id = 'other') {
+      const byId = { ...list.getSnapshot().byId };
+      byId[id] ??= { retainedBy: {} };
+      for (const key of Object.keys(byId)) byId[key] = { ...byId[key], retainedBy: key === id ? { mainView: 1 } : {} };
+      list.publish({ byId });
+    },
     select(mode: string) { flow.select('source', mode); }, send(text = 'first task', ids = attachments, mode = 'queue', signal = new AbortController().signal) { return srcInput.deps.defaultSink(text, ids, mode, signal); },
     complete() { setupPending!.pending.resolve(completeSetup(setupPending!.request)); }, navigate() { navigation!.abort(); },
     uploaded() { const next = { ...fileUploads.getSnapshot() }; for (const [id, item] of Object.entries(next)) next[id] = { ...item, status: 'ready' }; fileUploads.publish(next); },
@@ -663,16 +672,15 @@ test('first Send repairs refresh-only discovery or waits past a stale refresh fo
   }
 });
 
-test('cancel, navigation, Local, reconnect, dispose and timeout forbid late references or sends in both wait phases', async () => {
-  for (const stage of ['discovery', 'ready']) for (const cause of ['cancel', 'navigation', 'local', 'reconnect', 'dispose', 'timeout']) {
+test('explicit cancel, Local, reconnect, dispose and timeout forbid late references or sends in both wait phases', async () => {
+  for (const stage of ['discovery', 'ready']) for (const cause of ['cancel', 'local', 'reconnect', 'dispose', 'timeout']) {
     const clock = controlledDeadlines(), native = new AbortController();
     const run = transaction({ client: clock.client, discoverTargetOnSetup: false, deferredRefresh: true, targetOnRefresh: true, deferredTargetReady: true, draft: 'native @reference draft', attachments: ['file-one', 'image-two'] });
     try {
       const before = structuredClone(run.src.getSnapshot()); run.select('new'); const sending = run.send('canonical task', ['file-one', 'image-two'], 'queue', native.signal); await settle();
       assert.equal(run.events.filter(event => event === 'sessions-refresh').length, 1); assert.equal(run.admissions.length, 0);
       if (stage === 'ready') { run.discoverTarget(); await settle(); assert.equal(run.references.filter(ref => ref.sessionId === 'target').length, 1); }
-      if (cause === 'cancel') native.abort();
-      if (cause === 'navigation') run.navigate();
+      if (cause === 'cancel') run.flow.cancel();
       if (cause === 'local') run.select('local');
       if (cause === 'reconnect') run.generation.publish({ id: 2 });
       if (cause === 'dispose') await run.dispose();
@@ -690,15 +698,289 @@ test('cancel, navigation, Local, reconnect, dispose and timeout forbid late refe
   }
 });
 
-test('source identity, eligibility, ownership, project and interaction guards remain active while discovery waits', async () => {
-  for (const cause of ['identity', 'eligibility', 'ownership', 'project', 'interaction']) {
+test('switching threads during preparation keeps the captured first message and defers navigation in both wait phases', async () => {
+  for (const stage of ['discovery', 'ready']) {
+    const run = transaction({ discoverTargetOnSetup: false, deferredRefresh: true, targetOnRefresh: true, deferredTargetReady: true });
+    try {
+      run.select('new'); const sending = run.send('survives a thread switch'); await settle();
+      if (stage === 'ready') { run.discoverTarget(); await settle(); assert.equal(run.retainCalls.filter(call => call.id === 'target').length, 1); }
+      run.switchMainViewTo('other'); await settle();
+      assert.equal(run.flow.store.getSnapshot().busy, true, stage + ' keeps preparing');
+      assert.equal(run.flow.store.getSnapshot().error, '', stage + ' reports no cancellation error');
+      assert.equal(run.blocks.get('source')!.getSnapshot()?.reason, 'preparingMessage');
+      run.discoverTarget(); await settle(); run.targetOpened();
+      assert.equal((await sending).kind, 'success', stage);
+      await settle();
+      assert.equal(run.admissions.length, 1); assert.equal(run.admissions[0]!.text, 'survives a thread switch'); assert.equal(run.sourceAdmissions.length, 0);
+      assert.deepEqual(run.opened, [], stage + ' never overwrites the newer main view');
+      assert.equal(run.blocks.get('source')!.getSnapshot(), undefined);
+      const target = run.references.find(reference => reference.sessionId === 'target')!;
+      assert.equal(target.releases, 0, stage + ' parks the exact target until it is opened');
+      run.ctx.uiWorkspace.openSession('target'); await settle();
+      assert.equal(target.releases, 1, stage + ' releases the parked target exactly once');
+    } finally { await run.dispose(); }
+  }
+});
+
+test('a native attempt abort during preparation still admits the captured first message', async () => {
+  const native = new AbortController(), run = transaction({ deferredSetup: true });
+  try {
+    run.select('new'); const sending = run.send('native abort keeps this message', [], 'queue', native.signal); await settle();
+    native.abort(); await settle();
+    assert.equal(run.flow.store.getSnapshot().busy, true);
+    assert.equal(run.blocks.get('source')!.getSnapshot()?.reason, 'preparingMessage');
+    run.complete(); assert.equal((await sending).kind, 'success'); await settle();
+    assert.equal(run.admissions.length, 1); assert.equal(run.admissions[0]!.text, 'native abort keeps this message'); assert.equal(run.sourceAdmissions.length, 0);
+    assert.deepEqual(run.opened, ['target']);
+  } finally { await run.dispose(); }
+});
+
+test('switching threads and re-observing the source repository does not cancel preparation', async () => {
+  const run = transaction({ realRepositoryGate: true, context: ownedContext, deferredSetup: true });
+  try {
+    await run.repositories.ensure('source'); assert.equal(run.repositories.enabled('source'), true);
+    run.select('new'); const sending = run.send('kept across repository observations'); await settle();
+    run.switchMainViewTo('other'); await settle(); assert.equal(run.flow.store.getSnapshot().busy, true);
+    // Returning to the source re-probes Git in the real component; a checking
+    // observation is not an unavailable verdict and cannot cancel the Send.
+    run.switchMainViewTo('source'); await run.repositories.ensure('source'); await settle();
+    assert.equal(run.flow.store.getSnapshot().busy, true); assert.equal(run.repositories.enabled('source'), true);
+    run.complete(); assert.equal((await sending).kind, 'success'); await settle();
+    assert.equal(run.admissions.length, 1); assert.equal(run.admissions[0]!.text, 'kept across repository observations'); assert.equal(run.sourceAdmissions.length, 0);
+    assert.deepEqual(run.opened, ['target']);
+  } finally { await run.dispose(); }
+});
+
+test('selecting another thread Local or New never aborts a captured first Send or repaints that thread', async () => {
+  for (const mode of ['local', 'new']) {
+    const run = transaction({ deferredSetup: true });
+    try {
+      run.select('new'); const sending = run.send('background first message'); await settle();
+      run.switchMainViewTo('other'); run.flow.select('other', mode); await settle();
+      assert.equal(run.flow.store.getSnapshot().busy, true);
+      assert.equal(run.flow.store.getSnapshot().sessionId, 'other'); assert.equal(run.flow.store.getSnapshot().mode, mode);
+      run.complete(); assert.equal((await sending).kind, 'success'); await settle();
+      const state = run.flow.store.getSnapshot();
+      assert.equal(state.sessionId, 'other'); assert.equal(state.mode, mode); assert.equal(state.busy, false);
+      assert.equal(state.steps.length, 0); assert.equal(state.phase, ''); assert.equal(state.error, ''); assert.equal(state.op, null);
+      assert.equal(run.admissions.length, 1); assert.equal(run.admissions[0]!.text, 'background first message'); assert.equal(run.sourceAdmissions.length, 0);
+      assert.deepEqual(run.opened, []);
+    } finally { await run.dispose(); }
+  }
+});
+
+test('returning to the preparing source restores its active operation view', async () => {
+  const run = transaction({ deferredSetup: true });
+  try {
+    run.select('new'); const sending = run.send('restore active view'); await settle();
+    const id = run.flow.store.getSnapshot().op?.id; assert.ok(id);
+    run.switchMainViewTo('other'); run.flow.select('other', 'new'); await settle();
+    assert.equal(run.flow.store.getSnapshot().op, null);
+    run.switchMainViewTo('source'); run.flow.select('source', 'new'); await settle();
+    const state = run.flow.store.getSnapshot();
+    assert.equal(state.sessionId, 'source'); assert.equal(state.busy, true); assert.equal(state.op?.id, id); assert.match(state.phase, /preparing|creating|fetching/);
+    run.complete(); const outcome = await sending; assert.equal(outcome.kind, 'success', (outcome as { text?: string }).text || ''); await settle();
+    assert.equal(run.admissions.length, 1); assert.deepEqual(run.opened, ['target']);
+  } finally { await run.dispose(); }
+});
+
+test('a repository failure for another thread cannot abort the captured first Send', async () => {
+  const run = transaction({ deferredSetup: true });
+  try {
+    run.select('new'); const sending = run.send('unaffected by B'); await settle();
+    run.switchMainViewTo('other'); run.flow.select('other', 'new'); await settle();
+    run.repositories.store.publish({ ...run.repositories.store.getSnapshot(), target: { sessionId: 'other', binding: run.dstBinding, project: undefined }, phase: 'unavailable', available: false });
+    await settle();
+    assert.equal(run.flow.store.getSnapshot().busy, true); assert.equal(run.flow.store.getSnapshot().error, '');
+    run.complete(); assert.equal((await sending).kind, 'success'); await settle();
+    assert.equal(run.admissions.length, 1); assert.equal(run.sourceAdmissions.length, 0);
+  } finally { await run.dispose(); }
+});
+
+test('unknown admission recovery survives other-thread selection and requires explicit dismissal', async () => {
+  const run = transaction({ admission: 'unknown', deferredSetup: true });
+  try {
+    run.select('new'); const first = run.send('unknown admission'); await settle();
+    run.switchMainViewTo('other'); run.flow.select('other', 'local'); await settle();
+    run.complete(); assert.equal((await first).kind, 'error'); await settle();
+    assert.equal(run.admissions.length, 1); assert.equal(run.flow.store.getSnapshot().sessionId, 'other'); assert.equal(run.flow.store.getSnapshot().mode, 'local');
+    run.switchMainViewTo('source'); run.flow.select('source', 'new'); await settle();
+    let state = run.flow.store.getSnapshot();
+    assert.ok(state.op); const id = state.op.id; assert.match(state.error, /uncertain|check-destination|unknown/i);
+    run.flow.select('source', 'local'); await settle(); run.flow.select('source', 'new'); await settle();
+    state = run.flow.store.getSnapshot(); assert.equal(state.op?.id, id);
+    const retry = await run.send('blind retry'); assert.equal(retry.kind, 'error'); await settle();
+    assert.equal(run.calls.filter(call => call.endpoint === 'dsh-worktrees/prepare').length, 1, 'recovery blocks a new checkout');
+    assert.equal(run.admissions.length, 1, 'recovery blocks an automatic resend');
+    run.flow.dismiss('source');
+    assert.equal(run.flow.store.getSnapshot().op, null); assert.equal(run.flow.store.getSnapshot().error, '');
+    const next = run.send('new after dismissal'); await settle();
+    assert.equal(run.calls.filter(call => call.endpoint === 'dsh-worktrees/prepare').length, 2, 'dismissal allows a new operation');
+    run.complete(); assert.equal((await next).kind, 'error'); await settle();
+  } finally { await run.dispose(); }
+});
+
+test('a native Local send in another thread uses its own sink while the first Send prepares', async () => {
+  const run = transaction({ deferredSetup: true });
+  try {
+    run.select('new'); const sending = run.send('A background'); await settle();
+    run.switchMainViewTo('other'); run.flow.select('other', 'local'); await settle();
+    const outcome = await run.dstInput.deps.defaultSink('B local', [], 'queue', new AbortController().signal); await settle();
+    assert.equal(outcome.kind, 'success'); assert.equal(run.dstAdmissions.length, 1); assert.equal(run.dstAdmissions[0]!.text, 'B local');
+    assert.equal(run.flow.store.getSnapshot().busy, true);
+    run.complete(); assert.equal((await sending).kind, 'success'); await settle();
+    assert.equal(run.admissions.length, 1); assert.equal(run.admissions[0]!.text, 'A background'); assert.equal(run.sourceAdmissions.length, 0);
+    assert.equal(run.flow.store.getSnapshot().sessionId, 'other'); assert.equal(run.flow.store.getSnapshot().mode, 'local');
+  } finally { await run.dispose(); }
+});
+
+test('a host refusal after another thread was selected reuses its operation instead of preparing again', async () => {
+  const run = transaction({ admission: 'refused', deferredSetup: true });
+  try {
+    run.select('new'); const first = run.send('refused first'); await settle();
+    run.switchMainViewTo('other'); run.flow.select('other', 'new'); await settle();
+    run.complete(); assert.equal((await first).kind, 'error'); await settle();
+    run.switchMainViewTo('source'); run.flow.select('source', 'new'); await settle();
+    const state = run.flow.store.getSnapshot(); assert.ok(state.op); assert.equal(state.op.retryable, true);
+    const prepares = run.calls.filter(call => call.endpoint === 'dsh-worktrees/prepare').length, id = state.op.id;
+    const retry = await run.send('refused first'); await settle();
+    assert.equal(retry.kind, 'error'); assert.equal(run.calls.filter(call => call.endpoint === 'dsh-worktrees/prepare').length, prepares);
+    assert.equal(run.admissions.length, 2); assert.equal(run.flow.store.getSnapshot().op?.id, id);
+  } finally { await run.dispose(); }
+});
+
+test('deferred reconcile responses cannot resurrect dismissal or overwrite a new operation', async () => {
+  const run = transaction({ admission: 'unknown', deferredSetup: true });
+  try {
+    run.select('new'); const first = run.send('unknown first'); await settle(); run.complete(); assert.equal((await first).kind, 'error'); await settle();
+    const old = run.flow.store.getSnapshot().op; assert.ok(old);
+    const pending = deferred(), call = run.ctx.connection.rpc.call; let intercepted = false;
+    run.ctx.connection.rpc.call = async (...args: RpcArgs) => {
+      const request = args[2].request;
+      if (!intercepted && args[1] === 'dsh-worktrees/execute' && request?.action === 'status' && request.operationId) { intercepted = true; return pending.promise; }
+      return call(...args);
+    };
+    const reconciling = run.flow.reconcile('source'); await settle();
+    run.flow.dismiss('source'); await settle();
+    run.select('new'); const next = run.send('new operation'); await settle();
+    const current = run.flow.store.getSnapshot().op; assert.ok(current); assert.notEqual(current.id, old.id);
+    pending.resolve(success({ settingsHash: status.settingsHash, operation: { ...old, phase: 'ready', workspaceId: 'workspace', settingsHash: status.settingsHash }, sessionId: 'target', worktree: record })); await reconciling; await settle();
+    const after = run.flow.store.getSnapshot();
+    assert.equal(after.op?.id, current.id, 'late reconciliation cannot overwrite the new operation');
+    assert.equal(after.error, '', 'late reconciliation cannot resurrect a dismissed record');
+    assert.equal(after.busy, true, 'the new operation is still preparing');
+    assert.equal(run.calls.filter(entry => entry.endpoint === 'dsh-worktrees/prepare').length, 2);
+    run.complete(); assert.equal((await next).kind, 'error'); await settle();
+  } finally { await run.dispose(); }
+});
+
+test('the reported switch-during-creation scenario still admits the first message with attachments', async () => {
+  const run = transaction({ realRepositoryGate: true, context: ownedContext, deferredSetup: true, attachments: ['file-one', 'image-two'] });
+  try {
+    await run.repositories.ensure('source'); assert.equal(run.repositories.enabled('source'), true);
+    run.select('new'); const native = new AbortController();
+    const sending = run.send('reported first message', ['file-one', 'image-two'], 'queue', native.signal); await settle();
+    run.switchMainViewTo('other'); native.abort(); await settle();
+    run.complete(); assert.equal((await sending).kind, 'success'); await settle();
+    assert.equal(run.admissions.length, 1); assert.equal(run.admissions[0]!.text, 'reported first message'); assert.deepEqual(run.admissions[0]!.ids, ['file-one', 'image-two']);
+    assert.equal(run.sourceAdmissions.length, 0); assert.deepEqual(run.opened, [], 'the newer main view is not overwritten');
+    const target = run.references.find(reference => reference.sessionId === 'target')!; assert.equal(target.releases, 0);
+    run.ctx.uiWorkspace.openSession('target'); await settle(); assert.equal(target.releases, 1);
+    assert.equal(run.blocks.get('source')!.getSnapshot(), undefined);
+  } finally { await run.dispose(); }
+});
+
+test('returning by main-view navigation restores recovery and blocks native Local until explicit Local', async () => {
+  const run = transaction({ admission: 'unknown', deferredSetup: true });
+  try {
+    run.select('new'); const first = run.send('unknown navigation'); await settle(); run.complete(); assert.equal((await first).kind, 'error'); await settle();
+    run.switchMainViewTo('other'); run.flow.select('other', 'local'); await settle();
+    run.switchMainViewTo('source'); await settle();
+    let state = run.flow.store.getSnapshot();
+    assert.equal(state.sessionId, 'source'); assert.equal(state.mode, 'new'); assert.ok(state.op); const id = state.op.id; assert.match(state.error, /uncertain|check-destination/i);
+    const prepares = run.calls.filter(call => call.endpoint === 'dsh-worktrees/prepare').length, admissions = run.admissions.length;
+    const bypass = await run.send('bypass native local'); await settle();
+    assert.equal(bypass.kind, 'error'); assert.equal(run.sourceAdmissions.length, 0); assert.equal(run.admissions.length, admissions);
+    assert.equal(run.calls.filter(call => call.endpoint === 'dsh-worktrees/prepare').length, prepares);
+    run.flow.select('source', 'local'); await settle();
+    const local = await run.send('explicit local'); await settle();
+    assert.equal(local.kind, 'success'); assert.equal(run.sourceAdmissions.length, 1);
+    state = run.flow.store.getSnapshot(); assert.equal(state.op?.id, id); assert.match(state.error, /uncertain|check-destination/i);
+  } finally { await run.dispose(); }
+});
+
+test('a target occupied during staged upload is rejected before the one admission', async () => {
+  const run = transaction({ attachments: ['file-one'], deferredUpload: true });
+  try {
+    run.select('new'); const sending = run.send('target race'); await settle();
+    assert.equal(run.fileUploads.getSnapshot()['file-one']!.owner, 'target');
+    run.dst.publish({ ...run.dst.getSnapshot(), draft: 'typed in the prepared target' });
+    run.uploaded(); await settle();
+    const outcome = await sending; assert.equal(outcome.kind, 'error'); assert.match((outcome as { text?: string }).text || '', /target-not-empty|targetBusy/i);
+    assert.equal(run.admissions.length, 0); assert.equal(run.sourceAdmissions.length, 0);
+    assert.equal(run.fileUploads.getSnapshot()['file-one']!.owner, 'source');
+    assert.equal(run.blocks.get('source')!.getSnapshot(), undefined);
+  } finally { await run.dispose(); }
+});
+
+test('a pending configure for another thread cannot publish after navigation', async () => {
+  const run = transaction();
+  try {
+    const pending = deferred(), call = run.ctx.connection.rpc.call; let intercepted = false;
+    run.ctx.connection.rpc.call = async (...args: RpcArgs) => {
+      const request = args[2].request;
+      if (!intercepted && request?.action === 'status' && !request.operationId) { intercepted = true; return pending.promise; }
+      return call(...args);
+    };
+    run.switchMainViewTo('other'); run.flow.select('other', 'new'); await settle();
+    const configuring = run.flow.configure('other'); await settle();
+    assert.equal(run.flow.store.getSnapshot().sessionId, 'other'); assert.equal(run.flow.store.getSnapshot().loading, true);
+    run.switchMainViewTo('source'); await settle();
+    assert.equal(run.flow.store.getSnapshot().sessionId, 'source'); assert.equal(run.flow.store.getSnapshot().loading, false); assert.equal(run.flow.store.getSnapshot().error, '');
+    pending.resolve(success({ ...status, projectPath: '/repo/services/api' })); await configuring; await settle();
+    const state = run.flow.store.getSnapshot();
+    assert.equal(state.sessionId, 'source'); assert.equal(state.loading, false); assert.equal(state.error, ''); assert.equal(state.status, null); assert.equal(state.branches, null);
+  } finally { await run.dispose(); }
+});
+
+test('a retryable host refusal after navigation can retry without a projectChanged rejection', async () => {
+  const run = transaction({ admission: 'refused', deferredSetup: true });
+  try {
+    run.select('new'); const first = run.send('refused navigation'); await settle(); run.complete(); assert.equal((await first).kind, 'error'); await settle();
+    run.switchMainViewTo('other'); run.flow.select('other', 'local'); await settle();
+    run.switchMainViewTo('source'); await settle();
+    const state = run.flow.store.getSnapshot(); assert.equal(state.sessionId, 'source'); assert.equal(state.mode, 'new'); assert.equal(state.op?.retryable, true);
+    const prepares = run.calls.filter(call => call.endpoint === 'dsh-worktrees/prepare').length, id = state.op!.id;
+    const retry = await run.send('refused navigation'); await settle();
+    assert.equal(retry.kind, 'error'); assert.doesNotMatch((retry as { text?: string }).text || '', /projectChanged|selected-worktree-source-changed/i);
+    assert.equal(run.calls.filter(call => call.endpoint === 'dsh-worktrees/prepare').length, prepares);
+    assert.equal(run.admissions.length, 2); assert.equal(run.flow.store.getSnapshot().op?.id, id);
+  } finally { await run.dispose(); }
+});
+
+test('a project change for another thread cannot abort the captured first Send', async () => {
+  const run = transaction({ context: ownedContext, deferredSetup: true });
+  try {
+    run.select('new'); const sending = run.send('survives B project change'); await settle();
+    run.switchMainViewTo('other'); run.flow.select('other', 'new'); await settle();
+    run.otherContextChanged({ ...ownedContext, project: { ...ownedContext.project, id: 'other-project', title: 'Other' }, folder: { ...ownedContext.folder, id: 'other-folder', path: '/repo/other' }, binding: { ...ownedContext.binding, projectId: 'other-project', folderId: 'other-folder', effectiveCwd: '/repo/other' } });
+    await settle();
+    assert.equal(run.flow.store.getSnapshot().busy, true); assert.match(run.flow.store.getSnapshot().error, /project/i);
+    run.complete(); const outcome = await sending; assert.equal(outcome.kind, 'success', (outcome as { text?: string }).text || ''); await settle();
+    assert.equal(run.admissions.length, 1); assert.equal(run.admissions[0]!.text, 'survives B project change');
+    assert.equal(run.flow.store.getSnapshot().sessionId, 'other');
+  } finally { await run.dispose(); }
+});
+
+test('source identity, eligibility, removal, project and interaction guards remain active while discovery waits', async () => {
+  for (const cause of ['identity', 'eligibility', 'removal', 'project', 'interaction']) {
     const run = transaction({ context: ownedContext, discoverTargetOnSetup: false, deferredRefresh: true });
     try {
       run.select('new'); const sending = run.send('never admit to a changed source'); await settle(); assert.equal(run.admissions.length, 0);
       const list = run.ctx.sessions.list;
       if (cause === 'identity') { const original = run.ctx.sessions.binding, replacement = { ...original('source') }; run.ctx.sessions.binding = id => id === 'source' ? replacement : original(id); list.publish({ ...list.getSnapshot() }); }
       if (cause === 'eligibility') run.ctx.sessions.binding('source').session.publish({ ...blank, blank: false });
-      if (cause === 'ownership') list.publish({ byId: { source: { retainedBy: {} } } });
+      if (cause === 'removal') run.ctx.sessions.binding('source').session.publish({ ...blank, removed: true });
       if (cause === 'project') run.contextChanged(undefined);
       if (cause === 'interaction') run.ctx.uiSession.sessionStatus.publish(new Map([['source', { pendingInteraction: {} }]]));
       assert.equal((await sending).kind, 'error', cause); await settle(); run.refreshed(); run.discoverTarget(); await settle();
@@ -724,7 +1006,7 @@ test('failed-flow Open discovers its exact prepared result by refresh or event w
   for (const targetOnRefresh of [false, true]) {
     const run = transaction({ discoverTargetOnSetup: false, deferredRefresh: true, targetOnRefresh, deferredTargetReady: true, reentrantRetain: true });
     try {
-      run.select('new'); const sending = run.send('retained canonical task'); await settle(); run.navigate(); assert.equal((await sending).kind, 'error'); await settle();
+      run.select('new'); const sending = run.send('retained canonical task'); await settle(); run.flow.cancel(); assert.equal((await sending).kind, 'error'); await settle();
       const op = run.flow.store.getSnapshot().op; assert.equal(op.result.sessionId, 'target'); assert.equal(run.references.filter(ref => ref.sessionId === 'target').length, 0);
       const opening = run.flow.openTarget('source'); await settle(); assert.equal(run.flow.store.getSnapshot().busy, true); assert.deepEqual(run.opened, []);
       assert.equal(run.events.filter(event => event === 'sessions-refresh').length, 2, 'each independent attempt requests at most one catalog refresh');
@@ -732,7 +1014,9 @@ test('failed-flow Open discovers its exact prepared result by refresh or event w
       if (targetOnRefresh) run.refreshed(); else run.discoverTarget(); await settle();
       assert.equal(run.retainCalls.filter(call => call.id === 'target').length, 1); assert.deepEqual(run.opened, [], 'recovery Open also waits for native ready');
       run.targetOpened(); await opening; await settle(); run.refreshed(); await settle();
-      assert.deepEqual(run.opened, ['target']); assert.equal(run.flow.store.getSnapshot().busy, false); assert.equal(run.flow.store.getSnapshot().op, op);
+      assert.deepEqual(run.opened, ['target']); assert.equal(run.flow.store.getSnapshot().busy, false); assert.equal(run.flow.store.getSnapshot().sessionId, 'target');
+      run.switchMainViewTo('source'); await settle();
+      assert.equal(run.flow.store.getSnapshot().op, op, 'the source-keyed recovery view survives opening its target');
       assert.equal(run.calls.filter(call => call.endpoint === 'dsh-worktrees/prepare').length, 1); assert.equal(run.admissions.length, 0); assert.equal(run.sourceAdmissions.length, 0);
       assert.ok(run.references.every(reference => reference.releases === 1));
     } finally { await run.dispose(); }
@@ -744,7 +1028,7 @@ test('failed-flow Open cannot navigate late after cancel, navigation, selection,
   for (const stage of ['discovery', 'ready']) for (const cause of ['cancel', 'navigation', 'selection', 'reconnect', 'dispose', 'timeout']) {
     const clock = controlledDeadlines(), run = transaction({ client: clock.client, discoverTargetOnSetup: false, deferredRefresh: true, targetOnRefresh: true, deferredTargetReady: true });
     try {
-      run.select('new'); const sending = run.send(); await settle(); run.navigate(); assert.equal((await sending).kind, 'error'); await settle();
+      run.select('new'); const sending = run.send(); await settle(); run.flow.cancel(); assert.equal((await sending).kind, 'error'); await settle();
       const opening = run.flow.openTarget('source'); await settle(); assert.equal(run.flow.store.getSnapshot().busy, true);
       if (stage === 'ready') { run.discoverTarget(); await settle(); assert.equal(run.retainCalls.filter(call => call.id === 'target').length, 1); }
       if (cause === 'cancel') run.flow.cancel();
@@ -1009,6 +1293,11 @@ test('themed worktree mode and branch pickers require positive target availabili
   assert.match(staticSource(controls), /!blockedNew && canWorktree && !worktree && h\(BranchPicker/);
   assert.match(staticSource(controls), /\{ value: 'local', label: t\('local'\)/);
   assert.match(staticSource(controls), /onChange: mode => flow.select\(sessionId, mode\)/);
+  assert.match(staticSource(controls), /DismissRecoveryButton/);
+  assert.match(staticSource(source), /function DismissRecoveryButton/);
+  assert.match(staticSource(source), /flow\.dismiss\(sessionId\)/);
+  assert.match(staticSource(source), /dismissRecoveryHelp/);
+  assert.match(staticSource(source), /sourceViews = new Map/);
   assert.doesNotMatch(staticSource(controls), /h\('select', \{[^}]*threadMode/);
   assert.match(staticSource(controls), /usePanelInfo\(value => value.activePanelId\)/); assert.match(staticSource(controls), /return \(\) => repositories.withdraw\(sessionId\)/);
   assert.match(staticSource(source), /const repositories = createRepositoryAvailability\(ctx, projects\)/);
@@ -1068,9 +1357,15 @@ test('double first Send does not allocate another worktree or send locally', asy
   run.complete(); await first; await settle(); assert.equal(run.admissions.length, 1); await run.dispose();
 });
 
-test('navigation during setup suppresses late LLM admission, preserves native rollback and retains created checkout', async () => {
-  const run = transaction({ deferredSetup: true }); run.select('new'); const sending = run.send(); await settle(); run.navigate(); run.complete(); const outcome = await sending; await settle();
-  assert.equal(outcome.kind, 'error'); assert.equal(run.admissions.length, 0); assert.equal(run.sourceAdmissions.length, 0); assert.equal(run.opened.length, 0); assert.equal(run.blocks.get('source')!.getSnapshot()!, undefined); await run.dispose();
+test('a navigation signal abort during setup does not discard the created conversation or its first message', async () => {
+  const run = transaction({ deferredSetup: true }); run.select('new'); const sending = run.send('navigation keeps this message'); await settle(); run.navigate();
+  assert.equal(run.flow.store.getSnapshot().busy, true); assert.equal(run.blocks.get('source')!.getSnapshot()?.reason, 'preparingMessage');
+  run.complete(); const outcome = await sending; await settle();
+  assert.equal(outcome.kind, 'success'); assert.equal(run.admissions.length, 1); assert.equal(run.admissions[0]!.text, 'navigation keeps this message');
+  assert.equal(run.sourceAdmissions.length, 0); assert.deepEqual(run.opened, [], 'a newer navigation claim is never overwritten');
+  const target = run.references.find(reference => reference.sessionId === 'target')!; assert.equal(target.releases, 0);
+  run.ctx.uiWorkspace.openSession('target'); await settle(); assert.equal(target.releases, 1);
+  assert.equal(run.blocks.get('source')!.getSnapshot(), undefined); await run.dispose();
 });
 
 test('explicit target refusal restores source-session file receipts; Local retry uses native sink', async () => {
