@@ -182,20 +182,18 @@ A release selects **one package**, never the root or multiple packages at once:
 - `@1yefuwang1/dsh-worktrees-vX.Y.Z`
 
 The tag must match its leaf version and repository identity. Catalog is currently
-`0.2.2`, adding GHE Cloud endpoint support; published versions cannot be republished. Search is currently
-`0.1.2`, adding GHE Cloud endpoint support alongside the Copilot stream-ID compatibility fix.
-Tool schema is `dsh-copilot-tool-schema@0.1.0`, an additive Copilot Gemini tool-declaration guard. Worktrees is `@1yefuwang1/dsh-worktrees@0.2.23`, flattening the project-tool declaration and hiding the native **Choose a folder…**
-option on web while preserving desktop picking, Host folder browsing where supported,
-and manual path entry. It retains the factory staging, held-target resource checks,
-Local runtime admission/spawn guards, and navigation fixes from `0.2.20`. Ready recovery commits durable
-branch/history/Workspace facts and the existing continuation identity; later publication
-errors do not downgrade it. Explicit Continue/Open Local retains navigation authority.
-Cleanup still discards unsaved checkout files after messaging-only inactivity while
-retaining Git branches and conversation history; loaded runtimes and active/protected
-work defer it. Existing local/remote starting branches, themed controls, multi-folder
-projects and guarded handoff are retained. This release uses staged npm publishing;
-npm availability requires maintainer review/2FA approval. The unrelated unscoped npm name is
-not an alias for this plugin.
+`0.2.3` and Search is `0.1.3`, both retargeting DSH `0.2.1-rc.2` (adapter-relative
+pi-ai resolution and cancellation-safe credential refresh respectively); published
+versions cannot be republished. Tool schema is `dsh-copilot-tool-schema@0.1.1`, a
+DSH `0.2.1-rc.2` retarget with no behavior change. Worktrees is
+`@1yefuwang1/dsh-worktrees@0.2.23`, adding DSH `0.2.1-rc.2` compatibility,
+exact-session discovery/non-creating Open, and thread-switch-safe first Send with
+source-keyed recovery and prepared-target revalidation. It retains factory staging,
+held-target resource checks, Local runtime admission/spawn guards, navigation
+fixes, ready Local recovery commits, guarded handoff, multi-folder projects and
+cleanup semantics. This release uses staged npm publishing; npm availability
+requires maintainer review/2FA approval. The unrelated unscoped worktrees npm name
+is not an alias for this plugin.
 
 The [release workflow](.github/workflows/publish.yml) installs/verifies with pnpm,
 then uses native `pnpm stage publish` to stage **only the selected leaf** through

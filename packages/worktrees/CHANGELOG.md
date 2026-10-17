@@ -1,6 +1,6 @@
 # @1yefuwang1/dsh-worktrees changelog
 
-## Unreleased — Thread-switch-safe first Send and exact-session discovery
+## 0.2.23 — DSH 0.2.1-rc.2 compatibility, exact-session discovery and thread-switch-safe first Send
 
 - Treat switching to another thread, and the native attempt rollback it causes, as
   navigation rather than cancellation. Keep the exact source reference and the
@@ -55,8 +55,6 @@
   plus a real target `SessionInputShell` harness that drives reference, command and
   attachment serialization through the guarded native lease and restores failed
   drafts without clearing the destination.
-
-## 0.2.23 — DSH 0.2.1-rc.2 compatibility
 
 - Retarget the exact runtime pins to DSH `0.2.1-rc.2`, Cordis `~4.0.5` and
   Schemastery `~3.18.5`, with `zod` pinned to the storage SDK's `4.4.3` so domain

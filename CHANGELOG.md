@@ -1,5 +1,41 @@
 # Monorepo changelog
 
+## dsh-copilot-catalog 0.2.3 — DSH 0.2.1-rc.2 compatibility
+
+- Retarget runtime pins to DSH/pi-ai `0.2.1-rc.2`, Cordis `~4.0.5`, Schemastery
+  `~3.18.5` and pi-ai `^1.1.0`; keep adapter-relative pi-ai resolution.
+- Add nested-layout and host-aligned pi-ai coverage without changing catalog exports.
+
+## dsh-copilot-search 0.1.3 — DSH 0.2.1-rc.2 compatibility
+
+- Retarget runtime pins to DSH `0.2.1-rc.2`, Cordis `~4.0.5`, Schemastery
+  `~3.18.5` and pi-ai `^1.1.0`.
+- Preserve caller cancellation across the installed SDK refresh hook; no grant or
+  later catalog page commits after cancellation.
+
+## dsh-copilot-tool-schema 0.1.1 — DSH 0.2.1-rc.2 compatibility
+
+- Retarget runtime pins to DSH `0.2.1-rc.2`, Cordis `~4.0.5` and Schemastery
+  `~3.18.5`; the assemble waterfall contract and behavior are unchanged.
+
+## @1yefuwang1/dsh-worktrees 0.2.23 — DSH 0.2.1-rc.2 compatibility, exact-session discovery and thread-switch-safe first Send
+
+- Retarget DSH 0.2.1-rc.2, Cordis/Schemastery, the guarded native submit adapter
+  and the Connection browser peer; register the five UI routes with streaming
+  bodies so a rejected caller is refused before its payload is read.
+- Wait for the exact prepared session to enter the catalog and open its history;
+  make manager **Open conversation** reuse an existing attached thread instead of
+  forking it.
+- Treat switching threads as navigation, not cancellation: keep the captured first
+  message and exact source reference, admit it once to the prepared conversation,
+  and defer auto-open behind a newer navigation claim.
+- Keep progress and recovery source-keyed; restore the captured New intent and
+  recovery UUID/result on ordinary navigation; block silent native Local fallback
+  until an explicit Local/Worktree choice; add confirmed **Dismiss recovery**.
+- Fence deferred status checks by exact operation identity/epoch, revalidate the
+  prepared destination immediately before admission, and scope cancellation to the
+  affected operation so another thread cannot abort or repaint this Send.
+
 ## Unreleased — Copilot Gemini tool declarations
 
 - Worktrees `0.2.22` replaces the six-arm project-tool `oneOf` with one flat object
@@ -137,6 +173,7 @@
 
 Package history and versions are independent:
 
-- [Catalog changelog](packages/catalog/CHANGELOG.md) — `0.2.2` GHE Cloud endpoint support; earlier versions previously published.
-- [Search changelog](<packages/search/CHANGELOG.md>) — `0.1.2` GHE Cloud endpoint support; `0.1.1` first public native-search release and streaming compatibility fix.
-- [Worktrees changelog](<packages/worktrees/CHANGELOG.md>) — `@1yefuwang1/dsh-worktrees@0.2.21`; desktop-only native folder picking with web browsing/manual path entry retained, requiring staged-release approval before npm availability.
+- [Catalog changelog](packages/catalog/CHANGELOG.md) — `0.2.3` DSH 0.2.1-rc.2 compatibility and adapter-relative pi-ai resolution; earlier versions previously published.
+- [Search changelog](<packages/search/CHANGELOG.md>) — `0.1.3` DSH 0.2.1-rc.2 compatibility and cancellation-safe credential refresh; `0.1.2` GHE Cloud endpoint support.
+- [Tool schema changelog](<packages/tool-schema/CHANGELOG.md>) — `0.1.1` DSH 0.2.1-rc.2 compatibility; `0.1.0` the Copilot Gemini properties-bucket guard.
+- [Worktrees changelog](<packages/worktrees/CHANGELOG.md>) — `@1yefuwang1/dsh-worktrees@0.2.23`; DSH 0.2.1-rc.2 compatibility, exact-session discovery/non-creating Open and thread-switch-safe first Send, requiring staged-release approval before npm availability.
