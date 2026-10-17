@@ -6,6 +6,7 @@ import { root, workspacePaths, packages, containedPath, releasePackage, assertWo
 import { releaseIdentity } from '../release.js';
 import { findCredentialIssues } from '../check-secrets.js';
 import { publicationPolicy, validatePublicationMetadata, validatePublicationSize } from '../check-pack.js';
+import { evaluatePluginCompatibility } from '@deepseek-ai/dsh-app-boot';
 
 const repository = '1yefuwang1/dsh-copilot-catalog';
 const candidates = ['catalog', 'search', 'tool-schema', 'worktrees'].map((name) => ({ path: `packages/${name}`, manifest: {
@@ -157,6 +158,31 @@ test('worktree tarball metadata rejects extra/missing files, wrong identity and 
   assert.equal(manifest.scripts.prepare, undefined);
   assert.equal(manifest.scripts.install, undefined);
   assert.equal(manifest.scripts.postinstall, undefined);
+});
+
+test('every plugin accepts the pinned runtime and rejects other DSH versions without exemptions', async () => {
+  const rootManifest = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'));
+  const pinned = rootManifest.devDependencies['@deepseek-ai/dsh-agent'];
+  assert.match(pinned, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u);
+  for (const { manifest } of await packages()) {
+    assert.equal(manifest.engines?.dsh, pinned, manifest.name + ' must pin the shared runtime');
+    assert.equal(evaluatePluginCompatibility(manifest, {}, pinned), undefined,
+      manifest.name + ' must install on the pinned runtime without an exemption');
+    for (const other of ['0.2.0-rc.2', '0.2.1-rc.3', '0.2.1', '0.1.9']) {
+      const issue = evaluatePluginCompatibility(manifest, {}, other);
+      assert.ok(issue, manifest.name + ' must report ' + other + ' as unmet');
+      assert.deepEqual(Object.keys(issue.requirements), ['engines.dsh']);
+      // An exact-version exemption is the only bypass and must name this exact pair.
+      assert.equal(issue.exempted, false);
+      const key = manifest.name + '@' + manifest.version;
+      const irrelevant = evaluatePluginCompatibility(manifest, { [key]: ['9.9.9'] }, other);
+      assert.ok(irrelevant, 'a mismatch is still reported');
+      assert.equal(irrelevant.exempted, false, 'an exemption for another runtime must not apply');
+      const exact = evaluatePluginCompatibility(manifest, { [key]: [other] }, other);
+      assert.ok(exact, 'the exact pair is still reported');
+      assert.equal(exact.exempted, true, 'only the exact plugin/runtime pair is exempted');
+    }
+  }
 });
 
 test('credential audit catches Copilot tokens, JWTs and static backtick credentials without echoing values', () => {

@@ -4,5 +4,5 @@
     "rootDir": "../..",
     "noEmit": true
   },
-  "include": ["consumer.ts"]
+  "include": ["consumer.ts", "sdk-client.ts", "../../client.types.d.ts"]
 }

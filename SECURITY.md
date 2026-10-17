@@ -42,7 +42,8 @@ unintended credential writes privately to [the maintainer](https://github.com/1y
 Use [GitHub's private vulnerability reporting](https://github.com/1yefuwang1/dsh-copilot-catalog/security/advisories/new)
 if enabled; do not open a public issue containing sensitive details.
 
-Supported integration versions are DSH `0.2.0-rc.2` and pi-ai `0.87.1`. Review
+Supported integration versions are DSH `0.2.1-rc.2` and pi-ai `^1.1.0` (tested at
+`1.1.0` and `1.3.0`). Review
 lockfile changes and restart the host after upgrading/removing a backend plugin.
 Native-search entitlement, API options and account policies are not stable public
 contracts; synthetic tests do not prove support for a live account/model. Observe

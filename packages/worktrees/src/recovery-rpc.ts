@@ -1,7 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type { ConnectionRpcHandlerResult, HostConnectionHandle } from '@deepseek-ai/dsh-client-connection';
 import { required } from './runtime.js';
-import { registerQuietRpcRoute } from './quiet-rpc.js';
+import { isBrowserPeer, registerQuietRpcRoute } from './quiet-rpc.js';
 import { parseRequest } from './schema.js';
 import { projectJsonSnapshot } from './projects.js';
 import { abortIfRequested, failureOf, WorktreeError } from './errors.js';
@@ -29,7 +29,7 @@ export function registerRecoveryRpc(owner: Context, controller: Pick<WorktreeCle
   const failure = (code: string, message: string): ConnectionRpcHandlerResult => ({ ok: false, error: { code, message, details: {} } });
   const stop = owner.effect(() => {
     const unregister = registerRoute(owner, RECOVERY_RPC_ENDPOINT, async (endpoint, payload, requestSignal, peer) => {
-      if (endpoint !== RECOVERY_RPC_ENDPOINT || peer.id !== connection.operator.id || peer.ctx !== connection.operator.ctx) return failure('FORBIDDEN', 'This request does not belong to the authenticated operator.');
+      if (endpoint !== RECOVERY_RPC_ENDPOINT || !isBrowserPeer(connection, peer)) return failure('FORBIDDEN', 'This request does not belong to the authenticated browser session.');
       if (closed) return failure('CLOSED', 'The recovery UI channel is closing.');
       if (flights.size >= 128) return failure('WAITER_LIMIT', 'The recovery request capacity is exhausted.');
       const signal = AbortSignal.any([requestSignal, shutdown.signal]);

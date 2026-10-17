@@ -4,7 +4,7 @@ import type { SessionController } from '@deepseek-ai/dsh-api-session-controller'
 import { SessionId } from '@deepseek-ai/dsh-session';
 import { abortIfRequested, failureOf, WorktreeError } from './errors.js';
 import { required } from './runtime.js';
-import { registerQuietRpcRoute } from './quiet-rpc.js';
+import { isBrowserPeer, registerQuietRpcRoute } from './quiet-rpc.js';
 import { parseProjectRequest, projectJsonSnapshot, type ProjectController, type ProjectRequest } from './projects.js';
 import type { CommandEnvelope } from './types.js';
 
@@ -33,14 +33,14 @@ export function registerProjectRpc(owner: Context, controller: Pick<ProjectContr
   let closed = false; let disposal: Promise<void> | undefined;
   const stop = owner.effect(() => {
     const unregister = registerRoute(owner, PROJECT_RPC_ENDPOINT, async (endpoint, payload, requestSignal, peer) => {
-      if (endpoint !== PROJECT_RPC_ENDPOINT || peer.id !== connection.operator.id || peer.ctx !== connection.operator.ctx) return failure('FORBIDDEN', 'This request does not belong to the authenticated operator.');
+      if (endpoint !== PROJECT_RPC_ENDPOINT || !isBrowserPeer(connection, peer)) return failure('FORBIDDEN', 'This request does not belong to the authenticated browser session.');
       if (closed) return failure('CLOSED', 'The project UI channel is closing.');
       const signal = AbortSignal.any([requestSignal, shutdown.signal]);
       const task = (async (): Promise<ConnectionRpcHandlerResult> => {
         let input: ReturnType<typeof parseProjectPayload>;
         try { abortIfRequested(signal); input = parseProjectPayload(payload); }
         catch { return signal.aborted ? failure('CANCELLED', 'The project request was cancelled.') : failure('INVALID_RPC_REQUEST', 'The project request is not valid bounded JSON.'); }
-        // No omitted actor is inferred from a current tab, operator context, Host or prior thread.
+        // No omitted actor is inferred from a current tab, browser context, Host or prior thread.
         let resolved: Awaited<ReturnType<Resolver['resolveAgent']>> | undefined;
         if (input.actorId !== undefined) {
           try { resolved = await required<Resolver>(owner, 'sessionController').resolveAgent(SessionId(input.actorId)); }

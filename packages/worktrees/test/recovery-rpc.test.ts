@@ -23,7 +23,7 @@ const innerCode = (value: RpcResponse, code: string) => { assert.equal(value.ok,
 // Exact per-feature route seam, not a replacement singleton /api interceptor.
 function registry(operator: HostDouble) {
   const rows = new Map<string, RouteEntry>(); let unregisters = 0;
-  return { operator, rows,
+  return { operator, browserPeer: operator, rows,
     registerRoute(owner: Context, endpoint: string, handler: RouteHandler) {
       assert.ok(owner instanceof Context); assert.equal(rows.has(endpoint), false); const entry: RouteEntry & {flights: Set<Promise<RpcResponse>>} = { endpoint, handler, flights: new Set() }; rows.set(endpoint, entry);
       let disposal: Promise<void> | undefined; return () => disposal ??= (async () => { unregisters++; rows.delete(endpoint); await Promise.allSettled([...entry.flights!]); })();
@@ -38,7 +38,7 @@ function registry(operator: HostDouble) {
 async function fixture(t: TestContext) {
   const host = new Context(), owned = createScope(host, {}), sourceId = randomUUID(); const calls: [string, ...HostDouble[]][] = [], events: HostDouble[][] = [], lookups: string[] = [];
   host.on('session/event', (...args) => events.push(args));
-  const operator: HostDouble = { id: 'authenticated-operator', ctx: new Context() }, connection = registry(operator); host.provide('connection', connection);
+  const operator: HostDouble = { id: 'authenticated-operator', principal: { kind: 'owner' }, ctx: new Context() }, connection = registry(operator); host.provide('connection', connection);
   host.provide('sessionController', { resolveAgent(id: string) { lookups.push(id); assert.fail('Recovery must not activate the historical Agent'); } });
   host.provide('agents', { get() { assert.fail('Quiet recovery RPC must not choose an Actor'); } });
   // Transport-level negative tests substitute invalid controller responses intentionally.
@@ -148,15 +148,25 @@ test('scope teardown owns the same drain promise and never resumes the old missi
   const stopped = f.stop(); assert.equal(stopped, f.stop()); release.resolve(); innerCode(await pending, 'CANCELLED'); await disposal; await stopped; assert.equal(f.connection.unregisters, 1); assert.equal(f.lookups.length, 0); assert.equal(f.events.length, 0);
 });
 
-test('shared quiet transport registers one exact buffered POST feature route, never singleton /api, and authenticates before body work', async t => {
-  const host = new Context(), owned = createScope(host, {}), registrations: HostDouble[] = [], operator = { id: 'operator', ctx: host }, calls: [string, ...HostDouble[]][] = [];
+test('shared quiet transport registers one exact streaming POST feature route, never singleton /api, and authenticates before body work', async t => {
+  const host = new Context(), owned = createScope(host, {}), registrations: HostDouble[] = [], operator = { id: 'operator', principal: { kind: 'owner' }, ctx: host }, calls: [string, ...HostDouble[]][] = [];
   let admitted: HostDouble = { peer: operator };
-  host.provide('connection', { operator, admit() { return admitted; }, fetch: { register(spec: HostDouble) { registrations.push(spec); return async () => { calls.push(['unregister']); }; } } });
+  host.provide('connection', { operator, browserPeer: operator, admit() { return admitted; }, fetch: { register(spec: HostDouble) { registrations.push(spec); return async () => { calls.push(['unregister']); }; } } });
   const stop = registerQuietRpcRoute(owned.ctx, RECOVERY_RPC_ENDPOINT, async (_method, payload) => { calls.push(['handler', payload]); return { ok: true, value: true }; }); t.after(async () => { await stop(); await owned.dispose(); });
-  const spec = registrations[0]; assert.equal(registrations.length, 1); assert.equal(spec.path, `/api/${RECOVERY_RPC_ENDPOINT}`); assert.deepEqual(spec.methods, ['POST']); assert.equal(spec.requestBody, 'buffered'); assert.notEqual(spec.path, '/api');
+  const spec = registrations[0]; assert.equal(registrations.length, 1); assert.equal(spec.path, `/api/${RECOVERY_RPC_ENDPOINT}`); assert.deepEqual(spec.methods, ['POST']); assert.equal(spec.requestBody, 'streaming'); assert.notEqual(spec.path, '/api');
   const request = (body: BodyInit, options: {headers?: Record<string,string>;signal?:AbortSignal} = {}) => new Request(`http://fixture.invalid/api/${RECOVERY_RPC_ENDPOINT}`, { method: 'POST', headers: { 'content-type': 'application/json', ...options.headers }, body, ...(body instanceof ReadableStream ? { duplex: 'half' } : {}), ...(options.signal ? { signal: options.signal } : {}) });
   admitted = { rejection: 401 }; assert.equal((await spec.fetch(request('not JSON'))).status, 401); assert.equal(calls.length, 0);
   admitted = { peer: { ...operator, id: 'foreign' } }; const foreign = await (await spec.fetch(request('not JSON'))).json(); outerCode(foreign.result, 'FORBIDDEN'); assert.equal(calls.length, 0);
+  // A disallowed admitted peer must be refused before the handler touches the body:
+  // this body never yields, so a route that read it before authorizing would hang here.
+  const blocked = new ReadableStream({ pull() { return new Promise(() => {}); } });
+  const blockedRequest = request(blocked);
+  const refused = await (await spec.fetch(blockedRequest)).json();
+  outerCode(refused.result, 'FORBIDDEN');
+  assert.equal(blockedRequest.bodyUsed, false, 'the guarded route never read the body');
+  assert.equal(calls.length, 0);
+  // The same streaming route reads a body only after the browser peer is admitted.
+  admitted = { peer: operator };
   admitted = { peer: operator }; assert.equal((await spec.fetch(request('x', { headers: { 'content-length': String(1048576 + 4097) } }))).status, 413);
   const rpcId = randomUUID(); const valid = { type: 'client-request', rpcId, method: RECOVERY_RPC_ENDPOINT, payload: { v: 1, request: { action: 'reopen-info' as const, sourceSessionId: 'history' } } };
   const wire = await (await spec.fetch(request(JSON.stringify(valid)))).json(); assert.equal(wire.rpcId, rpcId); assert.equal(wire.type, 'server-response'); assert.deepEqual(wire.result, { ok: true, value: true });

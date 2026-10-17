@@ -16,11 +16,11 @@ const DEFAULT_HEADERS: Readonly<Record<string, string>> = Object.freeze({
 });
 
 /** Load public peers from the adapter's location, including nested pnpm layouts. */
-export async function loadRuntime(options: { fetcher?: typeof globalThis.fetch } = {}): Promise<SearchRuntime> {
+export async function loadRuntime(options: { fetcher?: typeof globalThis.fetch; adapterEntry?: string } = {}): Promise<SearchRuntime> {
   const require = createRequire(import.meta.url);
   let adapterEntry: string;
-  try { adapterEntry = require.resolve('@deepseek-ai/dsh-llm-pi-ai'); } catch {
-    throw new Error('dsh-copilot-search requires @deepseek-ai/dsh-llm-pi-ai@0.2.0-rc.2 in the same profile');
+  try { adapterEntry = options.adapterEntry ?? require.resolve('@deepseek-ai/dsh-llm-pi-ai'); } catch {
+    throw new Error('dsh-copilot-search requires @deepseek-ai/dsh-llm-pi-ai@0.2.1-rc.2 in the same profile');
   }
   const adapterUrl = pathToFileURL(adapterEntry);
   const manifest = findPackageJSON('@earendil-works/pi-ai', adapterUrl);

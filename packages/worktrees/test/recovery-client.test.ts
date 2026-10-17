@@ -121,8 +121,8 @@ test('recovery uses its exact quiet transport, no actor fallback, privilege payl
 
 test('actual Client lifecycle wire roundtrips through real Host parser/route into wait, never historical actor resolution', async (t: import('node:test').TestContext) => {
   const host = new Context(), owned = createScope(host, {}), sourceSessionId = '12345678-1234-4234-8234-123456789abc';
-  const operator = { id: 'wire-fixture-operator' as Parameters<Parameters<NonNullable<Parameters<typeof registerRecoveryRpc>[2]>>[2]>[3]['id'], ctx: new Context(), dispose: async () => {} }, selected: { kind: string; id?: string; after?: number; options?: Pick<MockRequest, 'cursor' | 'limit'>; invocation?: { origin: string; agent?: unknown } }[] = [], wireCalls: { wire: MockPayload; parsed: ReturnType<typeof parseRecoveryPayload>; signal: AbortSignal }[] = [];
-  host.provide('connection', { operator });
+  const operator = { id: 'wire-fixture-operator' as Parameters<Parameters<NonNullable<Parameters<typeof registerRecoveryRpc>[2]>>[2]>[3]['id'], principal: { kind: 'owner' as const }, ctx: new Context(), signal: new AbortController().signal, interactions: 'none' as const, dispose: async () => {} }, selected: { kind: string; id?: string; after?: number; options?: Pick<MockRequest, 'cursor' | 'limit'>; invocation?: { origin: string; agent?: unknown } }[] = [], wireCalls: { wire: MockPayload; parsed: ReturnType<typeof parseRecoveryPayload>; signal: AbortSignal }[] = [];
+  host.provide('connection', { operator, browserPeer: operator });
   host.provide('sessionController', { resolveAgent() { assert.fail('lifecycle observation must never resolve the historical Agent'); } });
   host.provide('agents', { get() { assert.fail('lifecycle observation must never select a privileged Actor'); } });
   let handler: Parameters<NonNullable<Parameters<typeof registerRecoveryRpc>[2]>>[2] | undefined;

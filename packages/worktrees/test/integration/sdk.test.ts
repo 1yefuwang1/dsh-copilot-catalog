@@ -100,7 +100,8 @@ async function connectionFixture(f: Awaited<ReturnType<typeof hostFixture>>) {
       body: JSON.stringify({ type: 'client-request', rpcId, method: endpoint, payload }),
       ...(options.signal ? { signal: options.signal } : {}),
     });
-    return { response: await shared.fetch(request), rpcId };
+    const admitted = connection.admit(request);
+    return { response: 'rejection' in admitted ? new Response('rejected', { status: admitted.rejection }) : await shared.fetch(request, admitted.peer), rpcId };
   }
   async function rpc(endpoint: string, payload: unknown, options?: FetchOptions): Promise<RpcReply> {
     const result = await response(endpoint, payload, options);
@@ -247,7 +248,7 @@ test('actual plugin exact UI routes coexist with the real SDK gateway and await 
   release(); const pendingResult = await pending; assert.equal(pendingResult.error.code, 'CANCELLED'); await disposal;
   assert.equal(closed, 3); assert.equal(f.events.length, before);
   assert.deepEqual(await transport.rpc('session/foo', {}), { ok: true, value: true });
-  assert.ok(transport.gatewayCalls.every(call => call.peer.id === transport.connection.operator.id && call.peer.ctx === transport.connection.operator.ctx));
+  assert.ok(transport.gatewayCalls.every(call => call.peer.id === transport.connection.browserPeer.id && call.peer.ctx === transport.connection.browserPeer.ctx));
   assert.equal(f.host.commands.find(source, 'worktree'), undefined); assert.ok(!f.host.tools.schemas(source).some(value => value.name === 'git_worktree'));
   assert.equal(f.agents.get(source.id), source);
 });

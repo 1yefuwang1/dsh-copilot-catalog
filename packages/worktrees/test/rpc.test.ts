@@ -21,17 +21,17 @@ function table<T>() { const map = new Map<string,T>(); return { map, get: (key: 
 // In-process handler seam, NOT a fake SDK interceptor registry. Native Fetch
 // transport is covered against the real public SDK in integration/http-rpc.test.ts.
 // Keep raw JS payloads here: JSON.stringify would conceal getters, Dates and NaN.
-function directRpcRegistry(operator: HostDouble) {
+function directRpcRegistry(browserPeer: HostDouble) {
   const registrations = new Set<RouteEntry>(); let unregisters = 0;
   return {
-    operator,
+    browserPeer,
     registerRoute(owner: Context, endpoint: string, handler: RouteHandler) {
       assert.ok(owner instanceof Context); assert.equal(endpoint, WORKTREE_RPC_ENDPOINT);
       const entry: RouteEntry & {flights: Set<Promise<RpcResponse>>} = { endpoint, handler, flights: new Set() }; registrations.add(entry);
       let disposal: Promise<void> | undefined;
       return () => disposal ??= (async () => { unregisters++; registrations.delete(entry); await Promise.allSettled([...entry.flights!]); })();
     },
-    dispatch(payload: unknown, { endpoint = WORKTREE_RPC_ENDPOINT, signal = new AbortController().signal, peer = operator }: {endpoint?: string; signal?: AbortSignal; peer?: HostDouble} = {}): Promise<RpcResponse> {
+    dispatch(payload: unknown, { endpoint = WORKTREE_RPC_ENDPOINT, signal = new AbortController().signal, peer = browserPeer }: {endpoint?: string; signal?: AbortSignal; peer?: HostDouble} = {}): Promise<RpcResponse> {
       const entry = [...registrations].find(value => value.endpoint === endpoint);
       if (!entry) return Promise.resolve({ ok: false, error: { code: 'FALLBACK', message: 'Shared API retains this endpoint.', details: {} } });
       const flight = Promise.resolve().then(() => entry.handler(endpoint, payload, signal, peer)); entry.flights!.add(flight);
@@ -56,9 +56,9 @@ async function fixture(t: TestContext) {
   }
   const source = actor();
   const owner = createScope(host, {}); scopes.push(owner);
-  const operator = { id: 'operator-peer', ctx: host.isolate('sandboxPolicy'), async dispose() {} };
-  operator.ctx.provide('sandboxPolicy', { resolve: () => ({ mode: 'danger-full-access', workspaceRoot: '/' }) });
-  const connection = directRpcRegistry(operator); host.provide('connection', connection);
+  const browserPeer = { id: 'browser-peer', principal: { kind: 'owner' }, ctx: host.isolate('sandboxPolicy'), async dispose() {} };
+  browserPeer.ctx.provide('sandboxPolicy', { resolve: () => ({ mode: 'danger-full-access', workspaceRoot: '/' }) });
+  const connection = directRpcRegistry(browserPeer); host.provide('connection', connection);
   const resolver: {resolveAgent(id:string):Promise<HostDouble>} = { async resolveAgent(id) { lookups.push(id); const agent = actors.get(id); return agent ? { agent } : { error: { code: 'session/not-found', message: 'sensitive resolver diagnostic', details: { secret: 'private' } } }; } };
   host.provide('sessionController', resolver);
   const store = { worktrees: table<WorktreeRecord>(), operations: table<OperationRecord>(), async close() {} };
@@ -118,8 +118,9 @@ test('UI local branch RPC requires no remote and rejects mixed source selectors 
 
 test('wrong operator or forged context is refused before Actor lookup; missing Actor has no Host fallback', async t => {
   const f = await fixture(t);
-  outerCode(await f.connection.dispatch(f.payload({ action: 'list' as const }), { peer: { ...f.connection.operator, id: 'foreign' } }), 'FORBIDDEN');
-  outerCode(await f.connection.dispatch(f.payload({ action: 'list' as const }), { peer: { ...f.connection.operator, ctx: f.host } }), 'FORBIDDEN');
+  outerCode(await f.connection.dispatch(f.payload({ action: 'list' as const }), { peer: { ...f.connection.browserPeer, id: 'foreign' } }), 'FORBIDDEN');
+  outerCode(await f.connection.dispatch(f.payload({ action: 'list' as const }), { peer: { ...f.connection.browserPeer, ctx: f.host } }), 'FORBIDDEN');
+  outerCode(await f.connection.dispatch(f.payload({ action: 'list' as const }), { peer: { ...f.connection.browserPeer, principal: { kind: 'api' } } }), 'FORBIDDEN');
   assert.equal(f.lookups.length, 0); assert.equal(f.invocations.length, 0);
   const result = await f.connection.dispatch({ ...f.payload({ action: 'list' as const }), actorId: 'absent' }); outerCode(result, 'session/not-found');
   assert.ok(!JSON.stringify(result).includes('sensitive')); assert.equal(f.invocations.length, 0);

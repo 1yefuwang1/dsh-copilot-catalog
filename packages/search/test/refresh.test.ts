@@ -16,6 +16,7 @@ const catalog = (data = [enabled('synthetic-model')]) => Response.json({ data })
 const signal = () => new AbortController().signal;
 const turn = () => new Promise((resolve) => setImmediate(resolve));
 const safeFailure = (error: unknown) => error instanceof WebError && !error.message.includes('synthetic-private');
+const required = <T>(value: T | undefined): T => { assert.ok(value !== undefined); return value; };
 
 async function setup(initial: FixtureGrant = grant({ expires: 0 }), responder: (request: RefreshRequest, count: number) => unknown | Promise<unknown>) {
   const requests: RefreshRequest[] = [];
@@ -183,6 +184,55 @@ test('cancellation during late exchange work never dispatches a later catalog re
   await turn();
   assert.equal(fixture.requests.length, 1);
   assert.equal(fixture.stats.writes, 0);
+});
+
+test('caller cancellation during a delayed initial toAuth starts no exchange and commits nothing', async () => {
+  const entered = deferred(); const gate = deferred<{ apiKey: string; baseUrl: string }>();
+  const oauth = { toAuth: async () => { entered.resolve(); return gate.promise; } };
+  const requests: string[] = [];
+  const refresh = createSafeCopilotRefresh({
+    oauth, headers: { 'User-Agent': 'synthetic-client' },
+    fetcher: mockFetch<HttpRequestInit>(async (url) => { requests.push(url); return freshToken(); }),
+  });
+  const runtime = runtimeFixture({ refresh });
+  const store = credentialFixture(grant({ expires: 0 }));
+  const resolve = createCopilotAuthResolver(authContext(contextFixture(store.service)), runtime);
+  const controller = new AbortController();
+  const pending = resolve({}, controller.signal);
+  await entered.promise;
+  controller.abort();
+  await assert.rejects(pending, (error) => error instanceof WebError && error.code === 'WEB_ABORTED');
+  gate.resolve({ apiKey: token(), baseUrl: enterprise });
+  await store.drained();
+  await turn();
+  assert.deepEqual(requests, [], 'no exchange may start after caller cancellation');
+  assert.equal(store.stats.writes, 0);
+});
+
+test('caller cancellation aborts an in-flight exchange signal and releases the record lock before it settles', async () => {
+  const entered = deferred(); const gate = deferred<Response>();
+  const signals: AbortSignal[] = [];
+  const refresh = createSafeCopilotRefresh({
+    oauth: { toAuth: async () => ({ apiKey: token(), baseUrl: enterprise }) },
+    headers: { 'User-Agent': 'synthetic-client' },
+    fetcher: mockFetch<HttpRequestInit>(async (_url, init) => { signals.push(init.signal); entered.resolve(); return gate.promise; }),
+  });
+  const runtime = runtimeFixture({ refresh });
+  const store = credentialFixture(grant({ expires: 0 }));
+  const resolve = createCopilotAuthResolver(authContext(contextFixture(store.service)), runtime);
+  const controller = new AbortController();
+  const pending = resolve({}, controller.signal);
+  await entered.promise;
+  assert.equal(required(signals[0]).aborted, false);
+  controller.abort();
+  await assert.rejects(pending, (error) => error instanceof WebError && error.code === 'WEB_ABORTED');
+  assert.equal(required(signals[0]).aborted, true, 'the in-flight exchange observes cancellation');
+  // The managed record transaction must not wait for the dependency to settle.
+  await store.drained();
+  assert.equal(store.stats.writes, 0);
+  gate.resolve(freshToken());
+  await turn();
+  assert.equal(store.stats.writes, 0);
 });
 
 test('cancellation during an uncooperative catalog body read cannot commit a refreshed grant', async () => {

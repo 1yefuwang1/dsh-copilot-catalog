@@ -4,7 +4,7 @@ A **pnpm monorepo with four independently installable DeepSeek Harness plugins**
 All maintained code—including Host implementations, the Web Client, tests and
 repository tooling—uses strict TypeScript. Published Host modules are ESM with
 declarations; the worktree Web Client is compiled to a persistent browser factory. The worktree plugin is packaged as
-`@1yefuwang1/dsh-worktrees@0.2.22`; npm availability follows maintainer approval
+`@1yefuwang1/dsh-worktrees@0.2.23`; npm availability follows maintainer approval
 of the staged release.
 
 | Package | Purpose | DSH behavior |
@@ -20,8 +20,8 @@ root/catalog/discovery exports are unchanged.
 
 ## Compatibility
 
-- DSH and DSH peer packages: `0.2.0-rc.2`.
-- `@earendil-works/pi-ai`: `0.87.1`.
+- DSH and DSH peer packages: `0.2.1-rc.2`.
+- `@earendil-works/pi-ai`: `^1.1.0` (host-aligned peer range; tested at `1.1.0` and `1.3.0`).
 - Node.js: `>=22.19.0`.
 - Development package manager: **pnpm `11.7.0`**, pinned in the root manifest.
 
@@ -184,7 +184,7 @@ A release selects **one package**, never the root or multiple packages at once:
 The tag must match its leaf version and repository identity. Catalog is currently
 `0.2.2`, adding GHE Cloud endpoint support; published versions cannot be republished. Search is currently
 `0.1.2`, adding GHE Cloud endpoint support alongside the Copilot stream-ID compatibility fix.
-Tool schema is `dsh-copilot-tool-schema@0.1.0`, an additive Copilot Gemini tool-declaration guard. Worktrees is `@1yefuwang1/dsh-worktrees@0.2.22`, flattening the project-tool declaration and hiding the native **Choose a folder…**
+Tool schema is `dsh-copilot-tool-schema@0.1.0`, an additive Copilot Gemini tool-declaration guard. Worktrees is `@1yefuwang1/dsh-worktrees@0.2.23`, flattening the project-tool declaration and hiding the native **Choose a folder…**
 option on web while preserving desktop picking, Host folder browsing where supported,
 and manual path entry. It retains the factory staging, held-target resource checks,
 Local runtime admission/spawn guards, and navigation fixes from `0.2.20`. Ready recovery commits durable

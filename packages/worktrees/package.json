@@ -1,6 +1,6 @@
 {
   "name": "@1yefuwang1/dsh-worktrees",
-  "version": "0.2.22",
+  "version": "0.2.23",
   "description": "Multi-folder projects with Local and isolated Git worktree threads, configurable inactivity cleanup, warning/branch-choice Local recovery and guarded handoff.",
   "type": "module",
   "main": "./dist/index.js",
@@ -70,33 +70,33 @@
   },
   "engines": {
     "node": ">=22.19.0",
-    "dsh": "0.2.0-rc.2"
+    "dsh": "0.2.1-rc.2"
   },
   "dependencies": {
-    "zod": "^4.4.3"
+    "zod": "4.4.3"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "~4.0.4",
-    "@deepseek-ai/dsh-agent": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-agent-preset-registry": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-api-session-controller": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-connection": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-commands": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-home-paths": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-plan-mode": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-sandbox": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-sandbox-policy": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-scope": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-session": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-session-persistence": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-session-query": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-storage-domain": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-subprocess": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-system-prompt": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-tools": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-user-approval": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-workspace": "0.2.0-rc.2",
-    "@deepseek-ai/schemastery": "~3.18.4"
+    "@deepseek-ai/cordis": "~4.0.5",
+    "@deepseek-ai/dsh-agent": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-agent-preset-registry": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-api-session-controller": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-connection": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-commands": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-home-paths": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-plan-mode": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-sandbox": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-sandbox-policy": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-scope": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-session": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-session-persistence": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-session-query": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-storage-domain": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-subprocess": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-system-prompt": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-user-approval": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-workspace": "0.2.1-rc.2",
+    "@deepseek-ai/schemastery": "~3.18.5"
   },
   "dsh": {
     "manifestVersion": 1,

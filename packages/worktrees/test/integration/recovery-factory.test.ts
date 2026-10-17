@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readFile, realpath, rm } from 'node:fs/promises';
+import { mkdir, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { dirname, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 import { Context } from '@deepseek-ai/cordis';
@@ -23,7 +23,8 @@ import { GoalService } from '@deepseek-ai/dsh-goal';
 import { PermissionPresetService } from '@deepseek-ai/dsh-permission-presets';
 import { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy';
 import { SessionStore, SessionId } from '@deepseek-ai/dsh-session';
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl';
+import { releasedV3SessionFormatCodec as v3Codec, restoreReleasedV3Artifact } from '@deepseek-ai/dsh-session-format-v2-to-v3';
+import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl';
 import { SessionQueryEngine } from '@deepseek-ai/dsh-session-query';
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain';
 import { JsonStorageBackend } from '@deepseek-ai/dsh-storage-json';
@@ -65,6 +66,61 @@ class ReadQuery extends SessionQueryEngine {
   override async searchEvents(): Promise<never> { throw Error('Search is not exercised by factory recovery.'); }
 }
 
+/** The current durable log of a session, found without an implementation-private path API. */
+async function durableLog(root: string, id: string): Promise<string> {
+  const found: { path: string; version: number }[] = [];
+  const walk = async (directory: string): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      const log = entry.isFile() ? /^session\.v(\d+)\.jsonl$/u.exec(entry.name) : null;
+      if (entry.isDirectory()) await walk(path);
+      else if (log !== null && path.includes(id)) found.push({ path, version: Number(log[1]) });
+    }
+  };
+  await walk(root);
+  assert.ok(found.length >= 1, 'the session has a durable generation log');
+  found.sort((left, right) => right.version - left.version);
+  return required(found[0]).path;
+}
+
+type V3Event = Parameters<typeof v3Codec.encodeEvent>[0];
+type V3Header = Parameters<typeof v3Codec.encodeHeader>[0];
+type V3Artifact = Parameters<typeof restoreReleasedV3Artifact>[0];
+interface SyntheticV3Source { path: string; bytes: Buffer; eventCount: number; events: readonly V3Event[] }
+
+/** Replace a target-written V4 generation with the checked-in released-V3 body. */
+async function replaceSourceWithV3(sourcePath: string, preset: string): Promise<SyntheticV3Source> {
+  const directory = dirname(sourcePath);
+  const [headerLine] = (await readFile(sourcePath, 'utf8')).split(/\r?\n/u);
+  const current = JSON.parse(required(headerLine)) as { id: string; createdAt: number; cwd?: string };
+  const fixture = await readFile(new URL('../fixtures/session.v3.events.jsonl', import.meta.url), 'utf8');
+  const events = fixture.split(/\r?\n/u).filter(line => line.length > 0).map((line, seq): V3Event => {
+    const event = JSON.parse(line) as V3Event;
+    assert.equal(event.seq, seq, 'the released V3 fixture is densely sequenced');
+    return event;
+  });
+  assert.ok(events.length > 0, 'the released V3 fixture carries events');
+  const header: V3Header = {
+    version: 3,
+    id: current.id,
+    createdAt: current.createdAt,
+    ...(current.cwd === undefined ? {} : { cwd: current.cwd }),
+    isSeeded: false,
+    delegationDepth: 0,
+    agentPreset: preset,
+  };
+  const headerRow = v3Codec.encodeHeader(header, 0);
+  const eventRows = events.map(event => v3Codec.encodeEvent(event));
+  // Every fixture type belongs to the released V3 dispositions, so no additional
+  // installed event vocabulary is needed beyond the artifact's own validation.
+  restoreReleasedV3Artifact({ header: v3Codec.decodeHeader(headerRow), events, inheritedEventCount: 0 } as V3Artifact, new Set<string>());
+  const path = join(directory, 'session.v3.jsonl');
+  const bytes = Buffer.from([JSON.stringify(headerRow), ...eventRows.map(row => JSON.stringify(row))].join('\n') + '\n');
+  await writeFile(path, bytes);
+  await rm(sourcePath);
+  return { path, bytes, eventCount: events.length, events };
+}
+
 async function fixture(t: TestContext) {
   const root = await tempDirectory('worktrees-recovery-factory-owned-');
   const local = resolve(root, 'local'), cwd = resolve(local, 'project'), commonDir = resolve(local, '.git');
@@ -80,8 +136,10 @@ async function fixture(t: TestContext) {
   new SystemPrompt(owner, { includeHarnessIdentity: false }); new ToolRuntime(owner); new CommandRuntime(owner);
   // Only unused Host I/O ports are fixture adapters. The Agent factory, native
   // Session controller, preset registry, projections, policies, goals, workspace
-  // and JSONL durability are the actual pinned rc.2 implementations.
-  owner.provide('typert', { lookups: { configure() {} }, contexts: { configureHost() {} } });
+  // and JSONL durability are the actual pinned 0.2.1 implementations.
+  owner.provide('typert', { lookups: { configure() {} }, contexts: { configureHost() {} }, resources: { register() {} } });
+  // Local profile: no remote peer may reach the API controller's session surface.
+  owner.provide('remoteAccess', { allows: () => true });
   owner.provide('agentDefaultModel', { currentSelection: () => route, async saveSelection() {} });
   owner.provide('attachments', { imageLimits: { maxImageBytes: 1024, maxImagesPerMessage: 1, maxMessageImageBytes: 1024, maxImagePixels: 1024, maxImageDimension: 32, mediaTypes: ['image/png'] }, async admitPromptContent(content: Array<{ type: string }>) { assert.ok(content.every(part => part.type === 'text')); return clone(content); } });
   owner.provide('fileUploads', { registerAgentResolver() { return () => {}; }, resolve() { assert.fail('No file receipts are used'); }, bindPrompt() { return { commit() {}, [Symbol.dispose]() {} }; }, retirePrompt() {} });
@@ -100,7 +158,8 @@ async function fixture(t: TestContext) {
     }
   }
   owner.llm.registerAdapter(['fixture'], new FixtureAdapter() as unknown as Parameters<Context['llm']['registerAdapter']>[1]); // Public transitive adapter base is dynamically resolved.
-  await mount(JsonlSessionPersistence, { root: resolve(root, 'session-logs'), compression: 'none' });
+  const sessionLogs = resolve(root, 'session-logs');
+  await mount(JsonlSessionPersistence, { root: sessionLogs, compression: 'none' });
   new ReadQuery(owner); new SandboxPolicyService(owner, { mode: 'read-only', workspaceRoot: root }); new ApprovalService(owner, { policy: 'ask' }); new GoalService(owner);
   new Storage(owner); backend = new JsonStorageBackend(resolve(root, 'domain-data')); owner.storage.backend.register('fixture-json', backend);
   facility = new DomainFacility(owner, { backend: 'fixture-json' }); owner.provide('storageDomain', facility); await mount(WorkspaceRegistry);
@@ -130,7 +189,7 @@ async function fixture(t: TestContext) {
   assert.equal(source.session.header.cwd, historicalCwd); assert.equal(required(owner.goals.get(source)).activation, 'disarmed');
   assert.equal(calls.length, 1, 'native cold resume must not infer');
   await native.dispose(); sessionController = await newNative();
-  const sourcePath = required(await (owner.sessionPersistence as JsonlSessionPersistence).resolveCurrentLog(sourceId)), sourceBytes = await readFile(sourcePath);
+  const sourcePath = await durableLog(sessionLogs, sourceId), sourceBytes = await readFile(sourcePath);
   assert.equal(await realpath(checkoutRoot), checkoutRoot); await rm(checkoutRoot, { recursive: true, force: false });
   const record: WorktreeRecord = { id, operationId: randomUUID(), repoRoot: local, commonDir, projectSubdir: 'project', checkoutRoot, effectiveCwd: historicalCwd, remote: 'local', remoteIdentity: 'fixture', remoteBranch: 'main', baseOid: OID, baseRef: `refs/dsh-worktrees/${id}/base`, fetchedAt: 1, createdAt: 1, sessionIds: [sourceId], workspaceId: randomUUID(), branch: null, protected: false, archived: true, state: 'missing', error: null };
   const worktrees = { worktrees: table<WorktreeRecord>(), operations: table<OperationRecord>(), async close() {} }, store = { cleanup: table<CleanupReceipt>(), reopens: table<ReopenReceipt>(), async close() {} };
@@ -154,7 +213,18 @@ async function fixture(t: TestContext) {
 }
 const ownTurns = (agent: Agent) => agent.session.snapshotEvents(agent.session.inheritedEventCount).filter(event => event.type === 'turn/start');
 
-test('real rc.2 factory holds create/publication input until explicit current-branch ready receipt, with native controls available', { timeout: 30000 }, async t => {
+test('an existing workspace whose directory vanished stays a member instead of being re-created', async t => {
+  const f = await fixture(t);
+  const folder = resolve(f.root, 'vanishing-project');
+  await mkdir(folder, { recursive: true });
+  const created = await f.owner.workspaceRegistry.create(await realpath(folder), 'Vanishing');
+  await rm(folder, { recursive: true, force: true });
+  const listed = f.owner.workspaceRegistry.list();
+  assert.equal(listed.some(value => value.id === created.id), true, 'the vanished-cwd workspace remains a member');
+  assert.deepEqual(f.owner.workspaceRegistry.list(), listed, 'repeat listing stays stable while the cwd is missing');
+});
+
+test('real 0.2.1 factory holds create/publication input until explicit current-branch ready receipt, with native controls available', { timeout: 30000 }, async t => {
   const f = await fixture(t), readyEntered = deferred<ReopenReceipt>(), finishReady = deferred();
   f.store.reopens.beforePut = async (_id, row) => { if (row.phase === 'ready') { readyEntered.resolve(row); await finishReady.promise; } };
   // This earlier serial listener admits native input at registry entry, BEFORE
@@ -223,6 +293,57 @@ test('real cold resume/adoption verifies the full preallocated prefix and retain
   assert.deepEqual(target.session.snapshotEvents().slice(0, seed.length), seed); assert.equal(target.session.inheritedEventCount, cold.inheritedEventCount);
   assert.equal(f.owner.sandboxPolicy.resolve({ session: target.session }).mode, 'read-only'); assert.equal(required(f.owner.goals.get(target)).activation, 'disarmed');
   assert.deepEqual(await readFile(f.sourcePath), f.sourceBytes); assert.equal(f.life.filter(([source, id]) => source === 'resume' && id === sessionId).length, 1);
+});
+
+test('cold continuation migrates a released V3 source without touching it', { timeout: 30000 }, async t => {
+  const f = await fixture(t);
+  // A registered non-default preset makes target preset propagation falsifiable.
+  const unregisterV3Preset = await f.owner.agentPresets.register({ id: 'v3-preset', plugins: [] });
+  t.after(async () => { await unregisterV3Preset(); });
+  const v3 = await replaceSourceWithV3(f.sourcePath, 'v3-preset');
+  const diskHeader = JSON.parse(required((await readFile(v3.path, 'utf8')).split(/\r?\n/u)[0])) as { version?: number; id?: string; cwd?: string };
+  assert.equal(diskHeader.version, 3); assert.equal(diskHeader.id, f.sourceId); assert.equal(diskHeader.cwd, f.record.effectiveCwd);
+  assert.deepEqual(await readFile(v3.path), v3.bytes);
+  const generations = async () => (await readdir(dirname(v3.path))).filter(name => /^session\.v\d+\.jsonl$/u.test(name)).sort();
+  assert.deepEqual(await generations(), ['session.v3.jsonl']);
+  await assert.rejects(stat(f.sourcePath), code('ENOENT'));
+
+  const cold = await f.bootstrap.coldSource(f.sourceId);
+  assert.equal(cold.header.version, 4); assert.equal(cold.header.cwd, f.record.effectiveCwd); assert.equal(cold.header.isSeeded, false);
+  assert.equal(cold.header.agentPreset, 'v3-preset'); assert.equal(cold.preset, 'v3-preset');
+  assert.deepEqual(cold.model, { provider: 'fixture', model: 'v3-source-model' });
+  assert.equal(cold.events.length, v3.eventCount); assert.equal(cold.inheritedEventCount, v3.eventCount);
+  assert.equal(cold.rawEventCount, v3.eventCount); assert.equal(cold.syntheticEventCount, 0);
+  assert.deepEqual(cold.events, v3.events, 'the released V3 body survives migration unchanged');
+  assert.ok(cold.events.some(event => event.type === 'user/message' && event.data.content.some(part => part.type === 'text' && part.text === 'Historical V3 request.')));
+  assert.ok(cold.events.some(event => event.type === 'turn/end'));
+  const endSeed = required(cold.seed[v3.eventCount]);
+  assert.equal(endSeed.type, 'session/end-seed');
+  if (endSeed.type === 'session/end-seed') assert.equal(endSeed.data.inherited, true);
+  assert.equal(cold.seed.length, v3.eventCount + 1);
+
+  let hold!: ColdFactoryHold;
+  const sessionId = SessionId(randomUUID());
+  const stage = await f.bootstrap.stageColdContinuation({ sessionId, cwd: f.cwd, title: 'V3 continuation', source: cold,
+    holdInput(agent, factory) { assert.ok(factory); hold = factory; assert.equal(agent.session.header.parentSession, f.sourceId); } });
+  const target = stage.agent; assert.equal(f.owner.agents.get(sessionId), target); assert.equal(ownTurns(target).length, 0);
+  hold.release(); await stage.completion; await target.whenIdle();
+  await f.prompt(sessionId); await target.whenIdle(); assert.equal(ownTurns(target).length, 1);
+
+  assert.equal(target.session.header.version, 4); assert.equal(target.session.header.parentSession, f.sourceId);
+  assert.equal(target.session.header.cwd, f.cwd); assert.equal(target.session.header.isSeeded, true);
+  assert.equal(target.session.header.agentPreset, 'v3-preset'); assert.equal(target.session.inheritedEventCount, cold.inheritedEventCount);
+  assert.deepEqual(target.session.snapshotEvents().slice(0, cold.seed.length), cold.seed);
+  assert.equal(f.owner.sandboxPolicy.resolve({ session: target.session }).mode, 'danger-full-access');
+  assert.equal(f.owner.approval.overrideOf(target.session), 'never');
+  assert.equal(target.options.provider, 'fixture'); assert.equal(target.options.model, 'v3-source-model');
+
+  assert.deepEqual(await readFile(v3.path), v3.bytes); assert.deepEqual(await generations(), ['session.v3.jsonl']);
+  await assert.rejects(stat(f.sourcePath), code('ENOENT')); await assert.rejects(stat(f.record.effectiveCwd), code('ENOENT'));
+  const targetPath = await durableLog(resolve(f.root, 'session-logs'), sessionId);
+  assert.match(targetPath, /session\.v4\.jsonl$/u);
+  assert.equal((JSON.parse(required((await readFile(targetPath, 'utf8')).split(/\r?\n/u)[0])) as { version?: number }).version, 4);
+  assert.equal(f.owner.agents.get(SessionId(f.sourceId)), undefined);
 });
 
 test('native resume of a journaled pending target is factory-gated after reload and adopted without nested maintenance', { timeout: 30000 }, async t => {

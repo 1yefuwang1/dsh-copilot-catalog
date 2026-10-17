@@ -348,7 +348,7 @@ test('lazy native mode preserves composer, commands and editor; no custom messag
 
 test('private adapter is explicitly pinned, fail-closed and paired with native SDK ABI checks', async () => {
   const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
-  assert.equal(manifest.engines.dsh, '0.2.0-rc.2'); assert.match(helpers.NATIVE_SUBMIT_ABI, /^0\.2\.0-rc\.2\//);
+  assert.equal(manifest.engines.dsh, '0.2.1-rc.2'); assert.match(helpers.NATIVE_SUBMIT_ABI, /^0\.2\.1-rc\.2\//);
   const native = await readFile(require.resolve('@deepseek-ai/dsh-client-ui-conversation/client'), 'utf8');
   assert.match(native, /this.deps = deps/);
   assert.match(native, /this.deps.defaultSink\(draft.trim\(\), attachmentIds, mode, attempt.signal\)/);

@@ -50,12 +50,13 @@ async function fixture(t: TestContext, direct = false) {
   async function fetchResponse(endpoint: string, payload: unknown, options: FetchOptions = {}) {
     const rpcId = randomUUID();
     const request = new Request(`${origin}/api/${endpoint}`, { method: 'POST', headers: { host: authority, origin, cookie, 'content-type': 'application/json', ...options.headers }, body: JSON.stringify({ type: 'client-request', rpcId, method: options.wireMethod ?? endpoint, payload }), ...(options.signal ? { signal: options.signal } : {}) });
-    return { response: await shared.fetch(request), rpcId };
+    const admitted = connection.admit(request);
+    return { response: 'rejection' in admitted ? new Response('rejected', { status: admitted.rejection }) : await shared.fetch(request, admitted.peer), rpcId };
   }
   async function send(endpoint: string, payload: unknown, options: FetchOptions & { peer?: Parameters<ConnectionRpcHandler>[3] } = {}): Promise<RpcReply> {
     if (direct) {
       const handler = handlers.get(endpoint);
-      return (handler ? await handler(endpoint, payload, options.signal ?? new AbortController().signal, options.peer ?? connection.operator) : { ok: false, error: { code: 'FALLBACK' } }) as RpcReply;
+      return (handler ? await handler(endpoint, payload, options.signal ?? new AbortController().signal, options.peer ?? connection.browserPeer) : { ok: false, error: { code: 'FALLBACK' } }) as RpcReply;
     }
     const { response, rpcId } = await fetchResponse(endpoint, payload, options);
     assert.equal(response.status, 200); const wire = await response.json();
@@ -75,7 +76,7 @@ test('gateway-first real SDK prepare/progress coexist with execute/projects and 
   registerWorktreeRpc(f.owner.ctx, { async execute() { return { items: [] }; } });
   registerProjectRpc(f.owner.ctx, { async execute() { return { projects: [], bindings: [], records: [] }; } });
   f.controller.execute = async (request, invocation) => { f.calls.push({ request, invocation }); begin.resolve(); await gate.promise; return f.receipt; };
-  for (const endpoint of [PREPARE, PROGRESS, 'dsh-worktrees/execute', 'dsh-worktrees/projects']) assert.equal(f.shared.requestBodyMode({ method: 'POST', url: new URL(`http://127.0.0.1:43131/api/${endpoint}`) }), 'buffered');
+  for (const endpoint of [PREPARE, PROGRESS, 'dsh-worktrees/execute', 'dsh-worktrees/projects']) assert.equal(f.shared.requestBodyMode({ method: 'POST', url: new URL(`http://127.0.0.1:43131/api/${endpoint}`) }), 'streaming');
   const request = f.request();
   let prepared = false;
   let waiting = f.send(PROGRESS, f.progress(request.operationId));
@@ -147,8 +148,8 @@ test('strict progress/prepare payloads and forged operators fail before resoluti
   const prepare = f.payload(request);
   for (const bad of [null, {}, { ...prepare, permissions: 'full' }, f.payload({ action: 'list' }), f.payload({ ...request, firstPrompt: undefined }), f.payload({ ...request, sessionMode: 'continue' }), f.payload({ ...request, requireBlankSource: false }), f.payload({ ...request, sourceSessionId: 'foreign' }), f.payload({ ...request, operationId: 'not-uuid' }), f.payload({ ...request, firstPrompt: 'x'.repeat(1048577) })]) code(await f.send(PREPARE, bad), 'INVALID_RPC_REQUEST');
   for (const endpoint of [PREPARE, PROGRESS]) {
-    code(await f.send(endpoint, accessor, { peer: { ...f.connection.operator, id: 'forged' as typeof f.connection.operator.id } }), 'FORBIDDEN');
-    code(await f.send(endpoint, accessor, { peer: { ...f.connection.operator, ctx: f.host } }), 'FORBIDDEN');
+    code(await f.send(endpoint, accessor, { peer: { ...f.connection.browserPeer, id: 'forged' as typeof f.connection.browserPeer.id } }), 'FORBIDDEN');
+    code(await f.send(endpoint, accessor, { peer: { ...f.connection.browserPeer, ctx: f.host } }), 'FORBIDDEN');
   }
   assert.equal(read, false); assert.deepEqual(f.lookups, []); assert.equal(f.calls.length, 0);
 });

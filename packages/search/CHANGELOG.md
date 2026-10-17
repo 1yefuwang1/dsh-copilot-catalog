@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.3 — DSH 0.2.1-rc.2 compatibility
+
+- Retarget the exact runtime pins to DSH `0.2.1-rc.2`, Cordis `~4.0.5` and
+  Schemastery `~3.18.5`; the pi-ai peer follows the host adapter's `^1.1.0` range.
+- Preserve cancellation across the installed SDK's refresh hook: newer pi-ai calls
+  `refresh` with its own signal, so the caller's cancellation is carried alongside
+  the public `getAuth()` call and re-checked before any later dispatch and before
+  the managed credential write commits. A cancelled operation still cannot commit a
+  refreshed grant or fetch a later catalog page.
+- Keep origin validation, redirect refusal and credential precedence unchanged.
+
 ## 0.1.2 — GHE Cloud endpoint support
 
 - Accept tenant-specific HTTPS `copilot-api.<tenant>.ghe.com` gateways for GHE Cloud

@@ -21,7 +21,7 @@ type RpcResponse = HostDouble;
 // Do not serialize malformed JS values and accidentally make them valid JSON.
 function directRpcRegistry(operator: HostDouble) {
   const entries = new Set<RouteEntry>(); let unregisters = 0;
-  return { operator, registerRoute(owner: Context, endpoint: string, handler: RouteHandler) {
+  return { operator, browserPeer: operator, registerRoute(owner: Context, endpoint: string, handler: RouteHandler) {
     assert.ok(owner instanceof Context); assert.equal(endpoint, PROJECT_RPC_ENDPOINT);
     const entry = { endpoint, handler }; entries.add(entry); let disposal: Promise<void> | undefined;
     return () => disposal ??= (async () => { unregisters++; entries.delete(entry); })();
@@ -37,7 +37,7 @@ async function fixture(t: TestContext) {
   host.on('session/event', (_session, event) => rows.push(event));
   const scope = createScope(host, {}); const actor: HostDouble = { id: SessionId(randomUUID()), ctx: scope.ctx, inbox: { nextTurn: [], nextStep: [] } };
   actor.session = scope.ctx.sessions.create(actor.id, { meta: { cwd: '/ordinary/project' } });
-  const operator = { id: 'operator', ctx: host, async dispose() {} }; const rpc = directRpcRegistry(operator); host.provide('connection', rpc);
+  const operator = { id: 'operator', principal: { kind: 'owner' }, ctx: host, async dispose() {} }; const rpc = directRpcRegistry(operator); host.provide('connection', rpc);
   const resolver: {resolveAgent(id:string):Promise<HostDouble>} = { async resolveAgent(id) { lookups.push(id); return id === actor.id ? { agent: actor } : { error: { code: 'session/not-found', message: 'private diagnostics', details: { secret: 'hidden' } } }; } }; host.provide('sessionController', resolver);
   const snapshot = { projects: [], bindings: [] }; const controller: Pick<ProjectController, 'execute'> = { async execute(request, invocation) { invocations.push({ request, invocation }); return snapshot; } };
   const owner = createScope(host, {}); const stop = registerProjectRpc(owner.ctx, controller, rpc.registerRoute);

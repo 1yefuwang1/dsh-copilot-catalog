@@ -2,13 +2,19 @@ import assert from 'node:assert/strict';
 import type { HostConnectionService } from '@deepseek-ai/dsh-client-connection';
 
 /** Fetch-only synthetic authentication: the SDK still enforces Host/Origin trust.
- * The private BrowserAuth credential machinery is deliberately not instantiated. */
-export function syntheticAuth(authority: string, cookie: string, onCall = () => {}) {
+ * The private BrowserAuth credential machinery is deliberately not instantiated.
+ * API credentials are opt-in so a browser cookie can never authenticate an API
+ * operator, and forgery tests must ask for one explicitly.
+ */
+export function syntheticAuth(authority: string, cookie: string, onCall = () => {}, api?: (request: Request) => string | undefined) {
   const auth = {
     isAuthenticated(request: Request) {
       onCall();
       assert.ok(request.headers instanceof Headers);
       return request.headers.get('host') === authority && request.headers.get('cookie') === cookie;
+    },
+    authenticateApi(request: Request) {
+      return request.headers.get('host') === authority ? api?.(request) : undefined;
     },
   };
   return auth as unknown as ConstructorParameters<typeof HostConnectionService>[2];

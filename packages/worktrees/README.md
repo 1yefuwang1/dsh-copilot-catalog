@@ -1,7 +1,7 @@
 # @1yefuwang1/dsh-worktrees
 
 Multi-folder projects with Local and isolated Git worktree threads for DeepSeek
-Harness. This experimental Host + Web Client package is **`0.2.22`**; new releases
+Harness. This experimental Host + Web Client package is **`0.2.23`**; new releases
 use staged npm publishing with maintainer review/2FA. It does not require Copilot, the
 catalog plugin, or the search plugin. The scoped name avoids collision with the
 unrelated npm package `dsh-worktrees`; stable tool, command and metadata names are
@@ -205,12 +205,27 @@ command machine, serialization, undo/rollback and normal prompt transport remain
 native. No core file, global business service, native endpoint, keyboard handler
 or other plugin's DOM is replaced.
 
-Compatibility is the exact manifest/peer pin to DSH `0.2.0-rc.2` **plus structural
+Compatibility is the exact manifest/peer pin to DSH `0.2.1-rc.2` **plus structural
 callback/owner checks**, not a runtime-source fingerprint or an upgrade-stability
 claim. Missing/changed shapes fail closed rather than sending a worktree-selected
 prompt to Local. Descriptor ownership is identity-checked on teardown; pending
 attempts settle before restoration. Future runtime upgrades require reviewing this
 adapter. Do not grant a version exemption to bypass that compatibility boundary.
+
+### Browser-only UI admission
+
+Availability: the DSH `0.2.1` line replaced Connection's single `operator` with per-principal
+peers. The plugin's own UI routes therefore admit **only the Host's shared browser
+peer**: its principal must be the owner *and* the peer identity must match
+`browserPeer`. Another owner API principal — for example one created from an API
+credential — is refused, and no permission is derived from peer identity: each
+operation still resolves the invoking session and uses that Agent's current sandbox,
+approval and plan policy.
+
+The five exact POST routes are registered with a streaming request body so a rejected
+caller is refused before its payload is read; the route keeps its own 1 MiB + 4096
+byte bound, fatal UTF-8 decoding, cancellation and shutdown draining. The shared
+`/api` gateway is never replaced.
 
 ### Configurable automatic naming
 
@@ -485,7 +500,7 @@ protection, identity, and activity checks.
 
 ## Install from this repository
 
-Requires DSH/DSH peers `0.2.0-rc.2`, Node.js `>=22.19.0`, a suitable local Git
+Requires DSH/DSH peers `0.2.1-rc.2`, Node.js `>=22.19.0`, a suitable local Git
 executable, and the ordinary session/filesystem/subprocess/sandbox/preset/plan
 capabilities. The manifest names `@deepseek-ai/dsh-agent-preset-registry` and
 `@deepseek-ai/dsh-plan-mode`; the Web Client mounts beside the existing
@@ -495,7 +510,7 @@ After the staged release is approved and appears on npm, install the scoped
 package (the similarly named unscoped package is unrelated):
 
 ```sh
-dsh plugin --profile <profile> add @1yefuwang1/dsh-worktrees@0.2.22
+dsh plugin --profile <profile> add @1yefuwang1/dsh-worktrees@0.2.23
 ```
 
 For local development or while release approval is pending, build explicitly from

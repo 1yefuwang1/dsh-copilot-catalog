@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { createServer, request as httpRequest } from 'node:http';
+import { Readable } from 'node:stream';
 import vm from 'node:vm';
 import test, { type TestContext } from 'node:test';
 import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection';
@@ -45,8 +47,13 @@ async function fixture(t: TestContext) {
     };
     return new Request(`${ORIGIN}/api/${endpoint}${options.query ?? ''}`, init);
   };
-  const send = (endpoint: string, payload: unknown, options?: FetchOptions) => shared.fetch(request(endpoint, payload, options));
-  return { host, owner, connection, gatewayOwner, gatewayCalls, shared, request, send, get authCalls() { return authCalls; } };
+  // Re-admit exactly like the carrier does: a rejected caller never reaches the route.
+  const dispatch = (incoming: Request) => {
+    const admitted = connection.admit(incoming);
+    return 'rejection' in admitted ? new Response('rejected', { status: admitted.rejection }) : shared.fetch(incoming, admitted.peer);
+  };
+  const send = (endpoint: string, payload: unknown, options?: FetchOptions) => dispatch(request(endpoint, payload, options));
+  return { host, owner, connection, gatewayOwner, gatewayCalls, shared, request, send, dispatch, get authCalls() { return authCalls; } };
 }
 async function wire(response: Response, rpcId: string): Promise<RpcReply> {
   assert.equal(response.status, 200);
@@ -65,7 +72,7 @@ async function clientProtocol(): Promise<ClientProtocol> {
   return vm.runInNewContext(`(() => { const NS='worktrees.ui', PANEL='dsh-worktrees'; ${javascript.slice(from, to)}; return {decodeReply, projectData, validateData}; })()`, { AbortController });
 }
 
-test('real SDK singleton /api gateway remains available beside both exact buffered POST feature routes and after disposal', async t => {
+test('real SDK singleton /api gateway remains available beside exact streaming POST feature routes and after disposal', async t => {
   const f = await fixture(t); const calls: Array<{ endpoint: string; request: unknown; invocation: Invocation | ProjectInvocation }> = []; const actor = { id: 'test-source-actor' };
   f.host.provide('sessionController', { async resolveAgent(id: string) { assert.equal(id, actor.id); return { agent: actor }; } });
   const client = await clientProtocol();
@@ -77,9 +84,9 @@ test('real SDK singleton /api gateway remains available beside both exact buffer
   const projectsStop = registerProjectRpc(f.owner.ctx, { async execute(request, invocation) {
     calls.push({ endpoint: PROJECT_RPC_ENDPOINT, request, invocation }); return { projects: [], bindings: [] };
   } });
-  assert.equal(scopeOf(f.connection.operator.ctx), f.connection.operator);
+  assert.equal(scopeOf(f.connection.browserPeer.ctx), f.connection.browserPeer);
   for (const endpoint of [WORKTREE_RPC_ENDPOINT, PROJECT_RPC_ENDPOINT]) {
-    assert.equal(f.shared.requestBodyMode({ method: 'POST', url: new URL(`${ORIGIN}/api/${endpoint}`) }), 'buffered');
+    assert.equal(f.shared.requestBodyMode({ method: 'POST', url: new URL(`${ORIGIN}/api/${endpoint}`) }), 'streaming');
     const rpcId = randomUUID(); const request = { action: 'list' };
     const payload = { v: 1, request, ...(endpoint === WORKTREE_RPC_ENDPOINT ? { actorId: actor.id } : {}) };
     assert.equal(clientRequestSchema.safeParse({ type: 'client-request', rpcId, method: endpoint, payload }).success, true);
@@ -100,7 +107,7 @@ test('real SDK singleton /api gateway remains available beside both exact buffer
   await executeStop(); await projectsStop(); await executeStop(); await projectsStop();
   for (const endpoint of [WORKTREE_RPC_ENDPOINT, PROJECT_RPC_ENDPOINT]) assert.equal((await f.send(endpoint, {})).status, 404);
   const afterId = randomUUID(); assert.deepEqual(await wire(await f.send('session/foo', {}, { rpcId: afterId }), afterId), { ok: true, value: true });
-  assert.equal(f.gatewayCalls.length, 3); assert.ok(f.gatewayCalls.every(call => call.peer.id === f.connection.operator.id && call.peer.ctx === f.connection.operator.ctx));
+  assert.equal(f.gatewayCalls.length, 3); assert.ok(f.gatewayCalls.every(call => call.peer.id === f.connection.browserPeer.id && call.peer.ctx === f.connection.browserPeer.ctx));
 });
 
 test('exact Fetch route admission preserves real Host/Origin checks and synthetic cookie rejection before any body or handler work', async t => {
@@ -118,7 +125,7 @@ test('exact Fetch route admission preserves real Host/Origin checks and syntheti
     const body = new ReadableStream({ start(controller) { controller.close(); }, cancel() { cancelled++; } });
     const request = f.request(PROJECT_RPC_ENDPOINT, {}, { headers, body });
     const admission = f.connection.admit(request); assert.ok('rejection' in admission); assert.equal(admission.rejection, status);
-    const response = await f.shared.fetch(request); assert.equal(response.status, status);
+    const response = await f.dispatch(request); assert.equal(response.status, status);
     assert.equal(request.bodyUsed, false); assert.equal(cancelled, 0); assert.equal(calls, 0);
   }
   const tokenOnly = await f.send(PROJECT_RPC_ENDPOINT, {}, { headers: { cookie: '' }, query: '?token=synthetic-not-a-login' });
@@ -152,7 +159,65 @@ test('actual client-request framing correlates failures and success; wrong metho
   const rpcId = randomUUID(); const payload = { v: 1, request: { action: 'list' } };
   assert.deepEqual(await wire(await f.send(PROJECT_RPC_ENDPOINT, payload, { rpcId, headers: { 'content-type': ' Application/JSON ; charset=utf-8' } }), rpcId), { ok: true, value: { native: true } });
   assert.equal(calls.length, 1); assert.equal(required(calls[0])[0], PROJECT_RPC_ENDPOINT); assert.deepEqual(required(calls[0])[1], payload);
-  assert.ok(required(calls[0])[2] instanceof AbortSignal); assert.equal(required(calls[0])[3].id, f.connection.operator.id); assert.equal(required(calls[0])[3].ctx, f.connection.operator.ctx);
+  assert.ok(required(calls[0])[2] instanceof AbortSignal); assert.equal(required(calls[0])[3].id, f.connection.browserPeer.id); assert.equal(required(calls[0])[3].ctx, f.connection.browserPeer.ctx);
+});
+
+
+
+test('a real HTTP carrier answers a chunked foreign-owner upload before the sender finishes', { timeout: 15000 }, async t => {
+  const f = await fixture(t); let calls = 0, pulled = 0;
+  const stop = registerQuietRpcRoute(f.owner.ctx, PROJECT_RPC_ENDPOINT, async () => { calls++; return { ok: true, value: true }; });
+  t.after(async () => { await stop(); });
+  // Mirror the carrier contract: mode lookup, streaming body handout, then the route.
+  const shared = f.connection.createSharedFetchHandler('/api');
+  const server = createServer(async (incoming, outgoing) => {
+    const url = new URL(incoming.url ?? '/', 'http://carrier.invalid');
+    const mode = shared.requestBodyMode({ method: incoming.method ?? 'GET', url });
+    assert.equal(mode, 'streaming');
+    const request = new Request(url, {
+      method: incoming.method ?? 'GET',
+      headers: Object.fromEntries(Object.entries(incoming.headers).filter(([, value]) => typeof value === 'string')) as Record<string, string>,
+      body: Readable.toWeb(incoming) as ReadableStream<Uint8Array>,
+      duplex: 'half',
+      signal: AbortSignal.timeout(10000),
+    } as RequestInit);
+    // An API credential admits a non-owner principal; the carrier must refuse it at the
+    // route boundary without ever consuming the still-open upload.
+    const apiPeer = f.connection.createPeer({ principal: { kind: 'api' } as never });
+    const response = await shared.fetch(request, apiPeer);
+    const body = await response.text();
+    const unread = !incoming.readableEnded;
+    outgoing.writeHead(response.status, unread ? { 'content-type': 'application/json', connection: 'close' } : { 'content-type': 'application/json' });
+    outgoing.end(body);
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise<void>(resolve => { server.close(() => resolve()); }));
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  const authority = '127.0.0.1:' + String(address.port);
+  const result = await new Promise<{ status: number; body: string; sentBytes: number; finishedSending: boolean }>((resolve, reject) => {
+    const outgoing = httpRequest({ host: '127.0.0.1', port: address.port, path: '/api/' + PROJECT_RPC_ENDPOINT, method: 'POST',
+      headers: { host: authority, origin: 'http://' + authority, cookie: COOKIE, 'content-type': 'application/json', 'transfer-encoding': 'chunked' } });
+    let sentBytes = 0, finishedSending = false, settled = false;
+    outgoing.on('error', error => { if (!settled) reject(error); });
+    outgoing.on('response', response => {
+      let body = '';
+      response.setEncoding('utf8');
+      response.on('data', chunk => { body += chunk; });
+      response.on('end', () => { settled = true; resolve({ status: response.statusCode ?? 0, body, sentBytes, finishedSending }); });
+    });
+    const opening = '{"type":"client-request","rpcId":"' + randomUUID() + '","method":"' + PROJECT_RPC_ENDPOINT + '","payload":';
+    sentBytes += Buffer.byteLength(opening);
+    outgoing.write(opening);
+    // Keep the upload open: an unanswered request would stall the test until its timeout.
+    const interval = setInterval(() => { if (!finishedSending) { sentBytes += 1; outgoing.write(' '.repeat(1024)); } }, 20);
+    outgoing.on('close', () => clearInterval(interval));
+  });
+  assert.equal(result.finishedSending, false, 'the sender never completed its upload');
+  assert.equal(result.status, 403, 'the carrier refuses a non-owner principal at the route boundary');
+  assert.equal(result.body, 'forbidden');
+  assert.ok(result.sentBytes > 0, 'bytes were actually in flight when the refusal arrived');
+  assert.equal(calls, 0); assert.equal(pulled, 0);
 });
 
 test('body bound includes finite envelope headroom and counts actual streamed bytes, not only Content-Length', async t => {
@@ -170,7 +235,7 @@ test('body bound includes finite envelope headroom and counts actual streamed by
   assert.equal(cancelled, true); assert.equal(calls, 1);
   for (const length of [String(BODY_LIMIT + 1), 'invalid', '-1']) {
     const request = f.request(PROJECT_RPC_ENDPOINT, {}, { headers: { 'content-length': length } });
-    assert.equal((await f.shared.fetch(request)).status, 413); assert.equal(request.bodyUsed, false);
+    assert.equal((await f.dispatch(request)).status, 413); assert.equal(request.bodyUsed, false);
   }
 });
 
@@ -213,7 +278,7 @@ test('scope disposal aborts blocked body reading and awaits stream cancellation 
     cancel() { cancelEntered(); return new Promise<void>(resolve => { releaseCancel = resolve; }); },
   });
   const stop = registerQuietRpcRoute(f.owner.ctx, PROJECT_RPC_ENDPOINT, async () => { calls++; return { ok: true, value: true }; });
-  const request = f.request(PROJECT_RPC_ENDPOINT, {}, { body }); const pending = f.shared.fetch(request); await reading;
+  const request = f.request(PROJECT_RPC_ENDPOINT, {}, { body }); const pending = f.dispatch(request); await reading;
   let done = false; const disposal = f.owner.dispose().then(() => { done = true; }); await cancelling;
   try {
     // Complete another public dispatch to give every disposal microtask a turn.

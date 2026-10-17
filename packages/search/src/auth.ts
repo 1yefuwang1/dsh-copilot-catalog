@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { credentialRef, isCredentialRefName, type CredentialKey, type CredentialProvider, type CredentialRecord } from '@deepseek-ai/dsh-credentials';
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment';
 import { WebError } from '@deepseek-ai/dsh-web';
@@ -6,6 +7,13 @@ import { CopilotEndpointError, trustedCopilotOrigin } from './endpoint.js';
 import type { CopilotAuthOptions, ResolvedCopilotAuth, SearchContext, SearchRuntime } from './types.js';
 
 const PROVIDER = 'github-copilot';
+/** The installed SDK's refresh hook receives its own signal, never the caller's.
+ * Carry the caller's cancellation across the public getAuth() call so a cancelled
+ * operation cannot dispatch later requests or commit a refreshed grant.
+ */
+const callerSignals = new AsyncLocalStorage<AbortSignal>();
+/** Caller cancellation of the refresh in progress on this async chain, if any. */
+export function callerSignal(): AbortSignal | undefined { return callerSignals.getStore(); }
 export type CopilotCredentialService = Pick<CredentialProvider, 'readRecord' | 'modifyRecord' | 'resolve'>;
 
 const AUTH_FAILURES = {
@@ -82,7 +90,11 @@ function jsonImage(value: unknown): unknown {
 export function createCopilotCredentialStore(
   credentials: Pick<CredentialProvider, 'readRecord' | 'modifyRecord'> | undefined,
   key: CredentialKey,
+  caller?: AbortSignal,
 ): CredentialStore {
+  // Checked before the transaction and again before it commits; the SDK's refresh hook
+  // no longer receives the caller's signal, so cancellation must be honoured here.
+  const cancelled = (): boolean => caller?.aborted === true || callerSignal()?.aborted === true;
   const read: CredentialStore['read'] = async (providerId, options) => {
     aborted(options?.signal);
     if (providerId !== PROVIDER) return undefined;
@@ -104,6 +116,9 @@ export function createCopilotCredentialStore(
       const record = await credentials.modifyRecord(key, async (current) => {
         // DSH's lock wait is not cancellable: check again once it actually acquired the lock.
         aborted(options?.signal);
+        // The SDK's refresh hook no longer receives the caller's signal, so a refresh that
+        // finished after cancellation must not commit through this managed record write.
+        if (cancelled()) throw new CopilotAuthError('aborted');
         const previous = fromRecord(current);
         // Capture eligibility and account authority before passing a mutable clone to the SDK.
         const wasOAuth = current?.kind === 'grant' && previous?.type === 'oauth';
@@ -111,6 +126,9 @@ export function createCopilotCredentialStore(
         const enterpriseOwner = previous?.type === 'oauth' ? previous.enterpriseUrl : undefined;
         const next = await mutate(previous);
         aborted(options?.signal);
+        // The SDK calls this mutator with the refresh inside it, so gate the commit
+        // itself: a refresh that finished after caller cancellation must not persist.
+        if (cancelled()) throw new CopilotAuthError('aborted');
         if (next === undefined) return undefined;
         if (!wasOAuth || next.type !== 'oauth') throw new CopilotAuthError('writeRefused');
         const refreshed = oauthCredential(next);
@@ -171,11 +189,11 @@ export function createCopilotAuthResolver(ctx: SearchContext, runtime: SearchRun
         throw new CopilotAuthError('missingReference');
       }
       const models = runtime.createModels({
-        credentials: createCopilotCredentialStore(credentials, runtime.recordKeyFor(PROVIDER)),
+        credentials: createCopilotCredentialStore(credentials, runtime.recordKeyFor(PROVIDER), signal),
         authContext: { env: readReference, fileExists: async () => false },
       });
       models.setProvider(runtime.provider);
-      const resolved = await models.getAuth(PROVIDER, { signal, ...(apiKey === undefined ? {} : { apiKey }) });
+      const resolved = await callerSignals.run(signal, () => models.getAuth(PROVIDER, { signal, ...(apiKey === undefined ? {} : { apiKey }) }));
       aborted(signal);
       if (resolved === undefined) return undefined;
       const token = resolved.auth.apiKey;

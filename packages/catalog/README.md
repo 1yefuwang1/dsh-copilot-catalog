@@ -51,8 +51,8 @@ No hard-coded application paths, credential-file edits, or signed-app modificati
 
 | Component | Supported version |
 | --- | --- |
-| DSH and `@deepseek-ai/dsh-llm-pi-ai` | `0.2.0-rc.2` |
-| `@earendil-works/pi-ai` | `0.87.1` |
+| DSH and `@deepseek-ai/dsh-llm-pi-ai` | `0.2.1-rc.2` |
+| `@earendil-works/pi-ai` | `^1.1.0` (tested at `1.1.0` and `1.3.0`) |
 | Node.js | `>=22.19.0` |
 | Runtime format | ESM only; no CommonJS entry |
 

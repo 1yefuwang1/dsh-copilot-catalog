@@ -1,5 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis';
-import { clientRequestSchema, type ConnectionRpcHandler, type ConnectionRpcHandlerResult, type HostConnectionHandle } from '@deepseek-ai/dsh-client-connection';
+import { clientRequestSchema, type ConnectionRpcHandler, type ConnectionRpcHandlerResult, type HostConnectionHandle, type PeerScope } from '@deepseek-ai/dsh-client-connection';
 import { required } from './runtime.js';
 
 /** Payloads retain their existing 1 MiB bound; allow only bounded wire-envelope headroom. */
@@ -44,9 +44,19 @@ async function readBody(request: Request, signal: AbortSignal): Promise<unknown>
   }
 }
 
+/** The plugin UI is reachable only from the Host's shared browser peer.
+ * API credentials may admit other owner principals, so identity alone is not
+ * enough: the caller must be that one browser peer.
+ */
+export function isBrowserPeer(connection: HostConnectionHandle, peer: PeerScope): boolean {
+  return peer.principal.kind === 'owner' && peer.id === connection.browserPeer.id && peer.ctx === connection.browserPeer.ctx;
+}
+
 /**
  * A feature owns exact POST routes, never the singleton /api interceptor owned
- * by the API gateway. Keep Connection's public envelope and admitted operator.
+ * by the API gateway. Keep Connection's public envelope and the shared browser
+ * peer, and keep the request body streaming so a rejected caller is refused
+ * before its payload is read.
  */
 export function registerQuietRpcRoute(owner: Context, endpoint: string, handler: ConnectionRpcHandler): () => Promise<void> {
   const connection = required<HostConnectionHandle>(owner, 'connection');
@@ -56,12 +66,12 @@ export function registerQuietRpcRoute(owner: Context, endpoint: string, handler:
   let closed = false;
   let disposal: Promise<void> | undefined;
   const stop = owner.effect(() => {
-    const unregister = connection.fetch.register({ path, methods: ['POST'], requestBody: 'buffered', fetch: request => {
+    const unregister = connection.fetch.register({ path, methods: ['POST'], requestBody: 'streaming', fetch: request => {
       const task = (async (): Promise<Response> => {
         // Recheck the public admission fence for direct Fetch carriers as well.
         const admitted = connection.admit(request);
         if ('rejection' in admitted) return new Response(admitted.rejection === 401 ? 'unauthorized' : 'forbidden', { status: admitted.rejection });
-        if (admitted.peer.id !== connection.operator.id || admitted.peer.ctx !== connection.operator.ctx) return response('invalid-request', failure('FORBIDDEN', 'This request does not belong to the authenticated operator.'));
+        if (!isBrowserPeer(connection, admitted.peer)) return response('invalid-request', failure('FORBIDDEN', 'This request does not belong to the authenticated browser session.'));
         if (closed) return response('invalid-request', failure('CLOSED', 'The plugin UI route is closing.'));
         if (request.method !== 'POST' || new URL(request.url).pathname !== path) return new Response('not found', { status: 404 });
         if (request.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase() !== 'application/json') return new Response('content type must be application/json', { status: 415 });

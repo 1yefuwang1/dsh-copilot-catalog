@@ -4,7 +4,7 @@ import type { SessionController } from '@deepseek-ai/dsh-api-session-controller'
 import { SessionId } from '@deepseek-ai/dsh-session';
 import { abortIfRequested, failureOf, WorktreeError } from './errors.js';
 import { required } from './runtime.js';
-import { registerQuietRpcRoute } from './quiet-rpc.js';
+import { isBrowserPeer, registerQuietRpcRoute } from './quiet-rpc.js';
 import { hashValue, parseRequest } from './schema.js';
 import type { WorktreeController } from './service.js';
 import type { CommandEnvelope, WorktreeRequest, WorktreeSetupProgress } from './types.js';
@@ -92,8 +92,8 @@ export function registerWorktreeRpc(owner: Context, controller: Pick<WorktreeCon
   let disposal: Promise<void> | undefined;
   const stop = owner.effect(() => {
     const unregister = registerRoute(owner, WORKTREE_RPC_ENDPOINT, async (endpoint, payload, requestSignal, peer) => {
-      // Check the admitted operator before parsing input or resolving any Actor. Peer permissions are never used.
-      if (endpoint !== WORKTREE_RPC_ENDPOINT || peer.id !== connection.operator.id || peer.ctx !== connection.operator.ctx) return transportFailure('FORBIDDEN', 'This request does not belong to the authenticated operator.');
+      // Check the admitted browser peer before parsing input or resolving any Actor. Peer permissions are never used.
+      if (endpoint !== WORKTREE_RPC_ENDPOINT || !isBrowserPeer(connection, peer)) return transportFailure('FORBIDDEN', 'This request does not belong to the authenticated browser session.');
       if (closed) return transportFailure('CLOSED', 'The worktree UI channel is closing.');
       const signal = AbortSignal.any([requestSignal, shutdown.signal]);
       const task = (async (): Promise<ConnectionRpcHandlerResult> => {
@@ -252,7 +252,7 @@ export function registerWorktreeProgressRpc(owner: Context, controller: Pick<Wor
     });
   };
   const handle = (endpoint: string, payload: unknown, requestSignal: AbortSignal, peer: Parameters<Parameters<typeof registerQuietRpcRoute>[2]>[3]): Promise<ConnectionRpcHandlerResult> => {
-    if (![WORKTREE_PREPARE_ENDPOINT, WORKTREE_PROGRESS_ENDPOINT].includes(endpoint) || peer.id !== connection.operator.id || peer.ctx !== connection.operator.ctx) return Promise.resolve(transportFailure('FORBIDDEN', 'This request does not belong to the authenticated operator.'));
+    if (![WORKTREE_PREPARE_ENDPOINT, WORKTREE_PROGRESS_ENDPOINT].includes(endpoint) || !isBrowserPeer(connection, peer)) return Promise.resolve(transportFailure('FORBIDDEN', 'This request does not belong to the authenticated browser session.'));
     if (closed) return Promise.resolve(transportFailure('CLOSED', 'The worktree UI channel is closing.'));
     const signal = AbortSignal.any([requestSignal, shutdown.signal]);
     const task = (async (): Promise<ConnectionRpcHandlerResult> => {

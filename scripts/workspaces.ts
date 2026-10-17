@@ -20,6 +20,9 @@ export type PackageManifest = ReleaseCandidate['manifest'] & {
   exports: Record<string, string | Record<string, string>>;
   scripts: Record<string, string>;
   dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+  engines?: Record<string, string>;
   publishConfig?: { access?: string; registry?: string };
   dsh?: { manifestVersion: number; bundle?: { patch?: string } };
 }

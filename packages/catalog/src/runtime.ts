@@ -7,19 +7,19 @@ type CatalogModule = typeof import('@earendil-works/pi-ai/providers/github-copil
 type ProviderModule = typeof import('@earendil-works/pi-ai/providers/github-copilot');
 
 /** Resolve pi-ai from the adapter, not the plugin: they must share one catalog. */
-export async function loadRuntime(): Promise<PluginDependencies> {
+export async function loadRuntime(options: { adapterEntry?: string } = {}): Promise<PluginDependencies> {
   const require = createRequire(import.meta.url);
   let adapterEntry: string;
   try {
-    adapterEntry = require.resolve('@deepseek-ai/dsh-llm-pi-ai');
+    adapterEntry = options.adapterEntry ?? require.resolve('@deepseek-ai/dsh-llm-pi-ai');
   } catch {
-    throw new Error('dsh-copilot-catalog requires @deepseek-ai/dsh-llm-pi-ai@0.2.0-rc.2; install it in the same profile');
+    throw new Error('dsh-copilot-catalog requires @deepseek-ai/dsh-llm-pi-ai@0.2.1-rc.2; install it in the same profile');
   }
   const adapterUrl = pathToFileURL(adapterEntry);
   const piManifest = findPackageJSON('@earendil-works/pi-ai', adapterUrl);
   if (!piManifest) throw new Error('Cannot resolve the DSH adapter\'s pi-ai dependency');
   const piRoot = dirname(piManifest);
-  // These are the public providers/* export targets in supported pi-ai 0.87.1.
+  // These are the public providers/* export targets in supported pi-ai >=1.1.0.
   // No private OAuth module or platform-specific application path is imported.
   const [original, { GITHUB_COPILOT_MODELS: catalog }, { githubCopilotProvider }] = await Promise.all([
     import(adapterUrl.href) as Promise<OriginalAdapter>,

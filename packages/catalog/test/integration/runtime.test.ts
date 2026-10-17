@@ -23,6 +23,10 @@ test('discovery mutates the catalog visible to the real adapter catalog APIs', a
   const { catalog, original } = await loadRuntime();
   assert.equal(catalog, GITHUB_COPILOT_MODELS);
   const snapshot = { ...catalog };
+  // Every catalog other than the Copilot chat one must be untouched by discovery.
+  const others = () => builtinProviders().filter((value) => value.id !== 'github-copilot')
+    .map((value) => value.id + ':' + value.getModels().map((model) => model.id).join(','));
+  const othersBefore = others();
   try {
     const result = await syncCopilotCatalog({ readRecord: async () => grantFixture() }, {
       catalog,
@@ -38,6 +42,14 @@ test('discovery mutates the catalog visible to the real adapter catalog APIs', a
     const provider = builtinProviders().find((value) => value.id === 'github-copilot');
     assert.ok(provider);
     assert.deepEqual(provider.getModels().map((model) => model.id), ['future-responses-model']);
+    // A discovered descriptor must behave as a chat model; the API does not require
+    // an explicit type, and absent still means chat in the supported pi-ai range.
+    for (const model of provider.getModels()) {
+      assert.ok(model.type === undefined || model.type === 'chat', 'discovered descriptors stay chat models');
+      assert.equal(model.provider, 'github-copilot');
+    }
+    // Discovery must not touch any other provider catalog (image/classifier included).
+    assert.deepEqual(others(), othersBefore, 'only the Copilot chat catalog is mutated');
   } finally {
     replaceCatalog(catalog, snapshot);
   }

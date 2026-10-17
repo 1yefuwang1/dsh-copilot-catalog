@@ -28,7 +28,7 @@
 
 ## Compatibility and prerequisites
 
-DSH/DSH peers `0.2.0-rc.2`, pi-ai `0.87.1`, Node.js `>=22.19.0`. The repository
+DSH/DSH peers `0.2.1-rc.2`, pi-ai `^1.1.0` (tested at `1.1.0` and `1.3.0`), Node.js `>=22.19.0`. The repository
 uses pnpm `11.7.0` for development; installed compiled packages do not run builds
 or require a workspace checkout to execute.
 

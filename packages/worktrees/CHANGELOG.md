@@ -17,6 +17,27 @@
 - Add realistic RPC/catalog-ordering, reference reentrancy, failure/deadline and
   real-component manager navigation regressions, including receiver-dependent
   native Workspace methods rather than closure-only store mocks.
+- Add a released-V3 cold-continuation regression proving in-memory migration,
+  inherited history/lineage/policies and source bytes/generations/cwd immutability,
+  plus a real target `SessionInputShell` harness that drives reference, command and
+  attachment serialization through the guarded native lease and restores failed
+  drafts without clearing the destination.
+
+## 0.2.23 — DSH 0.2.1-rc.2 compatibility
+
+- Retarget the exact runtime pins to DSH `0.2.1-rc.2`, Cordis `~4.0.5` and
+  Schemastery `~3.18.5`, with `zod` pinned to the storage SDK's `4.4.3` so domain
+  schemas share one nominal type identity instead of exhausting the compiler.
+- Replace the removed Connection `operator` with the shared `browserPeer`: the five
+  exact UI routes admit only the Host's browser peer (owner principal plus matching
+  peer identity), never another owner API principal, and still resolve the invoking
+  session's own permissions.
+- Register those five routes with a streaming request body so a rejected caller is
+  refused before its payload is read; the plugin keeps its own 1 MiB + 4096 bound,
+  fatal UTF-8 decoding, cancellation and shutdown draining.
+- Retarget the guarded native submit adapter to `0.2.1-rc.2/default-sink-v1`, mirror
+  the newer readonly/branded client contracts in a compile-only conformance suite,
+  and keep the shipped persistent factory build and its draft/history semantics.
 
 ## 0.2.22 — Unsent draft revalidation and a strict-API-safe tool declaration
 

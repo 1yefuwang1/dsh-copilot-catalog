@@ -1,5 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { evaluatePluginCompatibility } from '@deepseek-ai/dsh-app-boot';
 import { root, packages, assertWorkspaceDefinition, type PackageManifest } from './workspaces.js';
 
 async function sourceFiles(directory: string, suffix: string): Promise<string[]> {
@@ -21,6 +22,12 @@ if (rootManifest.private !== true || rootManifest.dsh || rootManifest.main || ro
 const definition = await readFile(join(root, 'pnpm-workspace.yaml'), 'utf8');
 assertWorkspaceDefinition(definition);
 
+// One runtime baseline: the SDK the repository develops and tests against.
+const dshVersion = rootManifest.devDependencies?.['@deepseek-ai/dsh-agent'];
+if (typeof dshVersion !== 'string' || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(dshVersion)) {
+  throw new Error('Root must pin one exact @deepseek-ai/dsh-agent development version');
+}
+
 const files = [...await sourceFiles('scripts', '.ts')];
 const sources: string[] = [];
 const names = new Set<string>();
@@ -38,7 +45,20 @@ for (const { path, manifest } of leaves) {
     throw new Error(`Invalid publishable DSH manifest in ${path}`);
   }
   if (manifest.dependencies && Object.values(manifest.dependencies).some((value) => /^workspace:/u.test(value))) {
-    throw new Error(`Published plugins cannot depend on private workspace packages: ${path}`);
+    throw new Error('Published plugins cannot depend on private workspace packages: ' + path);
+  }
+  // Every leaf declares the same exact runtime, and the runtime itself accepts it.
+  if (manifest.engines?.dsh !== dshVersion) {
+    throw new Error(`${path} must declare engines.dsh ${dshVersion}`);
+  }
+  for (const [name, range] of Object.entries(manifest.peerDependencies ?? {})) {
+    if ((name === '@deepseek-ai/dsh' || name.startsWith('@deepseek-ai/dsh-')) && range !== dshVersion) {
+      throw new Error(`${path} peer ${name} must be exactly ${dshVersion}`);
+    }
+  }
+  const incompatibility = evaluatePluginCompatibility(manifest as object, {}, dshVersion);
+  if (incompatibility !== undefined) {
+    throw new Error(`${path} declares requirements the target runtime rejects: ${JSON.stringify(incompatibility.requirements)}`);
   }
   files.push(...await sourceFiles(`${path}/test`, '.ts'));
   sources.push(...await sourceFiles(`${path}/src`, '.ts'));

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.1 — DSH 0.2.1-rc.2 compatibility
+
+- Retarget the exact runtime pins to DSH/`@deepseek-ai/dsh-system-prompt`
+  `0.2.1-rc.2`, Cordis `~4.0.5` and Schemastery `~3.18.5`.
+- No behavior change: the outer `system-prompt/assemble` waterfall contract and its
+  registration order, disposal and failure containment are unchanged.
+
 ## 0.1.0 — Copilot Gemini properties-bucket guard
 
 - Add an outer `system-prompt/assemble` listener that adds a missing root

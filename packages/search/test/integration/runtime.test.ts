@@ -16,6 +16,8 @@ const resultBody = () => ({ status: 'completed', output: [
   ] } },
   { id: 'msg_synthetic', type: 'message', status: 'completed', content: [{ type: 'output_text', text: 'Synthetic answer', annotations: [] }] },
 ] });
+/** Parse the same plain provider ids the shipped cordis.patch.yml supplies; rc.2 yields live volatile refs. */
+const webConfig = () => WebRuntime.Config({ searchProvider: COPILOT_SEARCH_PROVIDER_ID, fetchProvider: 'http' });
 
 test('runtime uses the adapter-resolved real public pi-ai collection and unchanged credential key', async () => {
   const runtime = await loadRuntime();
@@ -56,7 +58,7 @@ test('GHE search resolves and refreshes real public auth through the actual DSH 
     return Response.json({ data: [{ id: 'synthetic-responses-model', model_picker_enabled: true, policy: { state: 'enabled' } }] });
   }) });
   const host = new Context();
-  const web = new WebRuntime(host, { searchProvider: COPILOT_SEARCH_PROVIDER_ID, fetchProvider: 'http' });
+  const web = new WebRuntime(host, webConfig());
   const fixture = credentialFixture(grant({ access: gheToken(), enterpriseUrl: 'company.ghe.com', expires: 0 }));
   let dispose!: () => void;
   const ctx = { ...contextFixture(fixture.service), web: { registerSearchProvider(provider: WebSearchProvider) {
@@ -88,7 +90,7 @@ test('actual DSH web seam selects the Copilot provider, caps results, and dispos
   const { createPlugin, Config } = await import('../../dist/plugin.js');
   const runtime = await loadRuntime();
   const host = new Context();
-  const web = new WebRuntime(host, { searchProvider: COPILOT_SEARCH_PROVIDER_ID, fetchProvider: 'http' });
+  const web = new WebRuntime(host, webConfig());
   const fixture = credentialFixture(grant());
   const registrations: (() => void)[] = [];
   const requests: SearchBody[] = [];

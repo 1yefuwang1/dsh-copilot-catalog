@@ -1,5 +1,5 @@
 /// <reference path="./client.types.d.ts" />
-/* Persistent browser Client half, strictly typed at build time. Guarded rc.2 submit adapter; no DOM interception.
+/* Persistent browser Client half, strictly typed at build time. Guarded 0.2.1 submit adapter; no DOM interception.
  * Projects replace only the workspace browsing hole; native views and row
  * extensions remain installed, with owned aliases and a Folder view fallback.
  */
@@ -705,7 +705,7 @@ window.__ModuleLoader__.load({
         return projects?.store.getSnapshot().records?.find(record => record.sessionIds.includes(id));
       }
       function draftHistory(id: string) { return [...references.keys()].find(source => source !== id && targets.get(source) === id); }
-      // Only explicit recovery actions navigate. rc.2 has no public read-only
+      // Only explicit recovery actions navigate. 0.2.1 has no public read-only
       // current navigation signal: even beginNavigation before an initial read
       // could cancel a native Workspace/New Thread choice already in flight.
       async function navigate(op: WT.RecoveryOperation, target?: string | null, capturedNavigation?: AbortSignal) {
@@ -860,7 +860,7 @@ window.__ModuleLoader__.load({
       if (await form.mutate(ops, expectedRevision) !== true) throw new WorktreeError('cleanupConflict', 'cleanup-setting-refused');
       return { enabled, days: value };
     }
-    const NATIVE_SUBMIT_ABI = '0.2.0-rc.2/default-sink-v1';
+    const NATIVE_SUBMIT_ABI = '0.2.1-rc.2/default-sink-v1';
     const later = (callback: () => void) => { void Promise.resolve().then(() => Promise.resolve()).then(callback); };
     function interrupted<T>(promise: T | PromiseLike<T>, signal: AbortSignal): Promise<T> {
       return new Promise((resolve, reject) => {
@@ -876,7 +876,7 @@ window.__ModuleLoader__.load({
     // Never replace a service, keyboard handler, DOM node, or native prompt route.
     function leaseNativeSink(input: WT.Input, binding: WT.Binding, hooks: WT.SinkHooks): WT.SinkLease {
       // PropertyDescriptor.value and Reflect.get are dynamic platform boundaries.
-      // Capture them as unknown, then admit only this exact, callable rc.2 ABI.
+      // Capture them as unknown, then admit only this exact, callable 0.2.1 ABI.
       const own = (value: object, key: PropertyKey) => Object.getOwnPropertyDescriptor(value, key);
       const slot = own(input, 'deps'), deps: unknown = slot && 'value' in slot && slot.value;
       const sink = object(deps) ? own(deps, 'defaultSink') : undefined;

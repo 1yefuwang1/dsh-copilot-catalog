@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.3 — DSH 0.2.1-rc.2 compatibility
+
+- Retarget the exact runtime pins to DSH/`@deepseek-ai/dsh-llm-pi-ai` `0.2.1-rc.2`,
+  Cordis `~4.0.5` and Schemastery `~3.18.5`; the pi-ai peer follows the host
+  adapter's own `^1.1.0` range and is tested at `1.1.0` and `1.3.0`.
+- Keep adapter-relative pi-ai resolution so discovery mutates the catalog the
+  installed adapter actually reads, and refresh the stale version diagnostics.
+- Cover a nested layout whose plugin-visible pi-ai differs from the adapter's, and
+  assert generated Copilot descriptors stay chat models without touching other
+  catalogs.
+
 ## 0.2.2 — GHE Cloud endpoint support
 
 - Fix GitHub Enterprise Cloud discovery on GHE.com by accepting HTTPS

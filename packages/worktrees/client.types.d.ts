@@ -97,7 +97,7 @@ declare namespace WT {
   interface Sessions { byId: WTStringMap<SessionListEntry>; projectionsBySession?: WTStringMap<{ values: { subagentCatalog?: { id: string }[] } }> }
   interface SessionStatus { running?: boolean; pendingInteraction?: unknown; completionUnread?: boolean }
   type Statuses = ReadonlyMap<string, SessionStatus>;
-  interface Draft { draft: string; draftRev: number; attachmentIds: string[]; phase: string }
+  interface Draft { draft: string; draftRev: number; attachmentIds: readonly string[]; phase: string }
   interface InputSnapshot extends Draft { queue: readonly unknown[] }
   interface Input { state: Store<InputSnapshot> }
   interface Scope { effect(factory: () => Dispose | (() => Promise<void>)): Dispose }
@@ -106,14 +106,15 @@ declare namespace WT {
   interface Block { reason: string }
   interface Blocks { storeFor(id: string): Store<Block | undefined>; set(id: string, value: Block | undefined): void }
   interface BlockHandle { owned: Readonly<Block>; store: Store<Block | undefined>; release(): void }
-  type SubmitResult = { kind: 'success' } | { kind: 'error'; text: string };
-  type SubmitMode = string;
+  type SubmitResult = { kind: 'success' } | { kind: 'error'; text?: string };
+  /** Exactly the SDK's `InputSubmitMode` union; the conformance suite asserts equality. */
+  type SubmitMode = 'queue' | 'steer';
   interface Conversation {
     input: { for(scope: Scope): Input }; blocks: Blocks;
-    resolveDraftAttachments(ids: string[]): { id: string; kind: string }[];
+    resolveDraftAttachments(ids: readonly string[]): readonly { id: string; kind: string }[];
     fileUploads: Store<WTStringMap<{ status: string; message?: string }>>;
-    rebindDraftFiles(sessionId: string, ids: string[]): void;
-    sendSession(session: Store<SessionSnapshot>, text: string, ids: string[], mode: SubmitMode, signal: AbortSignal): Promise<SubmitResult>;
+    rebindDraftFiles(sessionId: string, ids: readonly string[]): void;
+    sendSession(session: Store<SessionSnapshot>, text: string, ids: readonly string[], mode: SubmitMode, signal: AbortSignal): Promise<SubmitResult>;
   }
   interface Listing { path: string; crumbs: { name: string; path: string }[]; entries: { name: string; path: string }[]; truncated?: boolean }
   interface UIWorkspace {

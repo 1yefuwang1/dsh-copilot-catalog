@@ -1,5 +1,5 @@
 import type { OAuthAuth, OAuthCredential } from '@earendil-works/pi-ai';
-import { CopilotAuthError } from './auth.js';
+import { callerSignal, CopilotAuthError } from './auth.js';
 import { trustedCopilotOrigin } from './endpoint.js';
 
 const MAX_AUTH_BODY_BYTES = 1_048_576;
@@ -10,6 +10,11 @@ function record(value: unknown): JsonObject | undefined {
 }
 function check(signal: AbortSignal): void {
   if (signal.aborted) throw new CopilotAuthError('aborted');
+}
+/** The SDK no longer forwards the caller's signal here; honour it before any dispatch or commit. */
+function checkCaller(signal: AbortSignal): void {
+  check(signal);
+  if (callerSignal()?.aborted === true) throw new CopilotAuthError('aborted');
 }
 function validToken(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= 16_384 && !/[^\x21-\x7e]/u.test(value);
@@ -113,7 +118,7 @@ async function jsonRequest(url: string, requestHeaders: Headers, signal: AbortSi
   }
 }
 
-/** Preserve pi-ai 0.87.1 refresh's picker/policy semantics without enabling any policy. */
+/** Preserve pi-ai 1.x refresh's picker/policy semantics without enabling any policy. */
 function availableModelIds(value: unknown, origin: string): string[] {
   const data = record(value)?.data;
   if (!Array.isArray(data) || data.length > 4096) throw new CopilotAuthError('failed');
@@ -140,7 +145,11 @@ export interface CopilotRefreshDependencies {
  * No login flow or private OAuth module is implemented/imported here.
  */
 export function createSafeCopilotRefresh(dependencies: CopilotRefreshDependencies): OAuthAuth['refresh'] {
-  return async (credential, signal) => {
+  return async (credential, sdkSignal) => {
+    // The installed SDK invokes this hook with its own signal; compose the caller's
+    // cancellation so every wait, dispatch and body read below honours both.
+    const caller = callerSignal();
+    const signal = caller === undefined ? sdkSignal : AbortSignal.any([sdkSignal, caller]);
     check(signal);
     try {
       const current = structuredClone(credential);
@@ -163,16 +172,16 @@ export function createSafeCopilotRefresh(dependencies: CopilotRefreshDependencie
       const auth = await wait(() => dependencies.oauth.toAuth(structuredClone(refreshed)), signal);
       const origin = trustedCopilotOrigin(auth.baseUrl);
       if (auth.apiKey !== token) throw new CopilotAuthError('invalid');
-      check(signal);
+      checkCaller(signal);
       const catalogHeaders = headers(dependencies.headers, token);
       catalogHeaders.set('X-GitHub-Api-Version', '2026-06-01');
       const catalog = await jsonRequest(`${origin}/models`, catalogHeaders, signal, fetcher);
       check(signal);
       const ids = availableModelIds(catalog, origin);
-      check(signal);
+      checkCaller(signal);
       return { ...refreshed, availableModelIds: ids };
     } catch {
-      check(signal);
+      checkCaller(signal);
       throw new CopilotAuthError('failed');
     }
   };
