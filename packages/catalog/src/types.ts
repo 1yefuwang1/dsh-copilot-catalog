@@ -45,6 +45,8 @@ export interface DiscoveryOptions extends CopilotAuthOptions {
 
 export interface PluginDependencies extends Omit<DiscoveryOptions, 'recordKey'> {
   original: OriginalAdapter;
+  /** Test seam for the process-wide wire-identity installer; defaults to the real interceptor. */
+  installIdentity?: () => () => void;
 }
 
 export interface CatalogPlugin {

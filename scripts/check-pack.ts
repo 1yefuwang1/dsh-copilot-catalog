@@ -9,7 +9,7 @@ export interface PackedPackage { name: string; version: string; files: { path: s
 
 const policies: Record<string, Policy> = {
   'dsh-copilot-catalog': {
-    modules: ['index', 'catalog', 'discovery', 'plugin', 'runtime', 'types'],
+    modules: ['index', 'catalog', 'discovery', 'identity', 'plugin', 'runtime', 'types'],
     extras: [], maxBytes: 150_000,
   },
   'dsh-copilot-search': {

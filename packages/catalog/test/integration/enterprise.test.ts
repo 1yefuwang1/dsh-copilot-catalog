@@ -21,6 +21,7 @@ const gheToken = 'synthetic-token;proxy-ep=copilot-api.msft.ghe.com';
 
 function fakeContext(record: CredentialRecord | undefined, key?: string, ambientKey?: string) {
   const registrations: { routes: AdapterRegistration[0]; adapter: AdapterRegistration[1] }[] = [];
+  const effects: (() => void)[] = [];
   const credentials = {
     readRecord: async () => record,
     resolve: async (ref: string) => ref === 'SYNTHETIC_COPILOT_TOKEN' && key ? { value: key, source: 'synthetic' } : undefined,
@@ -33,6 +34,7 @@ function fakeContext(record: CredentialRecord | undefined, key?: string, ambient
     get: (name: string) => name === 'credentials' ? credentials
       : name === 'launchEnvironment' && ambientKey ? { get: (ref: string) => ref === 'COPILOT_GITHUB_TOKEN' ? { value: ambientKey, source: 'process' } : undefined } : undefined,
     inject() {}, on() {},
+    effect(execute: () => () => void) { effects.push(execute()); },
     logger: { info() {}, warn() {}, error() {} },
     llm: {
       registerAdapter(routes: AdapterRegistration[0], adapter: AdapterRegistration[1]) { registrations.push({ routes, adapter }); return { replace() {} }; },
@@ -40,7 +42,7 @@ function fakeContext(record: CredentialRecord | undefined, key?: string, ambient
       registerModelDiscovery() {},
     },
   };
-  return { ctx, registrations };
+  return { ctx, registrations, dispose: () => { for (const release of effects.splice(0)) release(); } };
 }
 
 async function verifyRequests({ record, profile = {}, explicitKey, ambientKey, expectedToken, expectedOrigin = enterprise, listingFails = false }: VerifyOptions) {
@@ -61,19 +63,49 @@ async function verifyRequests({ record, profile = {}, explicitKey, ambientKey, e
     assert.equal(request.headers.get('Authorization'), `Bearer ${expectedToken}`);
     if (request.method === 'GET') {
       assert.equal(url.pathname, '/models');
+      assert.equal(request.headers.get('User-Agent'), 'GitHubCopilotChat/0.68.0');
+      assert.equal(request.headers.get('Editor-Version'), 'vscode/1.140.0');
+      assert.equal(request.headers.get('Editor-Plugin-Version'), 'copilot-chat/0.68.0');
+      assert.equal(request.headers.get('Copilot-Integration-Id'), 'vscode-chat');
+      assert.equal(request.headers.get('X-GitHub-Api-Version'), '2026-06-01');
+      assert.equal(request.headers.get('Openai-Intent'), 'model-access');
+      assert.equal(request.headers.get('X-Interaction-Type'), 'model-access');
+      assert.equal(request.headers.get('Content-Type'), null);
+      assert.equal(request.headers.get('X-Interaction-Id'), null);
+      assert.equal(request.headers.get('X-VSCode-User-Agent-Library-Version'), 'electron-fetch');
+      assert.match(request.headers.get('Editor-Device-Id') ?? '', /^[0-9a-f-]{36}$/iu);
+      assert.match(request.headers.get('VScode-MachineId') ?? '', /^[0-9a-f-]{36}$/iu);
+      assert.match(request.headers.get('VScode-SessionId') ?? '', /^[0-9a-f-]{36}$/iu);
+      assert.match(request.headers.get('X-Request-Id') ?? '', /^[0-9a-f-]{36}$/iu);
+      assert.match(request.headers.get('X-Agent-Task-Id') ?? '', /^[0-9a-f-]{36}$/iu);
+      assert.equal([...request.headers.keys()].some((name) => name.startsWith('x-stainless-')), false);
       requests.push({ path: url.pathname, method: request.method });
       return Response.json({ data: items }, { status: listingFails ? 503 : 200 });
     }
     assert.equal(request.method, 'POST');
+    assert.equal(request.headers.get('User-Agent'), 'GitHubCopilotChat/0.68.0');
+    assert.equal(request.headers.get('Editor-Version'), 'vscode/1.140.0');
+    assert.equal(request.headers.get('Editor-Plugin-Version'), 'copilot-chat/0.68.0');
+    assert.equal(request.headers.get('Copilot-Integration-Id'), 'vscode-chat');
+    assert.equal(request.headers.get('X-GitHub-Api-Version'), '2026-08-01');
+    assert.equal(request.headers.get('Openai-Intent'), 'conversation-edits');
+    assert.equal(request.headers.get('X-Interaction-Type'), 'conversation-edits');
+    assert.equal(request.headers.get('X-Initiator'), 'user');
+    assert.equal(request.headers.get('X-VSCode-User-Agent-Library-Version'), 'electron-fetch');
+    assert.equal([...request.headers.keys()].some((name) => name.startsWith('x-stainless-')), false);
+    if (url.pathname === '/v1/messages') {
+      assert.equal(request.headers.get('Anthropic-Version'), '2023-06-01');
+      assert.equal(request.headers.get('Anthropic-Dangerous-Direct-Browser-Access'), null);
+    }
     const body: InferenceBody = await request.json();
     requests.push({ path: url.pathname, method: request.method, body });
     const api = ({ '/responses': 'openai-responses', '/chat/completions': 'openai-completions', '/v1/messages': 'anthropic-messages' } as Record<string, string>)[url.pathname];
     assert.ok(api, 'The actual transport must use its advertised endpoint');
     return transportResponse(api, body.model);
   };
+  const plugin = createPlugin(runtime);
+  const { ctx, registrations, dispose } = fakeContext(record, explicitKey, ambientKey);
   try {
-    const plugin = createPlugin(runtime);
-    const { ctx, registrations } = fakeContext(record, explicitKey, ambientKey);
     const config = Config({ providers: { 'github-copilot': profile } });
     const before = structuredClone(config.providers.get());
     await plugin.apply(ctx as unknown as PluginContext, config);
@@ -112,6 +144,7 @@ async function verifyRequests({ record, profile = {}, explicitKey, ambientKey, e
       assert.equal(native.output_config!.effort, 'high');
     }
   } finally {
+    dispose();
     globalThis.fetch = originalFetch;
     replaceCatalog(runtime.catalog, snapshot);
   }

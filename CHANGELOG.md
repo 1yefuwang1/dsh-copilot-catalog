@@ -1,5 +1,20 @@
 # Monorepo changelog
 
+## dsh-copilot-catalog 0.2.4 — Copilot wire identity
+
+- Add a refcounted process-wide `fetch` interceptor that removes DSH's
+  `deepseek-harness` User-Agent and the SDK `x-stainless-*` fingerprints from
+  Copilot requests while the catalog adapter is mounted.
+- Emit the installed official client's identity headers and preserve auth/protocol
+  headers, search/discovery API-version and intent pins, and nonempty caller
+  interaction metadata.
+- Add `DSH_COPILOT_WIRE_IDENTITY=basic|full|0`; `full` is the default and reads the
+  local VS Code device/machine IDs, `basic` skips them, and `0` disables the
+  interceptor. Config, credentials, routing, and model descriptors are unchanged.
+- Cover exact Request/init header replacement, stream/duplex/abort preservation,
+  single-invocation downstream failure, install/release ordering, cached wrappers,
+  external fetch replacement, native Messages betas, and trust/path boundaries.
+
 ## dsh-copilot-catalog 0.2.3 — DSH 0.2.1-rc.2 compatibility
 
 - Retarget runtime pins to DSH/pi-ai `0.2.1-rc.2`, Cordis `~4.0.5`, Schemastery

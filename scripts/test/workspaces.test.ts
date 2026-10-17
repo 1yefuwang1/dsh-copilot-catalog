@@ -122,7 +122,7 @@ test('release workflow stages one pnpm package with provenance and no stored tok
 test('publication allowlists and bounds preserve every existing leaf and explicitly add worktree Client assets', () => {
   const common = ['CHANGELOG.md', 'LICENSE', 'README.md', 'cordis.patch.yml', 'package.json'];
   const modules = {
-    'dsh-copilot-catalog': ['index', 'catalog', 'discovery', 'plugin', 'runtime', 'types'],
+    'dsh-copilot-catalog': ['index', 'catalog', 'discovery', 'identity', 'plugin', 'runtime', 'types'],
     'dsh-copilot-search': ['index', 'auth', 'endpoint', 'errors', 'plugin', 'provider', 'refresh', 'responses', 'runtime', 'types'],
     'dsh-copilot-tool-schema': ['index', 'plugin', 'schema', 'types'],
     '@1yefuwang1/dsh-worktrees': ['index', 'types', 'errors', 'runtime', 'schema', 'store', 'sessions', 'context', 'service', 'git', 'naming', 'rpc', 'projects', 'project-store', 'project-rpc', 'project-context', 'quiet-rpc', 'first-message', 'cleanup-store', 'cleanup', 'recovery-rpc'],

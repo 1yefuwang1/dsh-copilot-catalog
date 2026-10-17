@@ -1,5 +1,6 @@
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment';
 import { DiscoveryError, syncCopilotCatalog } from './discovery.js';
+import { createCopilotWireIdentity, installCopilotIdentityHeaders, wireIdentityMode } from './identity.js';
 import type { CatalogPlugin, CopilotAuthOptions, PluginConfig, PluginDependencies } from './types.js';
 
 type CredentialRef = Parameters<Parameters<PluginDependencies['original']['apply']>[0]['credentials']['resolve']>[0];
@@ -29,7 +30,7 @@ export function withCopilotEndpoint(config: PluginConfig, endpoint: string | und
 }
 
 /** Keep integration separate from peer loading so lifecycle behavior is testable. */
-export function createPlugin({ original, catalog, oauth, fetcher, timeoutMs }: PluginDependencies): CatalogPlugin {
+export function createPlugin({ original, catalog, oauth, fetcher, timeoutMs, installIdentity }: PluginDependencies): CatalogPlugin {
   if (typeof original?.apply !== 'function' || typeof original.recordKeyFor !== 'function' ||
       !original.Config || !Array.isArray(original.inject) || !catalog ||
       typeof oauth?.refresh !== 'function' || typeof oauth.toAuth !== 'function') {
@@ -49,6 +50,18 @@ export function createPlugin({ original, catalog, oauth, fetcher, timeoutMs }: P
       });
     },
     async apply(ctx, config) {
+      const mode = wireIdentityMode();
+      if (mode !== 'off') {
+        try {
+          // Install inside the effect factory: an inactive context throws before
+          // this runs, leaving no process-global wrapper behind.
+          const install = installIdentity ?? (() => installCopilotIdentityHeaders(createCopilotWireIdentity(mode)));
+          ctx.effect(() => install(), 'copilot: wire identity headers');
+        } catch {
+          // Identity masking is best effort and must never block the adapter.
+          ctx.logger?.warn?.('Copilot wire identity headers unavailable');
+        }
+      }
       try {
         const credentials = ctx.get('credentials');
         const profile = config.providers.get()['github-copilot'];

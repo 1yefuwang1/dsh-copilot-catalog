@@ -9,7 +9,7 @@ of the staged release.
 
 | Package | Purpose | DSH behavior |
 | --- | --- | --- |
-| [dsh-copilot-catalog](packages/catalog/README.md) | Account-aware Copilot model discovery | Wraps/replaces the standard pi-ai adapter; preserves its public configuration and credential key |
+| [dsh-copilot-catalog](packages/catalog/README.md) | Account-aware Copilot model discovery and wire identity | Wraps/replaces the standard pi-ai adapter; emits Copilot-compatible headers while mounted; preserves its public configuration and credential key |
 | [dsh-copilot-search](<packages/search/README.md>) | Copilot native Responses web search | Registers `github-copilot-search`; does not replace an LLM adapter |
 | [dsh-copilot-tool-schema](<packages/tool-schema/README.md>) | Copilot Gemini tool-declaration guard | Adds a missing root `properties` bucket for configured Copilot Gemini routes; additive listener, no adapter replacement |
 | [@1yefuwang1/dsh-worktrees](<packages/worktrees/README.md>) | Multi-folder projects with Local/worktree threads | Adds metadata-only project grouping, main-folder defaults/reminders, native first-Send worktree setup and branch naming, configurable inactivity cleanup, explicit branch-choice Local recovery with staged input and exact-ID reuse, and guarded handoff; no core or LLM adapter changes |
@@ -51,6 +51,10 @@ instead of assuming a registry release exists.
 
 - Catalog replaces `llm-pi-ai`. Copy additional provider configuration into the
   replacement; do not enable two adapters for the same route.
+- Catalog also installs a refcounted Copilot `fetch` header interceptor while
+  mounted. Set `DSH_COPILOT_WIRE_IDENTITY=basic` to avoid local VS Code IDs or `0`
+  to disable it; the catalog README documents the residual-fingerprint and
+  account-policy limits.
 - Search explicitly selects `github-copilot-search`, keeping the shipped HTTP
   fetch provider. Preserve custom fetch selection in a higher-priority override.
 - Search uses DSH's ordinary `web_search` tool independently of the conversation
@@ -182,9 +186,10 @@ A release selects **one package**, never the root or multiple packages at once:
 - `@1yefuwang1/dsh-worktrees-vX.Y.Z`
 
 The tag must match its leaf version and repository identity. Catalog is currently
-`0.2.3` and Search is `0.1.3`, both retargeting DSH `0.2.1-rc.2` (adapter-relative
-pi-ai resolution and cancellation-safe credential refresh respectively); published
-versions cannot be republished. Tool schema is `dsh-copilot-tool-schema@0.1.1`, a
+`0.2.4`, adding the scoped Copilot wire-identity interceptor, and Search is `0.1.3`;
+both target DSH `0.2.1-rc.2` (adapter-relative pi-ai resolution and
+cancellation-safe credential refresh respectively); published versions cannot be
+republished. Tool schema is `dsh-copilot-tool-schema@0.1.1`, a
 DSH `0.2.1-rc.2` retarget with no behavior change. Worktrees is
 `@1yefuwang1/dsh-worktrees@0.2.23`, adding DSH `0.2.1-rc.2` compatibility,
 exact-session discovery/non-creating Open, and thread-switch-safe first Send with

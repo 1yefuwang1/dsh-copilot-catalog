@@ -46,6 +46,55 @@ No hard-coded application paths, credential-file edits, or signed-app modificati
   the original adapter owns normal persisted refresh and its cross-process lock.
 - Requires HTTPS Copilot subdomains, refuses redirects and unusual ports, and
   logs controlled error codes instead of potentially sensitive exception messages.
+- Installs a scoped, refcounted Copilot wire-identity interceptor while mounted;
+  see [Wire identity](#wire-identity).
+
+## Wire identity
+
+While this adapter is mounted, it installs a process-wide `fetch` interceptor for
+trusted Copilot API hosts. The interceptor removes DSH's adapter attribution
+User-Agent and the OpenAI/Anthropic SDK `x-stainless-*` fingerprints, then applies
+the identity headers used by the installed official Copilot client:
+
+- `User-Agent: GitHubCopilotChat/0.68.0`, `Editor-Version: vscode/1.140.0`,
+  `Editor-Plugin-Version: copilot-chat/0.68.0`, `Copilot-Integration-Id: vscode-chat`.
+- `Editor-Device-Id`, `Vscode-SessionId`, and `Vscode-MachineId`, read from the
+  local VS Code identity files when present, with UUID-shaped fallbacks.
+  `X-Request-Id` and `X-Agent-Task-Id` are generated per request when absent.
+- `X-GitHub-Api-Version` is filled with `2026-08-01` only when absent; the search
+  provider's and discovery's existing `2026-06-01` pins are preserved.
+- `Openai-Intent` and `X-Interaction-Type` are preserved when nonempty and otherwise
+  defaulted to `conversation-agent`; model discovery uses `model-access` and removes
+  `Content-Type` and `X-Interaction-Id`.
+- `Authorization`, `Accept`, `Content-Type`, `X-Initiator`,
+  `Copilot-Vision-Request`, `Anthropic-Version`, and `Anthropic-Beta` are preserved.
+  `OpenAI-Organization`, `OpenAI-Project`,
+  `Anthropic-Dangerous-Direct-Browser-Access`, and `x-stainless-*` are removed on
+  these requests.
+
+Modes are selected with `DSH_COPILOT_WIRE_IDENTITY`:
+
+- `full` (default): the complete identity above, including local VS Code
+  device/machine IDs.
+- `basic`: only the User-Agent/editor/plugin/integration identity and SDK-fingerprint
+  removal; no device/machine/session/request IDs and no identity-file reads.
+- `0`, `off`, or `false`: no interceptor, no `ctx.effect`, and no identity-file reads.
+
+The interceptor is scoped to HTTPS `*.githubcopilot.com` and
+`copilot-api.<tenant>.ghe.com` origins with default ports, and to known message and
+model paths. Explicit custom proxy/baseURL requests are not rewritten. It is
+refcounted: concurrent installs share one identity, the last release deactivates
+every wrapper it created (cached SDK clients then pass through untouched), and a
+later install after an external `globalThis.fetch` replacement wraps the current
+fetch.
+
+`full` mode links DSH's Copilot traffic to the local VS Code identity by design;
+`basic` avoids that. This is header-level mitigation only. TLS/JA3/JA4, HTTP/2,
+header ordering, compression, body shape, timing, IP, WebSocket transport, custom
+fetchers, `api.github.com` token/device flows, and other Copilot-host paths remain
+identifiable or unmodified. It is not official-client equivalence and does not
+guarantee acceptance; using Copilot through an unofficial client remains an
+account-policy/terms risk.
 
 ## Compatibility
 
@@ -219,12 +268,13 @@ flow, then restart to perform account discovery.
 
 ### Rollback
 
-Disable or remove this bundle with DSH's Plugins page, remove any profile overrides
-that still enable the replacement, and re-enable the standard `llm-pi-ai` entry if
-your own profile has disabled it. Restore your backed-up provider configuration and
-restart the **whole DSH process** to reset its in-memory catalog. Do not delete the
-OAuth grant. The wrapper does not patch the signed application or store a catalog
-on disk.
+Set `DSH_COPILOT_WIRE_IDENTITY=0` to disable only the wire-identity interceptor
+without removing the bundle. To remove the bundle, use DSH's Plugins page, remove
+any profile overrides that still enable the replacement, and re-enable the standard
+`llm-pi-ai` entry if your own profile has disabled it. Restore your backed-up
+provider configuration and restart the **whole DSH process** to reset its in-memory
+catalog. Do not delete the OAuth grant. The wrapper does not patch the signed
+application or store a catalog on disk.
 
 ## Development and tests
 

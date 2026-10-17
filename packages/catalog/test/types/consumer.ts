@@ -1,6 +1,7 @@
 import { Config, apply, syncCopilotCatalog, type AccountModelOptions, type CopilotAuthOptions, type ModelCatalog, type SyncResult } from 'dsh-copilot-catalog';
 import { liveCost, selectAccountModels } from 'dsh-copilot-catalog/catalog';
 import { syncCopilotCatalog as discover, type DiscoveryError } from 'dsh-copilot-catalog/discovery';
+import { createCopilotWireIdentity, installCopilotIdentityHeaders, type CopilotWireIdentity } from 'dsh-copilot-catalog/identity';
 import { Config as OriginalConfig, type apply as OriginalApply } from '@deepseek-ai/dsh-llm-pi-ai';
 
 const preservedSchema: typeof OriginalConfig = Config;
@@ -11,6 +12,8 @@ const auth: CopilotAuthOptions = { baseUrl: account.baseUrl, resolveApiKey: asyn
 const configuredPending: Promise<SyncResult> = syncCopilotCatalog(undefined, auth);
 const selectFromUnknown = (response: unknown, catalog: ModelCatalog) => selectAccountModels(response, catalog, account);
 const typedFailure = (error: DiscoveryError): string => error.code;
+const wireIdentity: CopilotWireIdentity = createCopilotWireIdentity('basic');
+const releaseWireIdentity: () => void = installCopilotIdentityHeaders(wireIdentity);
 
 // A consumer must provide a correctly shaped fallback and explicit catalog.
 // @ts-expect-error costs cannot be arbitrary strings
@@ -20,4 +23,4 @@ selectAccountModels({ data: [] });
 // @ts-expect-error dependency injection is required for the low-level discovery helper
 void discover(undefined);
 
-void [preservedSchema, typedApply, pending, configuredPending, selectFromUnknown, typedFailure];
+void [preservedSchema, typedApply, pending, configuredPending, selectFromUnknown, typedFailure, wireIdentity, releaseWireIdentity];

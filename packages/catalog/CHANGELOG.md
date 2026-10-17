@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.4 — Copilot wire identity
+
+- Install a process-wide `fetch` interceptor while the catalog adapter is mounted
+  so Copilot inference no longer sends DSH's `deepseek-harness` User-Agent or the
+  OpenAI/Anthropic SDK `x-stainless-*` fingerprints.
+- Emit the installed official client's identity headers (`GitHubCopilotChat/0.68.0`,
+  `vscode/1.140.0`, `copilot-chat/0.68.0`, `vscode-chat`, VS Code device/machine IDs,
+  per-mount session and per-request IDs) while preserving auth, Accept, vision,
+  initiator, Anthropic version/beta, and nonempty caller interaction metadata.
+- Preserve search/discovery behavior pins: `X-GitHub-Api-Version: 2026-06-01` and
+  `Openai-Intent: conversation-edits` are not rewritten; model discovery uses
+  `model-access` and removes request-only headers.
+- Add `DSH_COPILOT_WIRE_IDENTITY=basic|full|0` (`full` default) plus a refcounted
+  installer with cached-wrapper pass-through and external-fetch replacement handling.
+- Keep `Config`, credentials, routing, and public model descriptors unchanged.
+
 ## 0.2.3 — DSH 0.2.1-rc.2 compatibility
 
 - Retarget the exact runtime pins to DSH/`@deepseek-ai/dsh-llm-pi-ai` `0.2.1-rc.2`,
