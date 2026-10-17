@@ -1,5 +1,23 @@
 # @1yefuwang1/dsh-worktrees changelog
 
+## Unreleased — Exact-session discovery and non-creating Open
+
+- Wait for the exact prepared session to enter the browser catalog before retaining
+  it, with one optional native list refresh and a bounded, abortable history-open
+  wait. Preserve drafts, prepared receipts and existing send/settings guards when
+  discovery is delayed, cancelled or unsuccessful; never automatically resend.
+- Make manager **Open conversation** reuse an existing, currently attached thread
+  instead of issuing **start/continue** and forking the active conversation. Keep
+  explicit new/continue start semantics unchanged and retain existing histories.
+- Validate native Workspace attachment and successful history opening, permit
+  running/cold threads, and fence late navigation/reference acquisition on
+  cancellation, reconnect, detachment and component disposal.
+- Preserve the native Workspace controller facade receiver in React subscriptions,
+  preventing a blank manager panel when its prototype snapshot methods run.
+- Add realistic RPC/catalog-ordering, reference reentrancy, failure/deadline and
+  real-component manager navigation regressions, including receiver-dependent
+  native Workspace methods rather than closure-only store mocks.
+
 ## 0.2.22 — Unsent draft revalidation and a strict-API-safe tool declaration
 
 - Replace the six-arm `oneOf` project-tool declaration with one flat object schema

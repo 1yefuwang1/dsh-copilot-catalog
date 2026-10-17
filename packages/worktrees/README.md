@@ -157,6 +157,16 @@ tree support; normal creation checks still apply.
    original, natively serialized prompt and ordered attachments are admitted once
    to the **normal conversation LLM**, then that conversation opens.
 
+The prepare response and browser session-catalog events can arrive in either
+order. The Client waits for the exact prepared session to be discovered and its
+history to open, with one on-demand catalog refresh and a shared 30-second
+discovery/opening deadline (separate from Git and naming deadlines). An unrelated
+running conversation does not invalidate this wait. Cancellation, timeout or
+opening failure retains the checkout and operation identity, preserves the source
+draft through native rollback, and never automatically creates or sends again.
+Use **Check operation status** and inspect the exact created conversation before
+retrying; uncertain prompt admission must not be resent blindly.
+
 The checkout directory, execution cwd, pinned base and session identity do not
 move during naming. Naming uses `github-copilot/gpt-6-luna` by default, independent
 of the normal conversation model. The foreground naming deadline is at most
@@ -353,7 +363,20 @@ reading checkout status and cancelling a UI request therefore create no
 There is no periodic polling; actor identity and filesystem authorization are
 unchanged, and UI errors are shown inline. Existing historical rows are not erased.
 Agent runtime-context reminders are separate from these UI queries.
-Open an exact conversation, create a branch in the worktree, protect/unprotect it,
+**Open conversation** only navigates to an existing conversation; it never starts
+a new thread or forks the currently viewed conversation. It selects the current
+thread if it still belongs to this checkout, otherwise the first recorded thread
+that remains attached in the native Workspace. Individual conversation buttons
+open their exact IDs through the same guarded discovery/opening path. Running and
+cold conversations can be opened; detached, deleted or unavailable identities
+produce an inline error, not a replacement thread. If Workspace metadata is not
+ready or no recorded thread remains attached, refresh the manager or open retained
+history from the normal sidebar. Repeated Open does not append session IDs or
+create operations. Explicit tool/command **start** remains a deliberate new-thread
+operation; **start** with **sessionMode: continue** still creates a continuation.
+Existing duplicate histories are not deleted or merged.
+
+Create a branch in the worktree, protect/unprotect it,
 or archive/restore its plugin record. **Archive itself is not deletion**: checkout
 files, pinned bases, sessions and logs are retained by that action. Enabled
 inactivity cleanup can subsequently reclaim the directory regardless of archive

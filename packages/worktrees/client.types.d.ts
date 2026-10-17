@@ -182,7 +182,7 @@ declare namespace WT {
     configure(id: string): Promise<void>; loadBranches(id: string, refresh?: boolean): Promise<void>;
     reconcile(id: string): Promise<void>; cancel(): void; setRemote(id: string, remote: string): void;
     setBranchSource(id: string, branchSource: string): void; setQuery(query: string): void; setBranch(branch: string): boolean;
-    openTarget(id: string): void; dispose(): Promise<void>;
+    openTarget(id: string): Promise<void>; dispose(): Promise<void>;
   }
   interface SidebarMode { store: Store<boolean>; toggle(): void; dispose(): void }
 
@@ -205,7 +205,7 @@ declare namespace WT {
   interface SlotProps extends DynamicSlotProps { renderSlot: RenderSlot; renderSlotChain?: RenderSlot }
   interface Context extends Scope {
     connection: { rpc: { call(path: string, endpoint: string, payload: unknown, signal?: AbortSignal): Promise<unknown> }; generation: Store<{ id: string | number } | undefined> };
-    sessions: { list: Store<Sessions>; binding(id: string | undefined): Binding | undefined; retain(id: string, options: { source: 'controllerOperation' }): Reference; retainInfo(id: string): Store<{ retainedBy: { mainView?: number } }> };
+    sessions: { list: Store<Sessions>; refresh(): Promise<void>; binding(id: string | undefined): Binding | undefined; retain(id: string, options: { source: 'controllerOperation'; signal?: AbortSignal }): Reference; retainInfo(id: string): Store<{ retainedBy: { mainView?: number } }> };
     conversation: Conversation; get(name: 'conversation'): Conversation;
     workspaces: { list: Store<Workspaces> }; uiWorkspace: UIWorkspace;
     uiSession: { sessionStatus: Store<Statuses> }; layout: { beginNavigation(): AbortSignal; selectPanel(id: string | null): void };

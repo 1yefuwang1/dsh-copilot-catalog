@@ -68,6 +68,7 @@ async function fixture(t: import('node:test').TestContext, { language = 'en', in
   const projects = { store: observable({ records: [record], bindings: [], projects: [] }), context: () => undefined };
   const block = (id: string) => { if (!blocks.has(id)) blocks.set(id, observable<ComposerBlock>(undefined)); return blocks.get(id)!; };
   const runtime = {
+    workspaces: { list: observable({ phase: 'ready', items: [], archivedSessionIds: [], pinnedSessionIds: [] }) },
     sessions: { list: sessions, retain(id: string, options: { source: string }) { assert.equal(options.source, 'controllerOperation'); const reference = { sessionId: id, ready: Promise.resolve({ ctx: {} }), released: false, release() { this.released = true; } }; references.push(reference); return reference; } },
     conversation: { blocks: { storeFor: block, set: (id: string, value: ComposerBlock) => block(id).publish(value) }, input: { for() { assert.fail('recovery cannot replace the public editor or send draft content'); } } },
     layout,

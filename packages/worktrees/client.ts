@@ -46,6 +46,8 @@ window.__ModuleLoader__.load({
       ownership: 'Composer ownership changed; creation was cancelled.', changed: 'The source, draft, settings or navigation changed; creation was cancelled.',
       targetBusy: 'The exact destination is not an empty, idle composer; the source draft is unchanged.',
       invalidSession: 'The Host did not return an exact destination session.',
+      sessionUnavailable: 'This conversation is unavailable or no longer attached to this worktree. Refresh the manager or open its history from the sidebar.',
+      sessionTimeout: 'Timed out discovering or opening the exact conversation. The checkout and source draft are retained; check operation status before retrying.',
       unknown: 'Operation failed', statusError: 'Checkout status unavailable', noRemote: 'No advertised remote branches. Choose a remote and refresh; no cached base will be used.',
       idle: 'Idle', busy: 'Busy', recovery: 'Recovery required', settings: 'Repository settings changed. Check the created worktree before continuing.',
     };
@@ -80,6 +82,8 @@ window.__ModuleLoader__.load({
       host: '主机拒绝操作', blocked: '输入区正在由其他插件使用，未更改其状态。',
       ownership: '输入区的所有权已更改，已取消创建。', changed: '源会话、草稿、设置或导航已更改，已取消创建。',
       targetBusy: '指定目标的输入区不是空闲且空白的，源草稿保持不变。',
+      sessionUnavailable: '此对话不可用或已不属于该工作树，请刷新管理器，或从侧边栏打开其历史。',
+      sessionTimeout: '等待发现或打开指定对话超时，工作树和源草稿已保留，请先查询操作状态再重试。',
       invalidSession: '主机未返回明确的目标会话。', unknown: '操作失败', statusError: '检出状态不可用',
       noRemote: '没有已公布的远程分支，请选择远程并刷新。不会使用缓存的基础提交。',
       settings: '仓库设置已更改，请检查已创建的工作树。',
@@ -518,6 +522,62 @@ window.__ModuleLoader__.load({
         Promise.resolve(reference.ready).then(binding => { signal.removeEventListener('abort', abort); resolve(binding); }, error => { signal.removeEventListener('abort', abort); reject(error); });
         if (signal.aborted) abort();
       });
+    }
+    function sessionOpen(snapshot: WT.SessionSnapshot) {
+      return snapshot.openState === 'open' && !snapshot.removed && snapshot.subagent === null;
+    }
+    // The prepare RPC and native catalog events travel independently. A ready
+    // Host operation does not yet make its id retainable in this Client.
+    function retainDiscoveredSession(ctx: WT.Context, id: string, signal: AbortSignal): Promise<{ reference: WT.Reference; binding: WT.Binding }> {
+      const deadline = AbortSignal.timeout(30000), waitSignal = AbortSignal.any([signal, deadline]);
+      return new Promise((resolve, reject) => {
+        let reference: WT.Reference | null = null, acquiring = false, done = false, phase = 'discovery', unsubscribe = () => {};
+        const cleanup = () => { unsubscribe(); unsubscribe = () => {}; waitSignal.removeEventListener('abort', abort); };
+        function finish(error?: unknown, binding?: WT.Binding) {
+          if (done) return; done = true; cleanup();
+          if (error !== undefined) { reference?.release(); reject(error); }
+          else if (reference && binding) resolve({ reference, binding });
+        }
+        function abort() { finish(signal.aborted ? new WorktreeError('cancelled', 'cancelled') : new WorktreeError('sessionTimeout', 'session-' + phase + '-timeout')); }
+        function check() {
+          if (done || acquiring) return;
+          if (waitSignal.aborted) { abort(); return; }
+          if (!ctx.sessions.list.getSnapshot().byId[id]) return;
+          // retain publishes retention/list changes synchronously. Latch first,
+          // and account for cancellation re-entering before it returns the ref.
+          acquiring = true; phase = 'opening'; unsubscribe(); unsubscribe = () => {};
+          try { reference = ctx.sessions.retain(id, { source: 'controllerOperation', signal: waitSignal }); }
+          catch (error) { finish(new WorktreeError('sessionUnavailable', 'session-retain-failed', errorMessage(error))); return; }
+          if (done) { reference.release(); return; }
+          Promise.resolve(reference.ready).then(binding => {
+            if (done) return;
+            if (waitSignal.aborted) { abort(); return; }
+            // Native ready means the open attempt settled, including RPC refusal.
+            if (!sessionOpen(binding.session.getSnapshot())) { finish(new WorktreeError('sessionUnavailable', 'session-not-open')); return; }
+            finish(undefined, binding);
+          }, error => finish(new WorktreeError('sessionUnavailable', 'session-open-failed', errorMessage(error))));
+        }
+        waitSignal.addEventListener('abort', abort, { once: true });
+        if (waitSignal.aborted) { abort(); return; }
+        unsubscribe = ctx.sessions.list.subscribe(check);
+        check();
+        // Some stores notify during subscribe; dispose the returned subscription
+        // too if the synchronous callback already acquired or settled.
+        if (acquiring || done) { unsubscribe(); unsubscribe = () => {}; }
+        if (!acquiring && !done) {
+          // One public, shared baseline pull also repairs a missed added event.
+          // It is not cancellable; only our waiter and its late effects are owned.
+          void Promise.resolve().then(() => { if (!done && !acquiring) return ctx.sessions.refresh(); }).then(check, error => {
+            check();
+            if (!done && !acquiring) finish(new WorktreeError('sessionUnavailable', 'session-catalog-refresh-failed', errorMessage(error)));
+          });
+        }
+      });
+    }
+    function attachedSessionIds(record: WT.Record, workspaces: WT.Workspaces): string[] {
+      if (workspaces.phase !== 'ready') return [];
+      const attached = new Set(workspaces.items.filter(item => item.path === record.effectiveCwd).flatMap(item => item.sessionIds));
+      return record.sessionIds.filter(id => attached.has(id));
     }
     // One root-owned metadata cache. Reconnect and structural Workspace changes
     // refresh it; token/status updates and component mounts never issue reads.
@@ -995,6 +1055,7 @@ window.__ModuleLoader__.load({
       const conversation = ctx.get('conversation'), listeners = new Set<WT.Listener>(), leases = new Map<WT.Binding, WT.SinkLease>(), operations = new Set<WT.WorktreeOperation>(), restaged = new Set<string>();
       let state: WT.FlowState = { sessionId: undefined, mode: 'local', sourceChanged: false, busy: false, loading: false, error: '', status: null, branchSource: 'local', remote: '', branch: '', branchOid: '', branches: null, query: '', steps: [], phase: '', op: null };
       const branchCache = new Map<string, WT.Branches>();
+      let inspection: AbortController | undefined;
       let query: AbortController | undefined, selectedSource: { sessionId: string; binding?: WT.Binding; project?: WT.CapturedProject } | undefined, generation = 0, disposed = false;
       const publish = (patch: Partial<WT.FlowState>) => { if (disposed) return; state = { ...state, ...patch }; for (const listener of [...listeners]) listener(); };
       const store = { getSnapshot: () => state, subscribe: (listener: WT.Listener) => { listeners.add(listener); return () => listeners.delete(listener); } };
@@ -1080,8 +1141,8 @@ window.__ModuleLoader__.load({
           const result = op.result;
           if (result.sessionId === op.sessionId || result.worktree.state !== 'ready' || !result.worktree.branch) throw new WorktreeError('invalidSession', 'invalid-prepared-target');
           projects.rememberWorktree(result, op.project); check(op);
-          op.reference = ctx.sessions.retain(result.sessionId, { source: 'controllerOperation' });
-          const target = await projectReady(op.reference, signal); check(op);
+          const acquired = await retainDiscoveredSession(ctx, result.sessionId, signal);
+          op.reference = acquired.reference; const target = acquired.binding; check(op);
           if (!sourceEligible(target.session.getSnapshot()) || pending(result.sessionId) || !inputEmpty(conversation.input.for(target.ctx).state.getSnapshot()) || conversation.blocks.storeFor(result.sessionId).getSnapshot() !== undefined) throw new WorktreeError('targetBusy', 'target-not-empty');
           publish({ phase: 'attachments' });
           if (ids.length) { conversation.rebindDraftFiles(result.sessionId, ids); op.staged = true; await waitForDraftFiles(conversation, ids, signal); }
@@ -1214,13 +1275,30 @@ window.__ModuleLoader__.load({
       const unselect = ctx.sessions.list.subscribe(() => { for (const op of operations) if (!op.committing && projectActor(ctx.sessions.list.getSnapshot()) !== op.sessionId) op.controller.abort(); selectionChanged(); });
       const reconnect = ctx.connection.generation.subscribe(() => { query?.abort(); ++generation; branchCache.clear(); for (const lease of leases.values()) lease.cancelNew(); publish({ loading: false, status: null, branches: null, branch: '', branchOid: '', query: '', remote: '' }); });
       return { store, observe, select, configure, loadBranches, reconcile,
-        cancel() { for (const lease of leases.values()) lease.cancelNew(); },
+        cancel() { inspection?.abort(); for (const lease of leases.values()) lease.cancelNew(); },
         setRemote(sessionId: string, remote: string) { if (!state.busy && !state.sourceChanged && state.sessionId === sessionId && repositoryAllowed(sessionId) && state.status?.remotes.some(item => item.name === remote)) { publish({ remote, query: '', branch: '', branchOid: '', branches: null }); void loadBranches(sessionId); } },
         setBranchSource(sessionId: string, branchSource: string) { if (!state.busy && !state.sourceChanged && state.sessionId === sessionId && repositoryAllowed(sessionId) && (branchSource === 'local' || branchSource === 'remote') && (branchSource === 'local' || state.remote)) { publish({ branchSource, branch: '', branchOid: '', branches: null, query: '' }); void loadBranches(sessionId); } },
         setQuery(query: string) { if (!state.busy) publish({ query }); },
         setBranch(branch: string) { const item = state.branches?.items.find(item => item.name === branch); if (!state.busy && !state.loading && !state.sourceChanged && repositoryAllowed(state.sessionId) && item) { publish({ branch, branchOid: item.oid }); return true; } return false; },
-        openTarget(sessionId: string) { const op = state.sessionId === sessionId ? state.op : null; if (op?.result?.sessionId) ctx.uiWorkspace.openSession(op.result.sessionId); },
-        async dispose() { disposed = true; query?.abort(); ++generation; branchCache.clear(); repositoryChanged?.(); projectChanged(); unselect(); reconnect(); for (const op of operations) op.controller.abort(); await Promise.allSettled([...leases.values()].map(lease => lease.close())); for (const lease of leases.values()) lease.stopScope?.(); leases.clear(); selectedSource = undefined; },
+        async openTarget(sessionId: string) {
+          const op = state.sessionId === sessionId ? state.op : null;
+          if (disposed || state.busy || !op?.result?.sessionId) return;
+          const id = op.result.sessionId, navigation = ctx.layout.beginNavigation(), controller = new AbortController();
+          inspection?.abort(); inspection = controller;
+          const main = projectActor(ctx.sessions.list.getSnapshot()), connection = ctx.connection.generation.getSnapshot()?.id;
+          const signal = AbortSignal.any([controller.signal, navigation]); let reference: WT.Reference | undefined, committing = false;
+          const changed = () => { if (!committing && (disposed || state.op !== op || projectActor(ctx.sessions.list.getSnapshot()) !== main || connection === undefined || ctx.connection.generation.getSnapshot()?.id !== connection)) controller.abort(); };
+          const stops = [ctx.sessions.list.subscribe(changed), ctx.connection.generation.subscribe(changed)];
+          publish({ busy: true, error: '' });
+          try {
+            changed(); const acquired = await retainDiscoveredSession(ctx, id, signal); reference = acquired.reference;
+            changed(); if (signal.aborted) throw new WorktreeError('cancelled', 'cancelled');
+            if (!sessionOpen(acquired.binding.session.getSnapshot())) throw new WorktreeError('sessionUnavailable', 'session-not-open');
+            committing = true; ctx.uiWorkspace.openSession(id);
+          } catch (error) { if (!signal.aborted && !disposed) publish({ error: report(t, error) }); }
+          finally { stops.forEach(stop => stop()); reference?.release(); if (inspection === controller) { inspection = undefined; publish({ busy: false }); } }
+        },
+        async dispose() { disposed = true; inspection?.abort(); query?.abort(); ++generation; branchCache.clear(); repositoryChanged?.(); projectChanged(); unselect(); reconnect(); for (const op of operations) op.controller.abort(); await Promise.allSettled([...leases.values()].map(lease => lease.close())); for (const lease of leases.values()) lease.stopScope?.(); leases.clear(); selectedSource = undefined; },
       };
     }
     const projectSlotName = (key: string) => PANEL + '.projects.' + key;
@@ -1788,18 +1866,66 @@ window.__ModuleLoader__.load({
         requestHost(ctx, actorId, { action: 'status', id: record.id }, abort.signal).then(data => { if (!abort.signal.aborted) setCheckout(data.status); }).catch(failure => { if (!abort.signal.aborted) setError(t('statusError') + ': ' + report(t, failure)); });
         return () => abort.abort();
       }, [ctx, actorId, record]);
-      async function act(request: WT.WorktreeRequest, open = false) {
-        if (!actorId) return;
+      const workspaceSource = ctx.workspaces.list;
+      // The native controller facade has receiver-dependent prototype methods,
+      // unlike our closure stores. React invokes callbacks without a receiver.
+      const subscribeWorkspaces = React.useCallback((listener: WT.Listener) => workspaceSource.subscribe(listener), [workspaceSource]);
+      const readWorkspaces = React.useCallback(() => workspaceSource.getSnapshot(), [workspaceSource]);
+      const workspaces = React.useSyncExternalStore(subscribeWorkspaces, readWorkspaces);
+      const latestRecord = React.useRef(record); latestRecord.current = record;
+      const opening = React.useRef<AbortController | null>(null);
+      const attached = attachedSessionIds(record, workspaces);
+      const selected = currentActor(list), primary = selected && attached.includes(selected) ? selected : attached[0];
+      const openable = (value: WT.Record) => !value.archived && value.state === 'ready' && !recoveryBlocked(value.cleanup);
+      async function openExisting(id: string) {
+        if (busy || opening.current) return;
+        const lifetime = controller.current?.signal; if (!lifetime || lifetime.aborted) return;
+        const navigation = ctx.layout.beginNavigation(), generation = ctx.connection.generation.getSnapshot()?.id;
+        const main = currentActor(ctx.sessions.list.getSnapshot()), operation = new AbortController();
+        const signal = AbortSignal.any([lifetime, navigation, operation.signal]);
+        let reference: WT.Reference | undefined, committing = false, invalidAttachment = false;
+        const validTarget = () => openable(latestRecord.current) && attachedSessionIds(latestRecord.current, ctx.workspaces.list.getSnapshot()).includes(id);
+        const changed = () => {
+          if (committing) return;
+          if (!validTarget()) { invalidAttachment = true; operation.abort(); }
+          else if (generation === undefined || ctx.connection.generation.getSnapshot()?.id !== generation || currentActor(ctx.sessions.list.getSnapshot()) !== main) operation.abort();
+        };
+        opening.current = operation; setBusy(true); setError('');
+        const stops = [ctx.workspaces.list.subscribe(changed), ctx.sessions.list.subscribe(changed), ctx.connection.generation.subscribe(changed)];
+        try {
+          changed();
+          if (signal.aborted) throw new WorktreeError('cancelled', 'cancelled');
+          const acquired = await retainDiscoveredSession(ctx, id, signal); reference = acquired.reference;
+          changed();
+          if (signal.aborted) throw new WorktreeError('cancelled', 'cancelled');
+          // ready can settle with an error, and state can change after acquisition.
+          // Opening existing work must not require an idle or blank destination.
+          if (!sessionOpen(acquired.binding.session.getSnapshot())) throw new WorktreeError('sessionUnavailable', 'session-not-open');
+          committing = true;
+          // Native openSession retains mainView synchronously before returning.
+          ctx.uiWorkspace.openSession(id);
+        } catch (failure) {
+          if (!lifetime.aborted && !navigation.aborted) {
+            if (invalidAttachment) setError(report(t, new WorktreeError('sessionUnavailable', 'session-attachment-changed')));
+            else if (!operation.signal.aborted) setError(report(t, failure));
+          }
+        } finally {
+          stops.forEach(stop => stop()); reference?.release();
+          if (opening.current === operation) {
+            opening.current = null;
+            // A new record/actor effect can replace the cancelled lifetime while
+            // this Card stays mounted. Clear its latch, but never update unmount.
+            if (controller.current && !controller.current.signal.aborted) setBusy(false);
+          }
+        }
+      }
+      async function act(request: WT.WorktreeRequest) {
+        if (!actorId || busy || opening.current) return;
         const signal = controller.current?.signal; if (!signal) return;
-        const navigation = open ? ctx.layout.beginNavigation() : null;
         setBusy(true); setError('');
         try {
-          const data = await requestHost(ctx, actorId, { ...request, id: record.id }, signal);
-          if (signal.aborted) return;
-          if (open) {
-            if (!data?.sessionId) throw new WorktreeError('invalidSession', 'missing-exact-session');
-            if (navigation && !navigation.aborted && currentActor(ctx.sessions.list.getSnapshot()) === actorId) ctx.uiWorkspace.openSession(data.sessionId);
-          } else { setBranchDialog(false); onChanged(); }
+          await requestHost(ctx, actorId, { ...request, id: record.id }, signal);
+          if (!signal.aborted) { setBranchDialog(false); onChanged(); }
         } catch (failure) { if (!signal.aborted) setError(report(t, failure)); }
         finally { if (!signal.aborted) setBusy(false); }
       }
@@ -1809,15 +1935,16 @@ window.__ModuleLoader__.load({
           h('dt', null, t('base')), h('dd', null, record.remote + '/' + record.remoteBranch + ' · ' + record.baseOid.slice(0, 12)),
           h('dt', null, t('state')), h('dd', null, record.state + (record.cleanup ? ' · ' + recoveryLabel(record.cleanup, t) : '') + (checkout ? ' · ' + t(checkout.dirty ? 'dirty' : 'clean') + ' · ' + checkout.changes + ' / ' + checkout.untracked : '')),
           h('dt', null, t('local')), h('dd', null, h('code', null, record.effectiveCwd)),
-          h('dt', null, t('sessions')), h('dd', null, ...record.sessionIds.map(id => h('div', { key: id, className: 'dsh-wt-row' }, h(Button, { onClick: () => ctx.uiWorkspace.openSession(id) }, list.byId[id]?.displayTitle || id), h('span', { className: 'dsh-wt-muted' }, t(sessionStatuses.get(id)?.running ? 'busy' : 'idle')))))),
+          h('dt', null, t('sessions')), h('dd', null, ...record.sessionIds.map(id => h('div', { key: id, className: 'dsh-wt-row' }, h(Button, { disabled: busy || !openable(record) || !attached.includes(id), onClick: () => openExisting(id) }, list.byId[id]?.displayTitle || id), h('span', { className: 'dsh-wt-muted' }, t(sessionStatuses.get(id)?.running ? 'busy' : 'idle')))))),
         record.cleanup && h('div', { className: 'dsh-wt-muted' }, record.cleanup.phase === 'collected' && h('p', null, t('gcWarning')), record.cleanup.reclaimedAt !== null && h('p', null, t('gcDate', { date: new Date(record.cleanup.reclaimedAt).toLocaleString() })), record.cleanup.reason && h('p', null, record.cleanup.reason.code + ': ' + record.cleanup.reason.message)),
         record.error && h('p', { role: 'alert', className: 'dsh-wt-error' }, record.error),
         h('div', { className: 'dsh-wt-row' },
-          h(Button, { disabled: busy || !actorId || record.archived || record.state !== 'ready' || recoveryBlocked(record.cleanup), onClick: () => act({ action: 'start', sourceSessionId: actorId, sessionMode: 'continue' }, true) }, t('open')),
+          h(Button, { disabled: busy || !openable(record) || !primary, onClick: () => { if (primary) void openExisting(primary); } }, t('open')),
           h(Button, { disabled: busy || !actorId || record.archived || record.state !== 'ready' || recoveryBlocked(record.cleanup), onClick: () => setBranchDialog(true) }, t('createBranch')),
           h(Button, { disabled: busy || !actorId, onClick: () => act({ action: 'protect', protected: !record.protected }) }, t(record.protected ? 'unprotect' : 'protect')),
           h(Button, { disabled: busy || !actorId, onClick: () => act({ action: 'archive', archived: !record.archived }) }, t(record.archived ? 'restore' : 'archive')),
           h(Button, { disabled: busy || !actorId || record.state !== 'ready' || recoveryBlocked(record.cleanup) || (!actorId || !record.sessionIds.includes(actorId)), onClick: onPreview }, t('preview'))),
+        !primary && h('p', { className: 'dsh-wt-muted' }, t('sessionUnavailable')),
         (!actorId || !record.sessionIds.includes(actorId)) && h('p', { className: 'dsh-wt-muted' }, t('openSource')),
         h('p', { className: 'dsh-wt-muted' }, t('operation') + ': ', h('code', null, record.operationId)),
         h(Button, { disabled: busy || !actorId, onClick: async () => {

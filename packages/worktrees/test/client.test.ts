@@ -58,11 +58,14 @@ const source = await readFile(new URL('../dist/client.js', import.meta.url), 'ut
 const start = source.indexOf('class WorktreeError extends Error');
 const end = source.indexOf('function Icon(', start);
 assert.ok(start > 0 && end > start);
-const helpers: VmValue = vm.runInNewContext(`(() => { const NS = 'worktrees.ui', PANEL = 'dsh-worktrees'; ${source.slice(start, end)}; return {
+function loadHelpers(signal: typeof AbortSignal = AbortSignal): VmValue {
+  return vm.runInNewContext(`(() => { const NS = 'worktrees.ui', PANEL = 'dsh-worktrees'; ${source.slice(start, end)}; return {
   decodeReply, validateData, requestHost, currentActor, sourceEligible, inputEmpty,
-  captureDraft, draftUnchanged, advertisedDefault, acquireBlock, releaseAfterMainOwnership,
+  captureDraft, draftUnchanged, advertisedDefault, acquireBlock, releaseAfterMainOwnership, retainDiscoveredSession,
   rootFolderValue, writeRootFolder, NATIVE_SUBMIT_ABI, leaseNativeSink, setupProgress, prepareWorktree, waitForDraftFiles, createWorktreeFlow, createRepositoryAvailability,
-}; })()`, { AbortController, AbortSignal, crypto: webcrypto });
+}; })()`, { AbortController, AbortSignal: signal, crypto: webcrypto });
+}
+const helpers = loadHelpers();
 const success = <T>(data: T) => ({ ok: true, value: { v: 1, ok: true, data } });
 const input = { draft: 'review this @file', draftRev: 3, attachmentIds: ['draft-a', 'draft-b'], phase: 'plain', queue: [] };
 const blank = { blank: true, subagent: null, openState: 'open', removed: false, running: false, promptAttempted: false, awaitingFirstTurn: false, pendingSubmissions: [] };
@@ -364,6 +367,116 @@ function observable<T>(initial: T) {
 }
 async function settle() { for (let i = 0; i < 30; ++i) await Promise.resolve(); }
 function deferred<T = unknown>() { let resolve!: (value: T | PromiseLike<T>) => void, reject!: (reason?: unknown) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
+function controlledDeadlines() {
+  const deadlines: { milliseconds: number; controller: AbortController }[] = [];
+  class ControlledAbortSignal extends AbortSignal {
+    static override timeout(milliseconds: number) { const controller = new AbortController(); deadlines.push({ milliseconds, controller }); return controller.signal; }
+  }
+  return { client: loadHelpers(ControlledAbortSignal), deadlines,
+    expire() { assert.equal(deadlines.length, 1, 'discovery and ready share one absolute deadline'); deadlines[0]!.controller.abort(Object.assign(Error('deadline expired'), { name: 'TimeoutError' })); } };
+}
+
+function discoveryFixture({ known = false, deferredReady = false, refreshDiscovers = false, deferredRefresh = false, discoverOnSubscribe = false, reentrantRetain = false, onRetain, retainFailure, client = helpers }: { known?: boolean; deferredReady?: boolean; refreshDiscovers?: boolean; deferredRefresh?: boolean; discoverOnSubscribe?: boolean; reentrantRetain?: boolean; onRetain?: () => void; retainFailure?: Error; client?: VmValue } = {}) {
+  const list = observable<SessionList>({ byId: known ? { target: { retainedBy: {} } } : {} }), session = observable<SessionSnapshot>({ ...blank }), binding = { ctx: {}, session };
+  const ready = deferred<typeof binding>(), refreshReady = deferred<void>(), events: string[] = [], retains: { id: string; source: string; signal: AbortSignal }[] = [], references: { ready: Promise<typeof binding>; sessionId: string; releases: number; release(): void }[] = [];
+  let refreshes = 0;
+  function discover() { list.publish({ byId: { ...list.getSnapshot().byId, target: { retainedBy: {} } } }); }
+  const ctx = { sessions: {
+    list: { getSnapshot() { events.push('snapshot'); return list.getSnapshot(); }, subscribe(callback: Listener) { events.push('subscribe'); const stop = list.subscribe(callback); if (discoverOnSubscribe) discover(); return stop; } },
+    async refresh() { ++refreshes; if (deferredRefresh) await refreshReady.promise; if (refreshDiscovers) discover(); },
+    retain(id: string, options: { source: string; signal: AbortSignal }) {
+      retains.push({ id, ...options }); assert.equal(id, 'target'); assert.equal(options.source, 'controllerOperation'); assert.ok(options.signal instanceof AbortSignal);
+      assert.ok(list.getSnapshot().byId[id], 'unknown native session ids cannot be retained'); assert.equal(retains.length, 1, 'synchronous list publication must not recursively retain');
+      if (retainFailure) throw retainFailure;
+      if (reentrantRetain) list.publish({ byId: { ...list.getSnapshot().byId, target: { retainedBy: { controllerOperation: 1 } } } });
+      onRetain?.();
+      const reference = { sessionId: id, ready: deferredReady ? ready.promise : Promise.resolve(binding), releases: 0, release() { ++reference.releases; } }; references.push(reference); return reference;
+    },
+  } };
+  return { ctx, list, session, binding, ready, refreshReady, events, retains, references, discover, refreshes: () => refreshes,
+    wait(signal = new AbortController().signal): Promise<{ reference: typeof references[number]; binding: typeof binding }> { return client.retainDiscoveredSession(ctx, 'target', signal); } };
+}
+
+test('discovered session subscribes before its first catalog check and retains an already-known target exactly once', async () => {
+  for (const discoverOnSubscribe of [false, true]) {
+    const run = discoveryFixture({ known: !discoverOnSubscribe, discoverOnSubscribe, reentrantRetain: true });
+    const result = await run.wait();
+    assert.equal(run.events[0], 'subscribe'); assert.equal(run.retains.length, 1); assert.equal(run.refreshes(), 0);
+    assert.equal(result.reference, run.references[0]); assert.equal(result.binding, run.binding); assert.equal(result.reference.releases, 0, 'successful acquisition transfers ownership to caller');
+    assert.equal(run.list.listeners.size, 0); result.reference.release(); assert.equal(result.reference.releases, 1);
+  }
+});
+
+test('missing target is retained from one refresh-only catalog discovery, including synchronous retain reentrancy', async () => {
+  const run = discoveryFixture({ refreshDiscovers: true, reentrantRetain: true });
+  const result = await run.wait();
+  assert.equal(run.refreshes(), 1); assert.equal(run.retains.length, 1); assert.equal(run.list.listeners.size, 0);
+  assert.equal(result.binding, run.binding); result.reference.release(); assert.equal(result.reference.releases, 1);
+});
+
+test('a stale refresh and unrelated catalog events keep waiting until the exact target arrives', async () => {
+  const run = discoveryFixture({ deferredReady: true, reentrantRetain: true }); let finished = false;
+  const waiting = run.wait(); void waiting.then(() => { finished = true; }); await settle();
+  assert.equal(run.refreshes(), 1); assert.equal(run.retains.length, 0); assert.equal(finished, false); assert.equal(run.list.listeners.size, 1);
+  for (let i = 0; i < 3; ++i) run.list.publish({ byId: { other: { title: 'unrelated ' + i, retainedBy: {} } } });
+  await settle(); assert.equal(run.refreshes(), 1); assert.equal(run.retains.length, 0); assert.equal(finished, false);
+  run.discover(); await settle(); assert.equal(run.retains.length, 1); assert.equal(finished, false);
+  run.list.publish({ byId: { ...run.list.getSnapshot().byId, target: { title: 'metadata only', retainedBy: { controllerOperation: 1 } } } });
+  run.ready.resolve(run.binding); const result = await waiting; assert.equal(run.retains.length, 1); assert.equal(run.refreshes(), 1); assert.equal(run.list.listeners.size, 0);
+  result.reference.release(); assert.equal(result.reference.releases, 1);
+});
+
+test('ready settlement rejects non-open, removed or non-root snapshots and balances the acquired reference', async () => {
+  for (const patch of [{ openState: 'error' }, { openState: 'opening' }, { openState: undefined }, { removed: true }, { subagent: { parentId: 'parent' } }, { subagent: undefined }]) {
+    const run = discoveryFixture({ known: true, deferredReady: true }); const waiting = run.wait();
+    const rejected = assert.rejects(waiting, (error: VmValue) => error.kind === 'sessionUnavailable');
+    run.session.publish({ ...blank, ...patch }); run.ready.resolve(run.binding); await rejected;
+    assert.equal(run.retains.length, 1); assert.equal(run.references[0]!.releases, 1); assert.equal(run.list.listeners.size, 0);
+    run.session.publish({ ...blank }); run.discover(); await settle(); assert.equal(run.references[0]!.releases, 1); assert.equal(run.retains.length, 1, 'late repair cannot retry acquisition');
+  }
+});
+
+test('retain and ready rejections become session-unavailable failures without duplicate acquisition or release', async () => {
+  const thrown = discoveryFixture({ known: true, retainFailure: Error('native retain refused') });
+  await assert.rejects(thrown.wait(), (error: VmValue) => error.kind === 'sessionUnavailable');
+  assert.equal(thrown.retains.length, 1); assert.equal(thrown.references.length, 0); assert.equal(thrown.list.listeners.size, 0);
+  const rejected = discoveryFixture({ known: true, deferredReady: true }); const waiting = rejected.wait();
+  const failed = assert.rejects(waiting, (error: VmValue) => error.kind === 'sessionUnavailable'); rejected.ready.reject(Error('native open refused')); await failed;
+  assert.equal(rejected.references[0]!.releases, 1); assert.equal(rejected.list.listeners.size, 0); rejected.discover(); await settle(); assert.equal(rejected.retains.length, 1);
+});
+
+test('cancellation during discovery or ready forbids late retention and releases exactly once', async () => {
+  for (const known of [false, true]) {
+    const native = new AbortController(), run = discoveryFixture({ known, deferredReady: true, deferredRefresh: !known, refreshDiscovers: true });
+    const waiting = run.wait(native.signal), rejected = assert.rejects(waiting, (error: VmValue) => error.kind === 'cancelled'); await settle(); native.abort(); await rejected;
+    assert.equal(run.list.listeners.size, 0); assert.equal(run.retains.length, known ? 1 : 0);
+    if (known) { assert.equal(run.retains[0]!.signal.aborted, true); assert.equal(run.references[0]!.releases, 1); }
+    run.refreshReady.resolve(); run.discover(); run.ready.resolve(run.binding); await settle();
+    assert.equal(run.retains.length, known ? 1 : 0); assert.ok(run.references.every(reference => reference.releases === 1));
+  }
+  const preaborted = new AbortController(), run = discoveryFixture({ known: true }); preaborted.abort();
+  await assert.rejects(run.wait(preaborted.signal), (error: VmValue) => error.kind === 'cancelled'); assert.equal(run.retains.length, 0); assert.equal(run.list.listeners.size, 0);
+});
+
+test('cancellation re-entering retain releases the reference returned after cancellation', async () => {
+  const native = new AbortController(), run = discoveryFixture({ known: true, onRetain: () => native.abort() });
+  await assert.rejects(run.wait(native.signal), (error: VmValue) => error.kind === 'cancelled'); await settle();
+  assert.equal(run.retains.length, 1); assert.equal(run.references[0]!.releases, 1); assert.equal(run.list.listeners.size, 0);
+});
+
+test('one absolute 30-second deadline covers discovery, stalled refresh and the subsequent ready wait', async () => {
+  for (const stage of ['discovery', 'refresh', 'ready']) {
+    const clock = controlledDeadlines(), run = discoveryFixture({ client: clock.client, deferredReady: true, deferredRefresh: stage === 'refresh', refreshDiscovers: stage === 'refresh' });
+    const waiting = run.wait(), rejected = assert.rejects(waiting, (error: VmValue) => error.kind === 'sessionTimeout'); await settle();
+    assert.equal(run.refreshes(), 1); assert.equal(clock.deadlines.length, 1); assert.equal(clock.deadlines[0]!.milliseconds, 30000);
+    if (stage === 'ready') { run.discover(); await settle(); assert.equal(run.retains.length, 1); assert.equal(clock.deadlines.length, 1, 'ready must not reset discovery deadline'); }
+    clock.expire(); await rejected; assert.equal(run.list.listeners.size, 0);
+    run.refreshReady.resolve(); run.discover(); run.ready.resolve(run.binding); await settle();
+    assert.equal(run.retains.length, stage === 'ready' ? 1 : 0); assert.ok(run.references.every(reference => reference.releases === 1));
+    if (stage === 'ready') assert.equal(run.retains[0]!.signal.aborted, true);
+  }
+});
+
 function leaseFixture({ mode = 'new', codec, adjudicate }: { mode?: string; codec?: Codec; adjudicate?: Adjudicate } = {}) {
   const calls: ['local' | 'target', string, string[], string, AbortSignal][] = [], finished: { captured: { mode: string }; error: unknown }[] = [], scope = {}, binding = { ctx: scope };
   const controller = { serializeReference: codec || (async (owner: string, ref: string) => `model:${owner}/${ref}`), adjudicate: adjudicate || (async () => undefined), other() { return this === controller; } };
@@ -429,7 +542,7 @@ test('lease restoration is identity-safe and never overwrites a competing writer
   await run.lease.close(); assert.equal(run.input.deps.defaultSink, replacement);
 });
 
-function transaction({ deferredSetup = false, setupFailure, deferredUpload = false, admission = 'success', deferredSourceUpload = false, draft = '', attachments = [], withoutRepositoryGate = false, realRepositoryGate = false, context: initialContext, records = [], sourceCwd = '/repo/services/api' }: { deferredSetup?: boolean; setupFailure?: unknown; deferredUpload?: boolean; admission?: string; deferredSourceUpload?: boolean; draft?: string; attachments?: string[]; withoutRepositoryGate?: boolean; realRepositoryGate?: boolean; context?: ProjectContext; records?: unknown[]; sourceCwd?: string } = {}) {
+function transaction({ deferredSetup = false, setupFailure, deferredUpload = false, admission = 'success', deferredSourceUpload = false, draft = '', attachments = [], withoutRepositoryGate = false, realRepositoryGate = false, context: initialContext, records = [], sourceCwd = '/repo/services/api', discoverTargetOnSetup = true, targetOnRefresh = false, deferredRefresh = false, deferredTargetReady = false, reentrantRetain = false, client = helpers }: { deferredSetup?: boolean; setupFailure?: unknown; deferredUpload?: boolean; admission?: string; deferredSourceUpload?: boolean; draft?: string; attachments?: string[]; withoutRepositoryGate?: boolean; realRepositoryGate?: boolean; context?: ProjectContext; records?: unknown[]; sourceCwd?: string; discoverTargetOnSetup?: boolean; targetOnRefresh?: boolean; deferredRefresh?: boolean; deferredTargetReady?: boolean; reentrantRetain?: boolean; client?: VmValue } = {}) {
   const calls: RpcCall[] = [], events: string[] = [], admissions: { text: string; ids: string[]; mode: string; signal: AbortSignal }[] = [], sourceAdmissions: { text: string; ids: string[]; mode: string; signal: AbortSignal }[] = [], opened: string[] = [], references: { sessionId: string; releases?: number; released?: boolean; release: () => void }[] = [], cleanups = new Set<Cleanup>();
   const empty: ComposerSnapshot = { draft: '', draftRev: 7, attachmentIds: [], phase: 'plain', queue: [], occurrences: [] };
   const src = observable({ ...empty, draft, attachmentIds: attachments }), dst = observable({ ...empty });
@@ -438,6 +551,8 @@ function transaction({ deferredSetup = false, setupFailure, deferredUpload = fal
   const statuses = observable(new Map()), generation = observable<{ id: number } | undefined>({ id: 1 }), metadata = observable<Metadata>({ projects: initialContext ? [initialContext.project] : [], bindings: initialContext?.binding ? [initialContext.binding] : [], records });
   function effect(factory: () => Cleanup) { const cleanup = factory(); let live = true; const stop = () => { if (live) { live = false; cleanups.delete(stop); return cleanup(); } }; cleanups.add(stop); return stop; }
   const srcBinding = { ctx: { id: 'source', effect }, session: srcSession }, dstBinding = { ctx: { id: 'target', effect }, session: dstSession };
+  const targetReady = deferred<typeof dstBinding>(), refreshReady = deferred<void>(), retainCalls: { id: string; signal?: AbortSignal }[] = [];
+  function discoverTarget() { events.push('target-catalog'); list.publish({ byId: { ...list.getSnapshot().byId, target: { retainedBy: {} } } }); }
   const nativeSink = async (text: string, ids: string[], mode: string, signal: AbortSignal) => { sourceAdmissions.push({ text, ids, mode, signal }); return { kind: 'success' }; };
   const codec = { async serializeReference(owner: string, ref: string, _signal?: AbortSignal) { events.push('native-serialize'); return `native-model:${owner}/${ref}`; }, async adjudicate() { return undefined; } };
   const srcInput = { state: src, deps: { actx: srcBinding.ctx, defaultSink: nativeSink, inputTriggers: () => codec }, setDraft() { assert.fail('native machine owns editor mutation'); } }, dstInput = { state: dst };
@@ -454,7 +569,7 @@ function transaction({ deferredSetup = false, setupFailure, deferredUpload = fal
     progressState.terminal = terminal;
     for (const waiter of [...progressWaiters]) if (progressState.revision > waiter.after! || terminal) { waiter.cleanup(); waiter.resolve(success(structuredClone(progressState))); progressWaiters = progressWaiters.filter((item) => item !== waiter); }
   }
-  function completeSetup(request: MockRequest) { for (const stage of [...(request.branchSource === 'remote' ? ['fetching'] : []), 'creating', 'naming', 'opening', 'ready']) publish(stage, request.operationId); publish(null, request.operationId, true); return setupFailure || success(result); }
+  function completeSetup(request: MockRequest) { for (const stage of [...(request.branchSource === 'remote' ? ['fetching'] : []), 'creating', 'naming', 'opening', 'ready']) publish(stage, request.operationId); publish(null, request.operationId, true); if (!setupFailure && discoverTargetOnSetup) discoverTarget(); return setupFailure || success(result); }
   const conversation = { blocks: { storeFor: (id: string) => blocks.get(id), set(id: string, value: ComposerBlock) { const store = blocks.get(id); if (store!.getSnapshot()?.reason! !== value?.reason) store!.publish(value)!; } }, input: { for: (scope: object) => scope === srcBinding.ctx ? srcInput : dstInput }, fileUploads,
     resolveDraftAttachments: (ids: string[]) => ids.map((id: string) => descriptors.get(id)).filter(Boolean),
     rebindDraftFiles(id: string, ids: string[]) { events.push('rebind:' + id); const next = { ...fileUploads.getSnapshot() }; for (const file of ids.filter((id: string) => id.startsWith('file'))) next[file] = { status: (deferredUpload && id === 'target') || (deferredSourceUpload && id === 'source') ? 'uploading' : 'ready', owner: id }; fileUploads.publish(next); },
@@ -465,7 +580,13 @@ function transaction({ deferredSetup = false, setupFailure, deferredUpload = fal
     },
   };
   const ctx = { get: (key: string) => { assert.equal(key, 'conversation'); return conversation; }, uiSession: { sessionStatus: statuses }, workspaces: { list: observable({ items: [{ workspaceId: 'source-folder', path: sourceCwd, sessionIds: ['source'] }, { workspaceId: 'target-folder', path: result.worktree.effectiveCwd, sessionIds: ['target'] }] }) }, sessions: { list, binding: (id: string) => id === 'source' ? srcBinding : dstBinding,
-    retain(id: string, options: { source: string }) { assert.equal(options.source, 'controllerOperation'); const ref = { sessionId: id, ready: Promise.resolve(id === 'source' ? srcBinding : dstBinding), releases: 0, release() { ++ref.releases; } }; references.push(ref); return ref; }, retainInfo: (id: string) => id === 'source' ? { getSnapshot: () => ({ retainedBy: list.getSnapshot().byId.source?.retainedBy || {} }), subscribe: list.subscribe } : ownership },
+    retain(id: string, options: { source: string; signal?: AbortSignal }) {
+      assert.equal(options.source, 'controllerOperation'); retainCalls.push({ id, signal: options.signal });
+      if (!list.getSnapshot().byId[id]) throw Error('Unknown session: ' + id);
+      if (id === 'target' && reentrantRetain) { assert.equal(retainCalls.filter(call => call.id === 'target').length, 1, 'retain re-enters catalog subscribers'); list.publish({ byId: { ...list.getSnapshot().byId, target: { retainedBy: { controllerOperation: 1 } } } }); }
+      const ref = { sessionId: id, ready: id === 'target' && deferredTargetReady ? targetReady.promise : Promise.resolve(id === 'source' ? srcBinding : dstBinding), releases: 0, release() { ++ref.releases; } }; references.push(ref); return ref;
+    }, async refresh() { events.push('sessions-refresh'); if (deferredRefresh) await refreshReady.promise; if (targetOnRefresh) discoverTarget(); },
+    retainInfo: (id: string) => id === 'source' ? { getSnapshot: () => ({ retainedBy: list.getSnapshot().byId.source?.retainedBy || {} }), subscribe: list.subscribe } : ownership },
     layout: { beginNavigation() { navigation?.abort(); navigation = new AbortController(); return navigation.signal; } },
     uiWorkspace: { openSession(id: string) { opened.push(id); navigation!.abort(); ownership.publish({ retainedBy: { mainView: 1 } }); list.publish({ byId: { [id]: { retainedBy: { mainView: 1 } } } }); }, startSession() { assert.fail('not used'); } }, effect,
     connection: { generation, rpc: { async call(...[channel, endpoint, payload, signal]: RpcArgs) {
@@ -488,16 +609,162 @@ function transaction({ deferredSetup = false, setupFailure, deferredUpload = fal
   let projectContext = initialContext;
   const projects = { store: metadata, context: () => projectContext, rememberWorktree() {}, rememberRecords() {} };
   const availability = observable({ available: true });
-  const repositories = realRepositoryGate ? helpers.createRepositoryAvailability(ctx, projects) : { store: availability, enabled: (id: string) => id === 'source' && availability.getSnapshot().available, unavailable() { availability.publish({ available: false }); } };
-  const flow = helpers.createWorktreeFlow(ctx, (key: string) => key, projects, withoutRepositoryGate ? undefined : repositories); flow.observe('source');
-  return { flow, ctx, srcInput, src, dst, calls, events, admissions, sourceAdmissions, opened, references, generation, metadata, fileUploads, blocks, nativeSink, repositories,
+  const repositories = realRepositoryGate ? client.createRepositoryAvailability(ctx, projects) : { store: availability, enabled: (id: string) => id === 'source' && availability.getSnapshot().available, unavailable() { availability.publish({ available: false }); } };
+  const flow = client.createWorktreeFlow(ctx, (key: string) => key, projects, withoutRepositoryGate ? undefined : repositories); flow.observe('source');
+  return { flow, ctx, srcInput, src, dst, dstSession, dstBinding, calls, events, admissions, sourceAdmissions, opened, references, retainCalls, generation, metadata, fileUploads, blocks, nativeSink, repositories, discoverTarget,
+    targetOpened() { targetReady.resolve(dstBinding); }, refreshed() { refreshReady.resolve(); },
     contextChanged(next: ProjectContext | undefined) { projectContext = next; const before = metadata.getSnapshot(); metadata.publish({ ...before, projects: next ? [next.project] : [], bindings: next?.binding ? [next.binding] : [], revision: (before.revision || 0) + 1 }); },
     revoke() { availability.publish({ available: false }); },
-    select(mode: string) { flow.select('source', mode); }, send(text = 'first task', ids = attachments, mode = 'queue') { return srcInput.deps.defaultSink(text, ids, mode, new AbortController().signal); },
+    select(mode: string) { flow.select('source', mode); }, send(text = 'first task', ids = attachments, mode = 'queue', signal = new AbortController().signal) { return srcInput.deps.defaultSink(text, ids, mode, signal); },
     complete() { setupPending!.pending.resolve(completeSetup(setupPending!.request)); }, navigate() { navigation!.abort(); },
     uploaded() { const next = { ...fileUploads.getSnapshot() }; for (const [id, item] of Object.entries(next)) next[id] = { ...item, status: 'ready' }; fileUploads.publish(next); },
     async dispose() { await flow.dispose(); repositories.dispose?.(); await Promise.allSettled([...cleanups].map(cleanup => cleanup())); } };
 }
+
+test('first Send waits for catalog discovery and ready in either RPC/catalog ordering, with one admission', async () => {
+  for (const catalogFirst of [false, true]) {
+    const run = transaction({ deferredSetup: true, discoverTargetOnSetup: false, deferredRefresh: true, deferredTargetReady: true, reentrantRetain: true });
+    try {
+      run.select('new'); const sending = run.send('canonical first task'); await settle();
+      assert.equal(run.calls.filter(call => call.endpoint === 'dsh-worktrees/prepare').length, 1); assert.equal(run.references.filter(ref => ref.sessionId === 'target').length, 0);
+      if (catalogFirst) { run.discoverTarget(); await settle(); assert.equal(run.references.filter(ref => ref.sessionId === 'target').length, 0, 'catalog alone is not RPC completion'); }
+      run.complete(); await settle(); assert.equal(run.admissions.length, 0); assert.equal(run.sourceAdmissions.length, 0);
+      if (!catalogFirst) {
+        assert.equal(run.retainCalls.filter(call => call.id === 'target').length, 0, 'RPC completion does not make an unknown id retainable');
+        assert.equal(run.events.filter(event => event === 'sessions-refresh').length, 1); run.discoverTarget(); await settle();
+      } else assert.equal(run.events.includes('sessions-refresh'), false);
+      assert.equal(run.references.filter(ref => ref.sessionId === 'target').length, 1); assert.equal(run.admissions.length, 0, 'ready is required after discovery');
+      const list = run.ctx.sessions.list; list.publish({ byId: { ...list.getSnapshot().byId, other: { title: 'unrelated title', retainedBy: {} } } });
+      list.publish({ byId: { ...list.getSnapshot().byId, source: { title: 'source title only', retainedBy: { mainView: 1 } }, target: { title: 'target title only', retainedBy: { controllerOperation: 1 } } } });
+      await settle(); assert.equal(run.retainCalls.filter(call => call.id === 'target').length, 1); assert.equal(run.admissions.length, 0);
+      run.targetOpened(); assert.equal((await sending).kind, 'success'); await settle();
+      run.refreshed(); await settle(); assert.equal(run.admissions.length, 1); assert.equal(run.admissions[0]!.text, 'canonical first task'); assert.equal(run.sourceAdmissions.length, 0);
+      assert.deepEqual(run.opened, ['target']); assert.equal(run.retainCalls.filter(call => call.id === 'target').length, 1); assert.ok(run.references.every(reference => reference.releases === 1));
+    } finally { await run.dispose(); }
+    assert.ok(run.references.every(reference => reference.releases === 1), 'scope disposal never double-releases transferred references');
+  }
+});
+
+test('first Send repairs refresh-only discovery or waits past a stale refresh for a later target event', async () => {
+  for (const targetOnRefresh of [false, true]) {
+    const run = transaction({ discoverTargetOnSetup: false, targetOnRefresh, reentrantRetain: true });
+    try {
+      run.select('new'); const sending = run.send(); await settle();
+      assert.equal(run.events.filter(event => event === 'sessions-refresh').length, 1);
+      if (!targetOnRefresh) {
+        assert.equal(run.admissions.length, 0); assert.equal(run.retainCalls.filter(call => call.id === 'target').length, 0);
+        const list = run.ctx.sessions.list; list.publish({ byId: { ...list.getSnapshot().byId, unrelated: { retainedBy: {} } } }); await settle();
+        assert.equal(run.admissions.length, 0); assert.equal(run.events.filter(event => event === 'sessions-refresh').length, 1, 'unrelated events do not trigger a refresh loop'); run.discoverTarget();
+      }
+      assert.equal((await sending).kind, 'success'); await settle(); assert.equal(run.admissions.length, 1); assert.equal(run.sourceAdmissions.length, 0);
+      assert.equal(run.calls.filter(call => call.endpoint === 'dsh-worktrees/prepare').length, 1); assert.equal(run.retainCalls.filter(call => call.id === 'target').length, 1);
+      assert.ok(run.references.every(reference => reference.releases === 1));
+    } finally { await run.dispose(); }
+  }
+});
+
+test('cancel, navigation, Local, reconnect, dispose and timeout forbid late references or sends in both wait phases', async () => {
+  for (const stage of ['discovery', 'ready']) for (const cause of ['cancel', 'navigation', 'local', 'reconnect', 'dispose', 'timeout']) {
+    const clock = controlledDeadlines(), native = new AbortController();
+    const run = transaction({ client: clock.client, discoverTargetOnSetup: false, deferredRefresh: true, targetOnRefresh: true, deferredTargetReady: true, draft: 'native @reference draft', attachments: ['file-one', 'image-two'] });
+    try {
+      const before = structuredClone(run.src.getSnapshot()); run.select('new'); const sending = run.send('canonical task', ['file-one', 'image-two'], 'queue', native.signal); await settle();
+      assert.equal(run.events.filter(event => event === 'sessions-refresh').length, 1); assert.equal(run.admissions.length, 0);
+      if (stage === 'ready') { run.discoverTarget(); await settle(); assert.equal(run.references.filter(ref => ref.sessionId === 'target').length, 1); }
+      if (cause === 'cancel') native.abort();
+      if (cause === 'navigation') run.navigate();
+      if (cause === 'local') run.select('local');
+      if (cause === 'reconnect') run.generation.publish({ id: 2 });
+      if (cause === 'dispose') await run.dispose();
+      if (cause === 'timeout') { assert.equal(clock.deadlines[0]!.milliseconds, 30000); clock.expire(); }
+      assert.equal((await sending).kind, 'error', stage + '/' + cause); await settle();
+      const targetRetains = run.retainCalls.filter(call => call.id === 'target'); assert.equal(targetRetains.length, stage === 'ready' ? 1 : 0, stage + '/' + cause);
+      if (stage === 'ready') assert.equal(targetRetains[0]!.signal!.aborted, true);
+      assert.ok(run.references.every(reference => reference.releases === 1), stage + '/' + cause + ' releases all acquired references');
+      run.refreshed(); run.discoverTarget(); run.targetOpened(); await settle();
+      assert.equal(run.retainCalls.filter(call => call.id === 'target').length, stage === 'ready' ? 1 : 0, 'late discovery/ready cannot acquire again');
+      assert.equal(run.admissions.length, 0); assert.equal(run.sourceAdmissions.length, 0); assert.deepEqual(run.opened, []); assert.deepEqual(run.src.getSnapshot(), before);
+      assert.equal(run.events.includes('rebind:target'), false); assert.equal(run.blocks.get('source')!.getSnapshot(), undefined);
+    } finally { await run.dispose(); }
+    assert.ok(run.references.every(reference => reference.releases === 1)); assert.equal(run.ctx.sessions.list.listeners.size, 0);
+  }
+});
+
+test('source identity, eligibility, ownership, project and interaction guards remain active while discovery waits', async () => {
+  for (const cause of ['identity', 'eligibility', 'ownership', 'project', 'interaction']) {
+    const run = transaction({ context: ownedContext, discoverTargetOnSetup: false, deferredRefresh: true });
+    try {
+      run.select('new'); const sending = run.send('never admit to a changed source'); await settle(); assert.equal(run.admissions.length, 0);
+      const list = run.ctx.sessions.list;
+      if (cause === 'identity') { const original = run.ctx.sessions.binding, replacement = { ...original('source') }; run.ctx.sessions.binding = id => id === 'source' ? replacement : original(id); list.publish({ ...list.getSnapshot() }); }
+      if (cause === 'eligibility') run.ctx.sessions.binding('source').session.publish({ ...blank, blank: false });
+      if (cause === 'ownership') list.publish({ byId: { source: { retainedBy: {} } } });
+      if (cause === 'project') run.contextChanged(undefined);
+      if (cause === 'interaction') run.ctx.uiSession.sessionStatus.publish(new Map([['source', { pendingInteraction: {} }]]));
+      assert.equal((await sending).kind, 'error', cause); await settle(); run.refreshed(); run.discoverTarget(); await settle();
+      assert.equal(run.retainCalls.filter(call => call.id === 'target').length, 0); assert.equal(run.admissions.length, 0); assert.equal(run.sourceAdmissions.length, 0); assert.deepEqual(run.opened, []);
+    } finally { await run.dispose(); }
+    assert.ok(run.references.every(reference => reference.releases === 1));
+  }
+});
+
+test('first Send rejects ready-settled error or removed targets without admission or a leaked reference', async () => {
+  for (const patch of [{ openState: 'error' }, { removed: true }]) {
+    const run = transaction({ deferredTargetReady: true });
+    try {
+      run.select('new'); const sending = run.send(); await settle(); assert.equal(run.references.filter(ref => ref.sessionId === 'target').length, 1); assert.equal(run.admissions.length, 0);
+      run.dstSession.publish({ ...blank, ...patch }); run.targetOpened(); assert.equal((await sending).kind, 'error'); await settle();
+      assert.equal(run.admissions.length, 0); assert.equal(run.sourceAdmissions.length, 0); assert.deepEqual(run.opened, []); assert.ok(run.references.every(reference => reference.releases === 1));
+      run.dstSession.publish({ ...blank }); run.discoverTarget(); await settle(); assert.equal(run.admissions.length, 0); assert.equal(run.retainCalls.filter(call => call.id === 'target').length, 1);
+    } finally { await run.dispose(); }
+  }
+});
+
+test('failed-flow Open discovers its exact prepared result by refresh or event without another create or send', async () => {
+  for (const targetOnRefresh of [false, true]) {
+    const run = transaction({ discoverTargetOnSetup: false, deferredRefresh: true, targetOnRefresh, deferredTargetReady: true, reentrantRetain: true });
+    try {
+      run.select('new'); const sending = run.send('retained canonical task'); await settle(); run.navigate(); assert.equal((await sending).kind, 'error'); await settle();
+      const op = run.flow.store.getSnapshot().op; assert.equal(op.result.sessionId, 'target'); assert.equal(run.references.filter(ref => ref.sessionId === 'target').length, 0);
+      const opening = run.flow.openTarget('source'); await settle(); assert.equal(run.flow.store.getSnapshot().busy, true); assert.deepEqual(run.opened, []);
+      assert.equal(run.events.filter(event => event === 'sessions-refresh').length, 2, 'each independent attempt requests at most one catalog refresh');
+      await run.flow.openTarget('source'); assert.equal(run.events.filter(event => event === 'sessions-refresh').length, 2, 'a busy recovery Open cannot start a second acquisition');
+      if (targetOnRefresh) run.refreshed(); else run.discoverTarget(); await settle();
+      assert.equal(run.retainCalls.filter(call => call.id === 'target').length, 1); assert.deepEqual(run.opened, [], 'recovery Open also waits for native ready');
+      run.targetOpened(); await opening; await settle(); run.refreshed(); await settle();
+      assert.deepEqual(run.opened, ['target']); assert.equal(run.flow.store.getSnapshot().busy, false); assert.equal(run.flow.store.getSnapshot().op, op);
+      assert.equal(run.calls.filter(call => call.endpoint === 'dsh-worktrees/prepare').length, 1); assert.equal(run.admissions.length, 0); assert.equal(run.sourceAdmissions.length, 0);
+      assert.ok(run.references.every(reference => reference.releases === 1));
+    } finally { await run.dispose(); }
+    assert.ok(run.references.every(reference => reference.releases === 1));
+  }
+});
+
+test('failed-flow Open cannot navigate late after cancel, navigation, selection, reconnect, disposal or deadline', async () => {
+  for (const stage of ['discovery', 'ready']) for (const cause of ['cancel', 'navigation', 'selection', 'reconnect', 'dispose', 'timeout']) {
+    const clock = controlledDeadlines(), run = transaction({ client: clock.client, discoverTargetOnSetup: false, deferredRefresh: true, targetOnRefresh: true, deferredTargetReady: true });
+    try {
+      run.select('new'); const sending = run.send(); await settle(); run.navigate(); assert.equal((await sending).kind, 'error'); await settle();
+      const opening = run.flow.openTarget('source'); await settle(); assert.equal(run.flow.store.getSnapshot().busy, true);
+      if (stage === 'ready') { run.discoverTarget(); await settle(); assert.equal(run.retainCalls.filter(call => call.id === 'target').length, 1); }
+      if (cause === 'cancel') run.flow.cancel();
+      if (cause === 'navigation') run.navigate();
+      if (cause === 'selection') { const list = run.ctx.sessions.list; list.publish({ byId: { ...list.getSnapshot().byId, source: { retainedBy: {} }, other: { retainedBy: { mainView: 1 } } } }); }
+      if (cause === 'reconnect') run.generation.publish({ id: 2 });
+      if (cause === 'dispose') await run.dispose();
+      if (cause === 'timeout') { assert.equal(clock.deadlines.length, 2, 'one deadline for Send and one for explicit recovery'); assert.ok(clock.deadlines.every(deadline => deadline.milliseconds === 30000)); clock.deadlines[1]!.controller.abort(Object.assign(Error('deadline expired'), { name: 'TimeoutError' })); }
+      await opening; await settle();
+      if (cause !== 'dispose') assert.equal(run.flow.store.getSnapshot().busy, false, stage + '/' + cause);
+      if (stage === 'ready') assert.equal(run.retainCalls.find(call => call.id === 'target')!.signal!.aborted, true);
+      if (cause === 'timeout') assert.match(run.flow.store.getSnapshot().error, /sessionTimeout/);
+      assert.ok(run.references.every(reference => reference.releases === 1));
+      run.refreshed(); run.discoverTarget(); run.targetOpened(); await settle();
+      assert.deepEqual(run.opened, [], stage + '/' + cause); assert.equal(run.admissions.length, 0); assert.equal(run.sourceAdmissions.length, 0);
+      assert.equal(run.retainCalls.filter(call => call.id === 'target').length, stage === 'ready' ? 1 : 0); assert.equal(run.calls.filter(call => call.endpoint === 'dsh-worktrees/prepare').length, 1);
+    } finally { await run.dispose(); }
+    assert.ok(run.references.every(reference => reference.releases === 1)); assert.equal(run.ctx.sessions.list.listeners.size, 0);
+  }
+});
 
 function repositoryFixture({ delayed = false, reply }: { delayed?: boolean; reply?: unknown } = {}) {
   const calls: { payload: MockPayload; signal: AbortSignal }[] = [], pending: ReturnType<typeof deferred>[] = [], list = observable<SessionList>({ byId: { source: { retainedBy: { mainView: 1 } } } }), generation = observable<{ id: number } | undefined>({ id: 1 }), metadata = observable({});
