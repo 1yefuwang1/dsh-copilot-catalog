@@ -2,7 +2,7 @@
   "name": "dsh-copilot-plugins",
   "version": "0.0.0",
   "private": true,
-  "description": "Four independent DeepSeek Harness plugins: Copilot model discovery, native web search, a Copilot Gemini tool-declaration guard, and projects/worktrees with guarded Local recovery.",
+  "description": "Five independent DeepSeek Harness plugins: Copilot model discovery, native web search, a Copilot Gemini tool-declaration guard, projects/worktrees, and Azure Blob + Table conversation sync.",
   "type": "module",
   "packageManager": "pnpm@11.7.0",
   "engines": {

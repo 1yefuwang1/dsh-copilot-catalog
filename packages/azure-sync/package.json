@@ -1,0 +1,86 @@
+{
+  "name": "@1yefuwang1/dsh-azure-sync",
+  "version": "0.1.0",
+  "description": "Azure Blob + Table cloud sync for DeepSeek Harness conversations: opt-in per thread, local-first, no Postgres.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/",
+    "cordis.patch.yml",
+    "locale/en.json",
+    "icon.svg",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p test/tsconfig.json",
+    "test": "pnpm run build && node --import tsx --test test/config.test.ts test/auth.test.ts test/azure.test.ts test/schema.test.ts test/canonical.test.ts test/chain.test.ts test/committed-index.test.ts test/effective-cwd.test.ts test/import-state.test.ts test/guards.test.ts test/local-store.test.ts test/uploader.test.ts test/admission.test.ts test/drain.test.ts test/drain-coordinator.test.ts test/lease.test.ts test/scheduler.test.ts test/lifecycle.test.ts test/session-source.test.ts test/cloud-repository.test.ts test/remote-session.test.ts test/attachments.test.ts test/projection-warmer.test.ts test/importer.test.ts test/early-claims.test.ts test/workspace.test.ts test/recovery.test.ts test/import-jsonl.test.ts test/live-guard.test.ts test/conflict.test.ts test/reconciler.test.ts test/tombstone.test.ts test/poller.test.ts test/cleanup.test.ts test/tombstone-manager.test.ts",
+    "check": "pnpm run typecheck && tsx ../../scripts/check.ts",
+    "verify": "pnpm run check:secrets && pnpm run check && pnpm run test && pnpm run test:azurite && pnpm run test:pack",
+    "check:secrets": "tsx ../../scripts/check-secrets.ts",
+    "test:pack": "pnpm run build && tsx ../../scripts/check-pack.ts .",
+    "test:azurite": "pnpm run build && node --import tsx --test test/azurite.test.ts"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/1yefuwang1/dsh-copilot-catalog.git",
+    "directory": "packages/azure-sync"
+  },
+  "engines": {
+    "node": ">=22.19.0",
+    "dsh": "0.2.1-rc.2"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-session-persistence-jsonl": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-storage": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-storage-domain": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-storage-json": "0.2.1-rc.2",
+    "azurite": "3.37.0"
+  },
+  "dependencies": {
+    "@azure/core-auth": "1.11.0",
+    "@azure/data-tables": "13.3.2",
+    "@azure/identity": "4.14.0",
+    "@azure/storage-blob": "12.34.0",
+    "zod": "4.4.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.0.5",
+    "@deepseek-ai/dsh-agent": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-agent-preset-registry": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-api-session-controller": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-attachment": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-connection": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-commands": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-credentials": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-home-paths": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-session": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-session-persistence": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-session-query": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-storage-domain": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-subprocess": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-workspace": "0.2.1-rc.2",
+    "@deepseek-ai/schemastery": "~3.18.5"
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
