@@ -3,6 +3,7 @@ packages:
   - packages/search
   - packages/tool-schema
   - packages/worktrees
+  - packages/azure-sync
 
 minimumReleaseAgeExclude:
   - '@deepseek-ai/cordis-plugin-loader@1.0.6'

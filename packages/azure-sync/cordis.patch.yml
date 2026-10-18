@@ -1,0 +1,7 @@
+- insert:
+    - id: azure-sync
+      name: '@1yefuwang1/dsh-azure-sync'
+      config:
+        auth: auto
+        container: dsh-state
+        table: dshstatesync

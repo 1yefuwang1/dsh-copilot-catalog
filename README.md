@@ -1,6 +1,6 @@
 # DSH plugins
 
-A **pnpm monorepo with four independently installable DeepSeek Harness plugins**.
+A **pnpm monorepo with five independently installable DeepSeek Harness plugins**.
 All maintained code—including Host implementations, the Web Client, tests and
 repository tooling—uses strict TypeScript. Published Host modules are ESM with
 declarations; the worktree Web Client is compiled to a persistent browser factory. The worktree plugin is packaged as
@@ -13,6 +13,7 @@ of the staged release.
 | [dsh-copilot-search](<packages/search/README.md>) | Copilot native Responses web search | Registers `github-copilot-search`; does not replace an LLM adapter |
 | [dsh-copilot-tool-schema](<packages/tool-schema/README.md>) | Copilot Gemini tool-declaration guard | Adds a missing root `properties` bucket for configured Copilot Gemini routes; additive listener, no adapter replacement |
 | [@1yefuwang1/dsh-worktrees](<packages/worktrees/README.md>) | Multi-folder projects with Local/worktree threads | Adds metadata-only project grouping, main-folder defaults/reminders, native first-Send worktree setup and branch naming, configurable inactivity cleanup, explicit branch-choice Local recovery with staged input and exact-ID reuse, and guarded handoff; no core or LLM adapter changes |
+| [@1yefuwang1/dsh-azure-sync](<packages/azure-sync/README.md>) | Opt-in Azure Blob + Table conversation sync | Development (T1–T4): strict config/lazy auth, Azure adapters, canonical chains/index, cwd mapping, local v4 domain, crash-safe upload/lease/admission, and verified cold import with attachments/projection/early claims. Reconciliation and UI follow the reviewed task sequence. No Postgres or always-on compute. |
 
 The repository root is **private development tooling**, not a DSH plugin. Install
 or link a leaf package, not the root Git URL. The existing catalog npm name and
@@ -45,7 +46,9 @@ The Copilot plugins work separately or together. Search reuses
 `llm-pi-ai/github-copilot`, whether inference uses the standard adapter or catalog
 wrapper. Sign in through DSH's normal Copilot flow. Worktrees is independent;
 for its unpublished version, follow the [local leaf/tarball instructions](<packages/worktrees/README.md#install-from-this-repository>)
-instead of assuming a registry release exists.
+instead of assuming a registry release exists. Azure Sync is also unpublished
+and currently a development scaffold; use the local leaf instructions and expect
+the upload/import/UI tasks to land before enabling it.
 
 **Review each bundle before enabling it:**
 
@@ -167,8 +170,9 @@ packages/
   tool-schema/      dsh-copilot-tool-schema: Copilot Gemini tool-declaration guard
   search/           dsh-copilot-search: source, tests, bundle and package docs
   worktrees/        @1yefuwang1/dsh-worktrees: Host, Client, Git, tests and docs
+  azure-sync/       @1yefuwang1/dsh-azure-sync: Azure Blob + Table sync source and tests
 scripts/            validation, credential audit and release targeting
-pnpm-workspace.yaml the four plugin workspaces
+pnpm-workspace.yaml the five plugin workspaces
 pnpm-lock.yaml      reproducible root and leaf dependency graph
 ```
 
@@ -184,6 +188,7 @@ A release selects **one package**, never the root or multiple packages at once:
 - `dsh-copilot-search-vX.Y.Z`
 - `dsh-copilot-tool-schema-vX.Y.Z`
 - `@1yefuwang1/dsh-worktrees-vX.Y.Z`
+- `@1yefuwang1/dsh-azure-sync-vX.Y.Z`
 
 The tag must match its leaf version and repository identity. Catalog is currently
 `0.2.7`, preserving pi-ai's exact behavior headers while retaining the scoped
@@ -198,7 +203,12 @@ held-target resource checks, Local runtime admission/spawn guards, navigation
 fixes, ready Local recovery commits, guarded handoff, multi-folder projects and
 cleanup semantics. This release uses staged npm publishing; npm availability
 requires maintainer review/2FA approval. The unrelated unscoped worktrees npm name
-is not an alias for this plugin.
+is not an alias for this plugin. Azure Sync is `@1yefuwang1/dsh-azure-sync@0.1.0`
+in the working tree: T1–T4 provide configuration/auth/Azure adapters, canonical
+chains/committed index, cwd mapping, guards, the local v4 domain, crash-safe
+upload/lease/admission, and verified cold import with attachments/projection/
+early claims; reconciliation, commands and UI must land before it is useful or
+publishable.
 
 The [release workflow](.github/workflows/publish.yml) installs/verifies with pnpm,
 then uses native `pnpm stage publish` to stage **only the selected leaf** through

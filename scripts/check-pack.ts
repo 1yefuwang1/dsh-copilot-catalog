@@ -26,6 +26,16 @@ const policies: Record<string, Policy> = {
     // allowlist to ~779k; retain bounded headroom without widening other leaves.
     extras: ['dist/client.js', 'locale/en.json', 'icon.svg'], maxBytes: 825_000,
   },
+  '@1yefuwang1/dsh-azure-sync': {
+    modules: [
+      'index', 'config', 'auth', 'runtime', 'schema', 'azure/errors', 'azure/blob', 'azure/table', 'azure/lease',
+      'sync/canonical', 'sync/chain', 'sync/committed-index', 'sync/effective-cwd', 'sync/import-state', 'sync/guards',
+      'sync/admission', 'sync/batcher', 'sync/blob-metadata', 'sync/cloud-repository', 'sync/drain-coordinator',
+      'sync/lease-drain', 'sync/lease-manager', 'sync/lifecycle', 'sync/scheduler', 'sync/service', 'sync/session-source',
+      'sync/uploader', 'sync/remote-session', 'sync/attachments', 'sync/projection-warmer', 'sync/importer', 'sync/import-service', 'sync/recovery', 'sync/live-guard', 'sync/conflict', 'sync/reconciler', 'sync/tombstone', 'sync/tombstone-manager', 'sync/poller', 'sync/cleanup', 'sync/workspace', 'local/store',
+    ],
+    extras: ['locale/en.json', 'icon.svg'], maxBytes: 720_000,
+  },
 };
 
 /** Exact per-package limits: a new leaf must not widen either existing tarball. */

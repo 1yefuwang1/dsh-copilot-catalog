@@ -9,10 +9,16 @@ import { publicationPolicy, validatePublicationMetadata, validatePublicationSize
 import { evaluatePluginCompatibility } from '@deepseek-ai/dsh-app-boot';
 
 const repository = '1yefuwang1/dsh-copilot-catalog';
-const candidates = ['catalog', 'search', 'tool-schema', 'worktrees'].map((name) => ({ path: `packages/${name}`, manifest: {
-  name: name === 'worktrees' ? '@1yefuwang1/dsh-worktrees' : `dsh-copilot-${name}`, version: name === 'catalog' ? '0.2.0' : '0.1.0',
-  repository: { url: `git+https://github.com/${repository}.git`, directory: `packages/${name}` },
-} }));
+const candidate = (path: string, name: string, version: string) => ({ path, manifest: {
+  name, version, repository: { url: `git+https://github.com/${repository}.git`, directory: path },
+} });
+const candidates = [
+  candidate('packages/catalog', 'dsh-copilot-catalog', '0.2.0'),
+  candidate('packages/search', 'dsh-copilot-search', '0.1.0'),
+  candidate('packages/tool-schema', 'dsh-copilot-tool-schema', '0.1.0'),
+  candidate('packages/worktrees', '@1yefuwang1/dsh-worktrees', '0.1.0'),
+  candidate('packages/azure-sync', '@1yefuwang1/dsh-azure-sync', '0.1.0'),
+];
 
 test('pnpm launcher distinguishes JavaScript and native executables without splitting arguments', () => {
   const previous = process.env.npm_execpath;
@@ -47,7 +53,7 @@ test('workspace validation accepts LF, CRLF, CR, mixed endings and no final newl
     assert.doesNotThrow(() => assertWorkspaceDefinition(rows.join(ending)));
     assert.doesNotThrow(() => assertWorkspaceDefinition(rows.join(ending) + ending));
   }
-  assert.doesNotThrow(() => assertWorkspaceDefinition('packages:\r\n  - packages/catalog\n  - packages/search\r  - packages/tool-schema\n  - packages/worktrees'));
+  assert.doesNotThrow(() => assertWorkspaceDefinition(`packages:\r\n  - ${workspacePaths[0]}\n  - ${workspacePaths[1]}\r  - ${workspacePaths[2]}\n  - ${workspacePaths[3]}\r\n  - ${workspacePaths[4]}`));
 });
 
 test('workspace validation rejects every missing, substring-only or commented package row', () => {
@@ -59,10 +65,10 @@ test('workspace validation rejects every missing, substring-only or commented pa
   }
 });
 
-test('the private root is not a publication target and all four leaves resolve portably', async () => {
-  assert.deepEqual(workspacePaths, ['packages/catalog', 'packages/search', 'packages/tool-schema', 'packages/worktrees']);
+test('the private root is not a publication target and all five leaves resolve portably', async () => {
+  assert.deepEqual(workspacePaths, ['packages/catalog', 'packages/search', 'packages/tool-schema', 'packages/worktrees', 'packages/azure-sync']);
   const leaves = await packages();
-  assert.deepEqual(leaves.map(({ manifest }) => manifest.name), ['dsh-copilot-catalog', 'dsh-copilot-search', 'dsh-copilot-tool-schema', '@1yefuwang1/dsh-worktrees']);
+  assert.deepEqual(leaves.map(({ manifest }) => manifest.name), ['dsh-copilot-catalog', 'dsh-copilot-search', 'dsh-copilot-tool-schema', '@1yefuwang1/dsh-worktrees', '@1yefuwang1/dsh-azure-sync']);
   for (const path of workspacePaths) {
     const selected = await packages(resolve(root, path));
     assert.equal(selected.length, 1);
@@ -83,6 +89,7 @@ test('versioned package tags select exactly one package, never the legacy root t
   assert.equal(releasePackage('dsh-copilot-search-v0.1.0', candidates), candidates[1]);
   assert.equal(releasePackage('dsh-copilot-tool-schema-v0.1.0', candidates), candidates[2]);
   assert.equal(releasePackage('@1yefuwang1/dsh-worktrees-v0.1.0', candidates), candidates[3]);
+  assert.equal(releasePackage('@1yefuwang1/dsh-azure-sync-v0.1.0', candidates), candidates[4]);
   for (const tag of ['v0.2.0', 'dsh-worktrees-v0.1.0', '1yefuwang1-dsh-worktrees-v0.1.0', 'dsh-copilot-search-v0.2.0', 'dsh-copilot-search-v0.1.0\n', '@1yefuwang1/dsh-worktrees-v0.2.0', '@1yefuwang1/dsh-worktrees-v0.1.0\n', 'dsh-copilot-worktrees-v0.1.0', undefined]) {
     assert.throws(() => releasePackage(tag, candidates), /Release tag/u);
   }
@@ -98,6 +105,9 @@ test('release metadata must match its actual GitHub repository and package direc
   });
   assert.deepEqual(releaseIdentity('@1yefuwang1/dsh-worktrees-v0.1.0', repository, candidates), {
     package: '@1yefuwang1/dsh-worktrees', version: '0.1.0', directory: 'packages/worktrees',
+  });
+  assert.deepEqual(releaseIdentity('@1yefuwang1/dsh-azure-sync-v0.1.0', repository, candidates), {
+    package: '@1yefuwang1/dsh-azure-sync', version: '0.1.0', directory: 'packages/azure-sync',
   });
   assert.throws(() => releaseIdentity('dsh-copilot-search-v0.1.0', 'someone/else', candidates), /repository/u);
   assert.throws(() => releaseIdentity('@1yefuwang1/dsh-worktrees-v0.1.0', 'someone/else', candidates), /repository/u);
@@ -119,19 +129,28 @@ test('release workflow stages one pnpm package with provenance and no stored tok
   assert.doesNotMatch(workflow, /run: npm |secrets\.(?:NPM_TOKEN|NODE_AUTH_TOKEN)/u);
 });
 
-test('publication allowlists and bounds preserve every existing leaf and explicitly add worktree Client assets', () => {
+test('publication allowlists and bounds cover every leaf and its exact extras', () => {
   const common = ['CHANGELOG.md', 'LICENSE', 'README.md', 'cordis.patch.yml', 'package.json'];
   const modules = {
     'dsh-copilot-catalog': ['index', 'catalog', 'discovery', 'identity', 'plugin', 'runtime', 'types'],
     'dsh-copilot-search': ['index', 'auth', 'endpoint', 'errors', 'plugin', 'provider', 'refresh', 'responses', 'runtime', 'types'],
     'dsh-copilot-tool-schema': ['index', 'plugin', 'schema', 'types'],
     '@1yefuwang1/dsh-worktrees': ['index', 'types', 'errors', 'runtime', 'schema', 'store', 'sessions', 'context', 'service', 'git', 'naming', 'rpc', 'projects', 'project-store', 'project-rpc', 'project-context', 'quiet-rpc', 'first-message', 'cleanup-store', 'cleanup', 'recovery-rpc'],
+    '@1yefuwang1/dsh-azure-sync': [
+      'index', 'config', 'auth', 'runtime', 'schema', 'azure/errors', 'azure/blob', 'azure/table', 'azure/lease',
+      'sync/canonical', 'sync/chain', 'sync/committed-index', 'sync/effective-cwd', 'sync/import-state', 'sync/guards',
+      'sync/admission', 'sync/batcher', 'sync/blob-metadata', 'sync/cloud-repository', 'sync/drain-coordinator',
+      'sync/lease-drain', 'sync/lease-manager', 'sync/lifecycle', 'sync/scheduler', 'sync/service', 'sync/session-source',
+      'sync/uploader', 'sync/remote-session', 'sync/attachments', 'sync/projection-warmer', 'sync/importer', 'sync/import-service', 'sync/recovery', 'sync/live-guard', 'sync/conflict', 'sync/reconciler', 'sync/tombstone', 'sync/tombstone-manager', 'sync/poller', 'sync/cleanup', 'sync/workspace', 'local/store',
+    ],
   };
   for (const [name, names] of Object.entries(modules)) {
     const policy = publicationPolicy(name);
-    const extras = name === '@1yefuwang1/dsh-worktrees' ? ['dist/client.js', 'locale/en.json', 'icon.svg'] : [];
+    const extras = name === '@1yefuwang1/dsh-worktrees' ? ['dist/client.js', 'locale/en.json', 'icon.svg']
+      : name === '@1yefuwang1/dsh-azure-sync' ? ['locale/en.json', 'icon.svg'] : [];
+    const maxBytes = name === '@1yefuwang1/dsh-worktrees' ? 825_000 : name === '@1yefuwang1/dsh-azure-sync' ? 720_000 : 150_000;
     assert.deepEqual(policy.files, [...common, ...names.flatMap(module => [`dist/${module}.js`, `dist/${module}.d.ts`]), ...extras].sort());
-    assert.equal(policy.maxBytes, name === '@1yefuwang1/dsh-worktrees' ? 825_000 : 150_000);
+    assert.equal(policy.maxBytes, maxBytes);
     assert.doesNotThrow(() => validatePublicationSize(name, policy.maxBytes - 1));
     assert.throws(() => validatePublicationSize(name, policy.maxBytes), /Unexpectedly large/u);
     assert.throws(() => validatePublicationSize(name, -1), /Unexpectedly large/u);
@@ -158,6 +177,14 @@ test('worktree tarball metadata rejects extra/missing files, wrong identity and 
   assert.equal(manifest.scripts.prepare, undefined);
   assert.equal(manifest.scripts.install, undefined);
   assert.equal(manifest.scripts.postinstall, undefined);
+});
+
+test('azure-sync keeps implicit lifecycle hooks unset', async () => {
+  const [selected] = await packages(resolve(root, 'packages/azure-sync'));
+  assert.ok(selected);
+  for (const name of ['prepare', 'prepublishOnly', 'preinstall', 'install', 'postinstall']) {
+    assert.equal(selected.manifest.scripts[name], undefined, `azure-sync must not define ${name}`);
+  }
 });
 
 test('every plugin accepts the pinned runtime and rejects other DSH versions without exemptions', async () => {
