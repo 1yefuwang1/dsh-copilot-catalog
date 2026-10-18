@@ -1,6 +1,6 @@
 {
   "name": "dsh-copilot-catalog",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Account-aware GitHub Copilot model discovery and Copilot-compatible wire identity for DeepSeek Harness, wrapping the existing pi-ai adapter.",
   "type": "module",
   "main": "./dist/index.js",

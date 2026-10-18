@@ -186,8 +186,8 @@ A release selects **one package**, never the root or multiple packages at once:
 - `@1yefuwang1/dsh-worktrees-vX.Y.Z`
 
 The tag must match its leaf version and repository identity. Catalog is currently
-`0.2.5`, adding the scoped Copilot wire-identity interceptor and normalizing
-inference/search to copilot-api's agent interaction identity and API version, and Search is `0.1.3`; both target
+`0.2.6`, restoring pi-ai's original inference/search intent and API-version behavior
+while retaining the scoped Copilot wire-identity interceptor, and Search is `0.1.3`; both target
 DSH `0.2.1-rc.2` (adapter-relative pi-ai resolution and cancellation-safe
 credential refresh respectively); published versions cannot be republished. Tool schema is `dsh-copilot-tool-schema@0.1.1`, a
 DSH `0.2.1-rc.2` retarget with no behavior change. Worktrees is

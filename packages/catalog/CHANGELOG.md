@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.6 — restore pi-ai behavior
+
+- Revert 0.2.5's `conversation-agent` and `2026-08-01` normalization. Normal
+  inference/search again preserve pi-ai/search's `Openai-Intent: conversation-edits`
+  and the existing `X-GitHub-Api-Version: 2026-06-01` pins; absent headers are still
+  filled (`conversation-agent`/`2026-08-01`) and model discovery remains `model-access`.
+- Keep the 0.2.4 identity masking, SDK-fingerprint removal, modes, Config,
+  credentials, routing, and model descriptors unchanged. 0.2.5 is superseded.
+
 ## 0.2.5 — agent interaction identity
 
 - Normalize normal Copilot inference and search intent headers to

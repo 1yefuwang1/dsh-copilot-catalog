@@ -61,13 +61,11 @@ the identity headers used by the installed official Copilot client:
 - `Editor-Device-Id`, `Vscode-SessionId`, and `Vscode-MachineId`, read from the
   local VS Code identity files when present, with UUID-shaped fallbacks.
   `X-Request-Id` and `X-Agent-Task-Id` are generated per request when absent.
-- `X-GitHub-Api-Version` is set to `2026-08-01` on every matched request,
-  including search and model discovery, matching copilot-api.
-- Normal inference and search normalize `Openai-Intent` and `X-Interaction-Type` to
-  `conversation-agent` (the generic `conversation-edits` value is rewritten);
-  explicit subagent, compaction, or other specialized interaction metadata is
-  preserved. Model discovery uses `model-access` and removes `Content-Type` and
-  `X-Interaction-Id`.
+- `X-GitHub-Api-Version` is filled with `2026-08-01` only when absent; the search
+  provider's and discovery's existing `2026-06-01` pins are preserved.
+- `Openai-Intent`/`X-Interaction-Type` are preserved when nonempty and otherwise
+  defaulted to `conversation-agent`; model discovery uses `model-access` and removes
+  `Content-Type` and `X-Interaction-Id`.
 - `Authorization`, `Accept`, `Content-Type`, `X-Initiator`,
   `Copilot-Vision-Request`, `Anthropic-Version`, and `Anthropic-Beta` are preserved.
   `OpenAI-Organization`, `OpenAI-Project`,

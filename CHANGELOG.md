@@ -1,5 +1,12 @@
 # Monorepo changelog
 
+## dsh-copilot-catalog 0.2.6 — restore pi-ai behavior
+
+- Revert 0.2.5's agent/API-version normalization: normal inference/search preserve
+  pi-ai/search's `conversation-edits` intent and the `2026-06-01` API-version pins;
+  absent headers are still filled and model discovery remains `model-access`.
+- Keep identity masking and SDK-fingerprint removal unchanged. 0.2.5 is superseded.
+
 ## dsh-copilot-catalog 0.2.5 — agent interaction identity
 
 - Normalize normal inference/search `Openai-Intent` and `X-Interaction-Type` to
