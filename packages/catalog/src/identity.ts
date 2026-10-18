@@ -159,16 +159,12 @@ export function isCopilotRequestPath(pathname: string): boolean {
   return COPILOT_REQUEST_PATHS.some((base) => pathname === base || pathname.startsWith(`${base}/`));
 }
 
-function isModelAccessPath(pathname: string): boolean {
-  return pathname === '/models' || pathname.startsWith('/models/');
-}
-
 /**
  * Rewrite only Copilot identity and SDK-fingerprint headers.
  *
- * Behavior-affecting headers (`X-GitHub-Api-Version`, `Openai-Intent`,
- * `X-Interaction-Type`) are preserved when nonempty; they are filled only
- * when absent, except for model discovery, which uses model-access.
+ * Behavior headers (`X-GitHub-Api-Version`, `Openai-Intent`, `X-Interaction-Type`,
+ * `Content-Type`, `X-Interaction-Id`) are preserved exactly, including absence.
+ * Only identity headers are overridden and SDK fingerprints removed.
  */
 export function rewriteCopilotRequestHeaders(url: URL, headers: Headers, identity: CopilotWireIdentity): boolean {
   if (!isTrustedCopilotUrl(url) || !isCopilotRequestPath(url.pathname)) return false;
@@ -189,7 +185,6 @@ export function rewriteCopilotRequestHeaders(url: URL, headers: Headers, identit
   if (editorDeviceId === undefined || machineId === undefined || sessionId === undefined) {
     throw new TypeError('Full Copilot wire identity requires device, machine, and session IDs');
   }
-  if (!headers.get('x-github-api-version')?.trim()) headers.set('x-github-api-version', identity.githubApiVersion);
   headers.set('editor-device-id', editorDeviceId);
   headers.set('vscode-machineid', machineId);
   headers.set('vscode-sessionid', sessionId);
@@ -199,17 +194,6 @@ export function rewriteCopilotRequestHeaders(url: URL, headers: Headers, identit
   headers.set('x-request-id', requestId);
   if (!headers.get('x-agent-task-id')?.trim()) headers.set('x-agent-task-id', requestId);
 
-  if (isModelAccessPath(url.pathname)) {
-    headers.set('openai-intent', 'model-access');
-    headers.set('x-interaction-type', 'model-access');
-    headers.delete('content-type');
-    headers.delete('x-interaction-id');
-    return true;
-  }
-
-  const intent = headers.get('openai-intent')?.trim() || 'conversation-agent';
-  if (!headers.get('openai-intent')?.trim()) headers.set('openai-intent', intent);
-  if (!headers.get('x-interaction-type')?.trim()) headers.set('x-interaction-type', intent);
   return true;
 }
 

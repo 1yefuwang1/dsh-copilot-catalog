@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.7 — exact pi-ai behavior headers
+
+- Remove every behavior-header mutation. `X-GitHub-Api-Version`,
+  `Openai-Intent`, `X-Interaction-Type`, `Content-Type`, and `X-Interaction-Id`
+  are now preserved exactly, including absence, on inference, search, and
+  `/models`; no model-access synthesis or `/models`-only deletions remain.
+- Keep the 0.2.4 identity masking and SDK-fingerprint removal. 0.2.5 and 0.2.6
+  are superseded.
+
 ## 0.2.6 — restore pi-ai behavior
 
 - Revert 0.2.5's `conversation-agent` and `2026-08-01` normalization. Normal

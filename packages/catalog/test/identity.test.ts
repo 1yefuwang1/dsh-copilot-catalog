@@ -57,7 +57,7 @@ function assertIdentityHeaders(current: Headers): void {
   assert.equal(current.get('x-vscode-user-agent-library-version'), FULL.userAgentLibraryVersion);
 }
 
-test('full inference rewrites identity, removes SDK headers, and preserves protocol and caller fields', () => {
+test('full inference rewrites identity, removes SDK headers, and preserves behavior headers', () => {
   const requestHeaders = headers({
     authorization: AUTHORIZATION,
     accept: 'application/json',
@@ -82,7 +82,7 @@ test('full inference rewrites identity, removes SDK headers, and preserves proto
   assertIdentityHeaders(requestHeaders);
   assert.equal(requestHeaders.get('x-github-api-version'), '2026-06-01');
   assert.equal(requestHeaders.get('openai-intent'), 'conversation-edits');
-  assert.equal(requestHeaders.get('x-interaction-type'), 'conversation-edits');
+  assert.equal(requestHeaders.get('x-interaction-type'), null);
   assert.equal(requestHeaders.get('x-interaction-id'), 'caller-interaction');
   assert.equal(requestHeaders.get('x-request-id'), 'caller-request');
   assert.equal(requestHeaders.get('x-agent-task-id'), 'caller-task');
@@ -96,7 +96,7 @@ test('full inference rewrites identity, removes SDK headers, and preserves proto
   }
 });
 
-test('full model discovery uses model-access, preserves the pinned API version, and clears request-only headers', () => {
+test('full model discovery preserves behavior headers exactly and only rewrites identity', () => {
   const requestHeaders = headers({
     authorization: AUTHORIZATION,
     'content-type': 'application/json',
@@ -109,29 +109,63 @@ test('full model discovery uses model-access, preserves the pinned API version, 
   assert.equal(rewriteCopilotRequestHeaders(url, requestHeaders, FULL), true);
   assertIdentityHeaders(requestHeaders);
   assert.equal(requestHeaders.get('x-github-api-version'), '2026-06-01');
-  assert.equal(requestHeaders.get('openai-intent'), 'model-access');
-  assert.equal(requestHeaders.get('x-interaction-type'), 'model-access');
+  assert.equal(requestHeaders.get('openai-intent'), 'conversation-edits');
+  assert.equal(requestHeaders.get('x-interaction-type'), null);
   assert.equal(requestHeaders.get('x-request-id'), 'caller-request');
   assert.equal(requestHeaders.get('x-agent-task-id'), 'caller-request');
-  assert.equal(requestHeaders.get('content-type'), null);
-  assert.equal(requestHeaders.get('x-interaction-id'), null);
+  assert.equal(requestHeaders.get('content-type'), 'application/json');
+  assert.equal(requestHeaders.get('x-interaction-id'), 'caller-interaction');
 });
 
-test('full inference fills absent behavior headers and generates request/task IDs', () => {
+test('full inference leaves absent behavior headers absent while adding identity and request IDs', () => {
   const requestHeaders = headers({ authorization: AUTHORIZATION, accept: 'application/json' });
   const url = new URL('https://api.individual.githubcopilot.com/responses');
   assert.equal(rewriteCopilotRequestHeaders(url, requestHeaders, FULL), true);
   assertIdentityHeaders(requestHeaders);
-  assert.equal(requestHeaders.get('x-github-api-version'), '2026-08-01');
-  assert.equal(requestHeaders.get('openai-intent'), 'conversation-agent');
-  assert.equal(requestHeaders.get('x-interaction-type'), 'conversation-agent');
+  assert.equal(requestHeaders.get('x-github-api-version'), null);
+  assert.equal(requestHeaders.get('openai-intent'), null);
+  assert.equal(requestHeaders.get('x-interaction-type'), null);
+  assert.equal(requestHeaders.get('content-type'), null);
+  assert.equal(requestHeaders.get('x-interaction-id'), null);
   assert.match(requestHeaders.get('x-request-id') ?? '', UUID_PATTERN);
   assert.equal(requestHeaders.get('x-agent-task-id'), requestHeaders.get('x-request-id'));
   assert.equal(requestHeaders.get('authorization'), AUTHORIZATION);
   assert.equal(requestHeaders.get('accept'), 'application/json');
 });
 
-test('nonempty caller interaction metadata wins over defaults', () => {
+test('behavior headers are preserved exactly for absent, empty, and custom values on both paths', () => {
+  const behavior = ['x-github-api-version', 'openai-intent', 'x-interaction-type', 'content-type', 'x-interaction-id'] as const;
+  for (const url of [
+    new URL('https://api.individual.githubcopilot.com/responses'),
+    new URL('https://api.individual.githubcopilot.com/models'),
+  ]) {
+    const absent = headers({ authorization: AUTHORIZATION });
+    assert.equal(rewriteCopilotRequestHeaders(url, absent, FULL), true);
+    for (const name of behavior) assert.equal(absent.get(name), null, `${url.pathname} absent ${name}`);
+
+    const empty = headers({ authorization: AUTHORIZATION });
+    for (const name of behavior) empty.set(name, '');
+    assert.equal(rewriteCopilotRequestHeaders(url, empty, FULL), true);
+    for (const name of behavior) assert.equal(empty.get(name), '', `${url.pathname} empty ${name}`);
+
+    const custom = headers({
+      authorization: AUTHORIZATION,
+      'x-github-api-version': '2099-01-01',
+      'openai-intent': 'custom-intent',
+      'x-interaction-type': 'custom-type',
+      'content-type': 'application/x-synthetic',
+      'x-interaction-id': 'custom-interaction',
+    });
+    assert.equal(rewriteCopilotRequestHeaders(url, custom, FULL), true);
+    assert.equal(custom.get('x-github-api-version'), '2099-01-01');
+    assert.equal(custom.get('openai-intent'), 'custom-intent');
+    assert.equal(custom.get('x-interaction-type'), 'custom-type');
+    assert.equal(custom.get('content-type'), 'application/x-synthetic');
+    assert.equal(custom.get('x-interaction-id'), 'custom-interaction');
+  }
+});
+
+test('caller interaction metadata is preserved exactly', () => {
   const requestHeaders = headers({
     'openai-intent': 'conversation-subagent',
     'x-interaction-type': 'conversation-compaction',

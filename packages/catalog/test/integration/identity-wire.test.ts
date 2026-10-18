@@ -119,9 +119,9 @@ test('all three pi-ai Copilot transports carry the identity without Stainless fi
     assertIdentity(request.headers);
     assert.equal(request.headers.get('authorization'), `Bearer ${AUTHORIZATION}`);
     assert.equal(request.headers.get('content-type'), 'application/json');
-    assert.equal(request.headers.get('x-github-api-version'), '2026-08-01');
+    assert.equal(request.headers.get('x-github-api-version'), null);
     assert.equal(request.headers.get('openai-intent'), 'conversation-edits');
-    assert.equal(request.headers.get('x-interaction-type'), 'conversation-edits');
+    assert.equal(request.headers.get('x-interaction-type'), null);
     assert.equal(request.headers.get('x-initiator'), 'user');
     assert.match(request.headers.get('x-request-id') ?? '', /^[0-9a-f-]{36}$/iu);
     assert.equal(request.headers.get('x-agent-task-id'), request.headers.get('x-request-id'));
@@ -154,7 +154,7 @@ test('search-style API version and intent pins survive', async () => {
   assertIdentity(request.headers);
   assert.equal(request.headers.get('x-github-api-version'), '2026-06-01');
   assert.equal(request.headers.get('openai-intent'), 'conversation-edits');
-  assert.equal(request.headers.get('x-interaction-type'), 'conversation-edits');
+  assert.equal(request.headers.get('x-interaction-type'), null);
   assert.equal(request.headers.get('x-initiator'), 'agent');
   assert.equal(request.headers.get('x-request-id'), 'caller-request');
   assert.equal(request.headers.get('x-agent-task-id'), 'caller-request');
@@ -162,7 +162,7 @@ test('search-style API version and intent pins survive', async () => {
   assert.equal(request.headers.get('accept'), 'text/event-stream, application/json');
 });
 
-test('model discovery uses model-access and removes request-only headers', async () => {
+test('model discovery preserves behavior headers exactly and only rewrites identity', async () => {
   await withInterceptor(async () => {
     await globalThis.fetch('https://api.individual.githubcopilot.com/models', {
       headers: {
@@ -177,10 +177,10 @@ test('model discovery uses model-access and removes request-only headers', async
   const request = captured[0]!;
   assertIdentity(request.headers);
   assert.equal(request.headers.get('x-github-api-version'), '2026-06-01');
-  assert.equal(request.headers.get('openai-intent'), 'model-access');
-  assert.equal(request.headers.get('x-interaction-type'), 'model-access');
-  assert.equal(request.headers.get('content-type'), null);
-  assert.equal(request.headers.get('x-interaction-id'), null);
+  assert.equal(request.headers.get('openai-intent'), null);
+  assert.equal(request.headers.get('x-interaction-type'), null);
+  assert.equal(request.headers.get('content-type'), 'application/json');
+  assert.equal(request.headers.get('x-interaction-id'), 'caller-interaction');
   assert.equal(request.headers.get('authorization'), AUTHORIZATION);
 });
 

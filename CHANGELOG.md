@@ -1,5 +1,13 @@
 # Monorepo changelog
 
+## dsh-copilot-catalog 0.2.7 — exact pi-ai behavior headers
+
+- Preserve `X-GitHub-Api-Version`, `Openai-Intent`, `X-Interaction-Type`,
+  `Content-Type`, and `X-Interaction-Id` exactly, including absence, on every
+  matched request; remove the `/models` behavioral exception and API-version fill.
+- Keep identity masking and SDK-fingerprint removal unchanged. 0.2.5 and 0.2.6 are
+  superseded.
+
 ## dsh-copilot-catalog 0.2.6 — restore pi-ai behavior
 
 - Revert 0.2.5's agent/API-version normalization: normal inference/search preserve
