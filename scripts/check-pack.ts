@@ -28,13 +28,13 @@ const policies: Record<string, Policy> = {
   },
   '@1yefuwang1/dsh-azure-sync': {
     modules: [
-      'index', 'config', 'auth', 'runtime', 'schema', 'azure/errors', 'azure/blob', 'azure/table', 'azure/lease',
+      'index', 'config', 'auth', 'runtime', 'schema', 'protocol', 'controller', 'commands', 'rpc', 'settings', 'azure/errors', 'azure/blob', 'azure/table', 'azure/lease',
       'sync/canonical', 'sync/chain', 'sync/committed-index', 'sync/effective-cwd', 'sync/import-state', 'sync/guards',
       'sync/admission', 'sync/batcher', 'sync/blob-metadata', 'sync/cloud-repository', 'sync/drain-coordinator',
       'sync/lease-drain', 'sync/lease-manager', 'sync/lifecycle', 'sync/scheduler', 'sync/service', 'sync/session-source',
-      'sync/uploader', 'sync/remote-session', 'sync/attachments', 'sync/projection-warmer', 'sync/importer', 'sync/import-service', 'sync/recovery', 'sync/live-guard', 'sync/conflict', 'sync/reconciler', 'sync/tombstone', 'sync/tombstone-manager', 'sync/poller', 'sync/cleanup', 'sync/workspace', 'local/store',
+      'sync/uploader', 'sync/remote-session', 'sync/attachments', 'sync/projection-warmer', 'sync/importer', 'sync/import-service', 'sync/recovery', 'sync/live-guard', 'sync/conflict', 'sync/reconciler', 'sync/tombstone', 'sync/tombstone-manager', 'sync/poller', 'sync/cleanup', 'sync/workspace', 'local/store', 'git/probe', 'git/sanitize', 'git/guidance',
     ],
-    extras: ['locale/en.json', 'icon.svg'], maxBytes: 720_000,
+    extras: ['dist/client.js', 'locale/en.json', 'icon.svg'], maxBytes: 720_000,
   },
 };
 

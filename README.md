@@ -3,7 +3,8 @@
 A **pnpm monorepo with five independently installable DeepSeek Harness plugins**.
 All maintained code—including Host implementations, the Web Client, tests and
 repository tooling—uses strict TypeScript. Published Host modules are ESM with
-declarations; the worktree Web Client is compiled to a persistent browser factory. The worktree plugin is packaged as
+declarations; the worktree and Azure Sync Web Clients compile to persistent
+browser factories. The worktree plugin is packaged as
 `@1yefuwang1/dsh-worktrees@0.2.23`; npm availability follows maintainer approval
 of the staged release.
 
@@ -13,7 +14,7 @@ of the staged release.
 | [dsh-copilot-search](<packages/search/README.md>) | Copilot native Responses web search | Registers `github-copilot-search`; does not replace an LLM adapter |
 | [dsh-copilot-tool-schema](<packages/tool-schema/README.md>) | Copilot Gemini tool-declaration guard | Adds a missing root `properties` bucket for configured Copilot Gemini routes; additive listener, no adapter replacement |
 | [@1yefuwang1/dsh-worktrees](<packages/worktrees/README.md>) | Multi-folder projects with Local/worktree threads | Adds metadata-only project grouping, main-folder defaults/reminders, native first-Send worktree setup and branch naming, configurable inactivity cleanup, explicit branch-choice Local recovery with staged input and exact-ID reuse, and guarded handoff; no core or LLM adapter changes |
-| [@1yefuwang1/dsh-azure-sync](<packages/azure-sync/README.md>) | Opt-in Azure Blob + Table conversation sync | Development (T1–T4): strict config/lazy auth, Azure adapters, canonical chains/index, cwd mapping, local v4 domain, crash-safe upload/lease/admission, and verified cold import with attachments/projection/early claims. Reconciliation and UI follow the reviewed task sequence. No Postgres or always-on compute. |
+| [@1yefuwang1/dsh-azure-sync](<packages/azure-sync/README.md>) | Opt-in Azure Blob + Table conversation continuation | Experimental v1 implementation: default-off thread controls in the existing local Web GUI, verified history/attachments, explicit mixed-OS folder mappings, single-writer admission/takeover, conflict recovery, root/descendant tombstones and read-only Git guidance. Azure stores data only; no cloud-hosted GUI, code sync, Postgres or always-on compute. Final acceptance/review remains pending. |
 
 The repository root is **private development tooling**, not a DSH plugin. Install
 or link a leaf package, not the root Git URL. The existing catalog npm name and
@@ -46,9 +47,11 @@ The Copilot plugins work separately or together. Search reuses
 `llm-pi-ai/github-copilot`, whether inference uses the standard adapter or catalog
 wrapper. Sign in through DSH's normal Copilot flow. Worktrees is independent;
 for its unpublished version, follow the [local leaf/tarball instructions](<packages/worktrees/README.md#install-from-this-repository>)
-instead of assuming a registry release exists. Azure Sync is also unpublished
-and currently a development scaffold; use the local leaf instructions and expect
-the upload/import/UI tasks to land before enabling it.
+instead of assuming a registry release exists. Azure Sync `0.1.0` is also
+unpublished; use its [source build/local leaf instructions](<packages/azure-sync/README.md#1-build-and-install-deliberately>)
+and read the [acceptance ledger](<docs/acceptance/azure-sync.md>) before opting in.
+Its Host and browser controls are implemented; a deployed GUI, live Azure account
+and real Windows acceptance are not established.
 
 **Review each bundle before enabling it:**
 
@@ -63,7 +66,8 @@ the upload/import/UI tasks to land before enabling it.
 - Search uses DSH's ordinary `web_search` tool independently of the conversation
   model. The existing Web search settings card is DeepSeek-specific, not a chooser.
 - Restart the DSH host after host-plugin installation/removal or changing the
-  nonvolatile web-service provider selection. No Web UI rebuild is required.
+  nonvolatile web-service provider selection. These Host-only Copilot plugins do
+  not need a Web UI rebuild; browser addons have their own build/refresh requirements.
 - Worktrees defaults to the current local branch without a remote fetch, or lets
   you select a freshly fetched remote branch on first native Send. Its themed
   branch picker searches loaded lists without network requests. It creates a
@@ -85,6 +89,42 @@ the upload/import/UI tasks to land before enabling it.
 
 Package READMEs describe settings, account precedence and non-destructive recovery.
 Development checks do not enable plugins in an active profile or use real credentials.
+
+## Azure Sync v1: data in Azure, execution stays local
+
+The [Azure Sync guide](<packages/azure-sync/README.md>) covers account setup,
+authentication, two-device import and recovery. Each new thread starts **Off**;
+confirmed On uploads its full existing history once materialized. Only a private
+Blob Hot LRS container and Table are required. Credentials belong to the Host
+credential provider or ambient Azure CLI/managed identity, never plugin config,
+conversation prompts or browser storage. Logs/tool outputs may themselves contain
+secrets; hashes do not defend against a malicious authorized cloud writer.
+
+- Bring the code and required presets/models to each device yourself. Explicit,
+  realpath-pinned folder mappings localize historical cwd events without rewriting
+  the canonical imported prefix. No global settings, credentials, preset definitions,
+  drafts, schedules, code or worktree bindings are transferred.
+- A cloud-enabled model step requires a **fresh server ownership proof**. Takeover
+  is explicit and cannot undo an old device's already running tools. A retained
+  stale live Agent requires a **Host restart**, not just closing a browser tab.
+- Off retains cloud history; detach chooses local continuation; removal separately
+  tombstones the root and descendants. Shared attachments remain. Partial imports
+  cannot resume merely because Off was selected; repair or explicit degraded-log
+  acknowledgement is required as appropriate.
+- Git facts are bounded, read-only advice, not a checkout or a code-match guarantee.
+  One Host per local state store and one shared LocalStore across its plugin/runtime
+  instances are the supported boundary. Unloading removes enforcement: turn Off or
+  detach deliberately before uninstalling; local and retained cloud data stay intact.
+
+The [cost evidence](<docs/acceptance/azure-sync-cost.md>) measures actual Azure SDK
+HTTP requests against local Azurite and models a bounded workload; it is **not an
+Azure bill or a spending cap**. Whole-history Host polls and imported ownership
+proofs scale with enabled history size. Live Azure/RBAC/network/billing,
+two-machine GUI and real Windows/PowerShell checks remain on the
+[manual checklist](<docs/acceptance/azure-sync.md#manual-two-machine-checklist-not-run>).
+T1–T8 are approved; **T9's final verification and independent reviews are pending**.
+Building this package does not automatically update an already running GUI; no
+replacement server, deployed refresh or HMR watcher is implied.
 
 ## Develop
 
@@ -110,6 +150,7 @@ pnpm --filter dsh-copilot-search run test
 pnpm --filter dsh-copilot-search run test:integration
 pnpm --filter @1yefuwang1/dsh-worktrees run test
 pnpm --filter @1yefuwang1/dsh-worktrees run test:integration
+pnpm --filter @1yefuwang1/dsh-azure-sync --config.ignore-scripts=true run verify
 ```
 
 Local linking, **only if you choose to alter a DSH profile**:
@@ -148,7 +189,12 @@ Session controller with goals/presets/policies and JSONL persistence. They exerc
 staged create/resume, queued input, native permissions, publication-failure retries
 and shutdown without reclaiming any user checkout. These fixtures are not a live GUI
 probe: installed slot registration, interaction and light/dark appearance require
-separate browser verification.
+separate browser verification. Azure Sync additionally exercises real JSONL,
+WorkingDirectoryService/AgentLoop, independent local stores, retained-live/recreated-Host
+catch-up, crash/authority races and real local Azurite. Its public-SDK/JSDOM client
+fixtures are not a full stock composer or deployed GUI run; no live Azure,
+RBAC/private-network, Windows GUI or Cost Management export is implied. Its
+[acceptance ledger](<docs/acceptance/azure-sync.md>) records exact evidence boundaries.
 
 ## Native-search prerequisites
 
@@ -204,11 +250,12 @@ fixes, ready Local recovery commits, guarded handoff, multi-folder projects and
 cleanup semantics. This release uses staged npm publishing; npm availability
 requires maintainer review/2FA approval. The unrelated unscoped worktrees npm name
 is not an alias for this plugin. Azure Sync is `@1yefuwang1/dsh-azure-sync@0.1.0`
-in the working tree: T1–T4 provide configuration/auth/Azure adapters, canonical
-chains/committed index, cwd mapping, guards, the local v4 domain, crash-safe
-upload/lease/admission, and verified cold import with attachments/projection/
-early claims; reconciliation, commands and UI must land before it is useful or
-publishable.
+in the working tree, **unreleased**. Its v1 Host, browser controls and read-only Git
+implementation have T1–T8 approvals. T9 documentation, measured-operation cost
+modeling, extracted-tarball consumer smoke and final acceptance are in progress;
+final verification/review and any subsequent publication are separate gates.
+See the [Azure changelog](<packages/azure-sync/CHANGELOG.md>) and
+[acceptance evidence](<docs/acceptance/azure-sync.md>), including deferred manual work.
 
 The [release workflow](.github/workflows/publish.yml) installs/verifies with pnpm,
 then uses native `pnpm stage publish` to stage **only the selected leaf** through

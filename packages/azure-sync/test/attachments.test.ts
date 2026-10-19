@@ -38,6 +38,17 @@ function fakeStore(root: string, imageBytes: Uint8Array, mode: 'always' | 'path'
   return { store, images, files };
 }
 
+for (const kind of ['image', 'file'] as const) for (const size of [3, 4, 5]) {
+  test(`${kind} upload enforces the same 4-byte cap at ${size} bytes before authorization or Azure metadata/PUT`, async () => {
+    const bytes = Buffer.alloc(size, 65), blob = new MemoryBlob(); let authorized = 0;
+    const store = { readImage: async () => ({ data: bytes }), readFileStream: async function* () { yield bytes.subarray(0, 2); yield bytes.subarray(2); } } as unknown as AttachmentStore;
+    const sync = new AttachmentSync({ store, blob: blob as unknown as BlobStore, maxBytes: 4, now: () => 1 });
+    const result = await sync.upload([{ id: 'bounded', kind, ...(kind === 'image' ? { mediaType: 'image/png' } : { name: 'bounded.bin' }) }], { authorized: () => { authorized++; } });
+    if (size > 4) { assert.deepEqual(result, { uploaded: [], missing: ['bounded'] }); assert.equal(authorized, 0); assert.equal(blob.objects.size, 0); }
+    else { assert.deepEqual(result, { uploaded: ['bounded'], missing: [] }); assert.equal(authorized, 1); const object = [...blob.objects.values()][0]!; assert.deepEqual(Buffer.from(object.bytes), bytes); assert.equal(object.metadata.bytes, String(size)); }
+  });
+}
+
 test('attachment references are discovered and round-trip through immutable Blob metadata', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-azure-att-'));
   t.after(() => rm(root, { recursive: true, force: true }));

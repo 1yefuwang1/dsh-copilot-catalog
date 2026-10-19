@@ -1,5 +1,40 @@
 # Monorepo changelog
 
+## Unreleased — @1yefuwang1/dsh-azure-sync 0.1.0
+
+- Implement opt-in conversation continuation with Azure Blob Hot LRS + Table only:
+  full pre-opt-in history, canonical event chains/genesis, linked committed index,
+  verified prefix reconciliation, attachment import and explicit mixed-OS folder mappings.
+  No Azure-hosted browser/compute, Postgres, code sync or automatic Git operation.
+- Add fresh per-model-step lease/epoch admission, idle drain/final publication,
+  input-preserving rejection, restart-only retained-live catch-up, crash repair,
+  root/descendant tombstones and explicit new-generation resurrection. Partial
+  imports never become continuable merely by switching Off or detaching.
+- Add native `/cloud` commands, exact authenticated browser RPC, write-only Host
+  credential settings and fail-closed runtime rebuilds. Shared LocalStore authority
+  lanes preserve newer Off/detach against stale enable/import/status/cleanup work;
+  durable pending-auth intent prevents mixed secret/config generations.
+- Add controls inside the existing local Web GUI: default-off confirmed On for
+  blank/nonblank threads and the panel, public composer blocks, remote catalog,
+  mappings/import/repair, degraded acknowledgement, takeover/export/removal.
+  Blank controls use public hero options and a blank-only corner action that yields
+  to any foreign occupant. Foreign worktree blocks and shared/HMR cleanup remain safe.
+- Add bounded local-only read-only Git facts and literal POSIX/PowerShell guidance;
+  preserve index bytes/mtime, omit credential-bearing remote forms, and report
+  Unknown for unsupported normalization/partial/sparse/filter cases rather than
+  granting execution. Sanitization cannot infer arbitrary secrets embedded in path text.
+- Document zero-to-synced setup, security, retention and uninstall boundaries; add
+  actual SDK→loopback proxy→Azurite HTTP cost profiling and extracted-tarball/public
+  consumer smoke. A named bounded-workload retail model is not an Azure bill/cap.
+- **Not a published release or final T9 approval.** T1–T8 are approved; T9 final
+  verification/reviews remain pending. Real two-machine/deployed GUI, live Azure
+  RBAC/private endpoints/TLS/rotation/billing and Windows GUI/PowerShell remain
+  manual acceptance, not emulator/SDK fixture evidence. One Host per local state
+  store and one shared LocalStore across runtime instances are required.
+  See the [package changelog](<packages/azure-sync/CHANGELOG.md>),
+  [acceptance matrix](<docs/acceptance/azure-sync.md>) and
+  [cost evidence](<docs/acceptance/azure-sync-cost.md>).
+
 ## dsh-copilot-catalog 0.2.7 — exact pi-ai behavior headers
 
 - Preserve `X-GitHub-Api-Version`, `Openai-Intent`, `X-Interaction-Type`,
@@ -211,6 +246,8 @@
   development/testing. Native search acceptance requires a separate live probe.
 
 Package history and versions are independent:
+
+- [Azure Sync changelog](<packages/azure-sync/CHANGELOG.md>) — `@1yefuwang1/dsh-azure-sync@0.1.0`, unreleased experimental v1; final T9 acceptance/review pending, with live Azure/GUI/platform evidence explicitly deferred.
 
 - [Catalog changelog](packages/catalog/CHANGELOG.md) — `0.2.3` DSH 0.2.1-rc.2 compatibility and adapter-relative pi-ai resolution; earlier versions previously published.
 - [Search changelog](<packages/search/CHANGELOG.md>) — `0.1.3` DSH 0.2.1-rc.2 compatibility and cancellation-safe credential refresh; `0.1.2` GHE Cloud endpoint support.

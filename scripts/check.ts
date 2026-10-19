@@ -79,6 +79,18 @@ for (const { path, manifest } of leaves) {
       throw new Error('Worktree package, Client loader, native config row and public npm identity must agree');
     }
   }
+  if (path === 'packages/azure-sync') {
+    sources.push(`${path}/client.ts`, `${path}/client.types.d.ts`, `${path}/client-model.ts`, `${path}/client-blocks.ts`);
+    const client = await readFile(join(root, path, 'client.ts'), 'utf8');
+    const moduleId = client.match(/window\.__ModuleLoader__\.load\(\{\s*id: '([^']+)'/u)?.[1];
+    const configKey = client.match(/name: 'plugins\.row\.config', key: '([^']+)'/u)?.[1];
+    if (manifest.name !== '@1yefuwang1/dsh-azure-sync' || moduleId !== manifest.name ||
+        configKey !== `${manifest.name}#azure-sync` || manifest.exports['./client'] !== './dist/client.js' ||
+        !patch.includes(`      name: '${manifest.name}'`) || !patch.includes('    - id: azure-sync') ||
+        manifest.publishConfig?.access !== 'public' || manifest.publishConfig.registry !== 'https://registry.npmjs.org/') {
+      throw new Error('Azure sync package, Client loader, native config row and public npm identity must agree');
+    }
+  }
 }
 for (const file of sources) {
   const source = await readFile(join(root, file), 'utf8');

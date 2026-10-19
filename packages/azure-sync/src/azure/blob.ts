@@ -93,11 +93,33 @@ export class BlobStore {
     }
   }
 
-  async deleteIfExists(name: string): Promise<void> {
+  /** Snapshot identity before checking the manifest fence, not afterwards. */
+  async identity(name: string): Promise<{ etag: string; leased: boolean } | undefined> {
     try {
-      await this.container.getBlobClient(name).deleteIfExists();
+      const properties = await this.container.getBlobClient(name).getProperties();
+      if (properties.etag === undefined) throw new AzureSyncError('INVALID_RECORD', 'A cleanup blob has no ETag.');
+      return { etag: properties.etag, leased: properties.leaseStatus === 'locked' };
+    } catch (error) {
+      if (isNotFound(error)) return undefined;
+      throw mapAzureError(error, 'blob identity read');
+    }
+  }
+
+  async deleteIfExists(name: string, etag?: string): Promise<void> {
+    try {
+      await this.container.getBlobClient(name).deleteIfExists(etag === undefined ? {} : { conditions: { ifMatch: etag } });
     } catch (error) {
       throw mapAzureError(error, 'blob delete');
+    }
+  }
+
+  /** A delayed cleanup may never break a newly recreated lease blob. */
+  async breakLeaseIfMatch(name: string, etag: string): Promise<void> {
+    try {
+      await this.lease(name).breakLease(0, { conditions: { ifMatch: etag } });
+    } catch (error) {
+      if (isNotFound(error)) return;
+      throw mapAzureError(error, 'conditional lease break');
     }
   }
 

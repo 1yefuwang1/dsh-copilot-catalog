@@ -118,6 +118,10 @@ export const cloudSessionEntitySchema = z.object({
   deletedAt: int64.optional(),
   deletedBy: optionalText(256),
   previousGeneration: int64.min(1).optional(),
+  // Unique explicit activation token; retained across same-generation tip/epoch updates.
+  resurrectionId: z.string().uuid().optional(),
+  // Durable tombstone progress; resurrection must finish the generation sweep first.
+  cleanupPending: z.boolean().optional(),
 }).strict();
 export type CloudSessionEntity = z.infer<typeof cloudSessionEntitySchema>;
 
@@ -178,7 +182,7 @@ export const batchBlobMetadataSchema = z.object({
   headerhash: hex64,
   generation: z.string().regex(/^\d+$/u),
   createdepoch: z.string().regex(/^\d+$/u),
-  deviceid: z.string().min(1).max(1024),
+  deviceid: z.string().min(1).max(256),
   schemaversion: z.literal(String(CLOUD_SCHEMA_VERSION)),
   payloadhash: hex64,
 }).strict();
@@ -195,6 +199,19 @@ export const admissionReceiptSchema = z.object({
 }).strict();
 export type AdmissionReceipt = z.infer<typeof admissionReceiptSchema>;
 
+/** Write-ahead record of ONE explicit root activation, never permission to adopt another generation. */
+export const resurrectionIntentSchema = z.object({
+  operationId: z.string().uuid(),
+  priorGeneration: int64.min(1),
+  targetGeneration: int64.min(1),
+  priorState: z.enum(['deleted', 'disabled']),
+  sourceETag: nonEmpty(1024),
+  genesisHash: hex64,
+  // Exact proposed CAS bytes retain the header/cut and, for re-enable, the entire old tip.
+  target: cloudSessionEntitySchema,
+}).strict();
+export type ResurrectionIntent = z.infer<typeof resurrectionIntentSchema>;
+
 /** Per-session local sync state. */
 export const localSessionRecordSchema = z.object({
   sessionId: nonEmpty(256),
@@ -203,6 +220,10 @@ export const localSessionRecordSchema = z.object({
   writerEpoch: int64,
   state: z.enum(['active', 'disabled', 'deleted']),
   status: syncStatusSchema,
+  deletedAt: int64.optional(),
+  deletedBy: optionalText(256),
+  previousGeneration: int64.min(1).optional(),
+  cleanupPending: z.boolean().optional(),
   lastError: optionalText(4096),
   lastSyncedEventCount: int64.optional(),
   lastSyncedChainHash: hex64.optional(),
@@ -211,6 +232,7 @@ export const localSessionRecordSchema = z.object({
   lastSyncedAt: int64.optional(),
   lastAttemptAt: int64.optional(),
   importState: importStateSchema.optional(),
+  catchUpPending: z.boolean().optional(),
   importExpectedCount: int64.optional(),
   importExpectedChainHash: hex64.optional(),
   importAppendedCount: int64.optional(),
@@ -234,6 +256,9 @@ export const localSessionRecordSchema = z.object({
   weArchived: z.boolean(),
   detached: z.boolean(),
   admissionReceipt: admissionReceiptSchema.optional(),
+  admissionStopped: z.boolean().optional(),
+  resurrectionIntent: resurrectionIntentSchema.optional(),
+  resurrectionCancellationId: z.string().uuid().optional(),
 }).strict();
 export type LocalSessionRecord = z.infer<typeof localSessionRecordSchema>;
 
@@ -257,9 +282,27 @@ export const localDeviceSchema = z.object({
 export type LocalDeviceRecord = z.infer<typeof localDeviceSchema>;
 
 export const localSettingsSchema = z.object({
+  // Read legacy true values so old durable records cannot prevent startup.
+  // SettingsService always resolves/writes false; thread opt-in stays explicit.
   defaultEnabled: z.boolean(),
   pullOnStartup: z.boolean(),
+  // Preserve old v4 reads; SettingsService clamps/normalizes the runtime limit.
   pollSeconds: int64.min(30),
+  auth: z.enum(['auto', 'connection-string', 'azure-cli', 'managed-identity']).optional(),
+  accountName: z.string().regex(/^(?:[a-z0-9]{3,24})?$/u).optional(),
+  managedIdentityClientId: z.string().regex(/^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?$/iu).optional(),
+  // Write-ahead authentication intent: provider and domain writes are not atomic.
+  authPending: z.object({
+    id: z.string().uuid(),
+    auth: z.enum(['auto', 'connection-string', 'azure-cli', 'managed-identity']),
+    accountName: z.string().regex(/^(?:[a-z0-9]{3,24})?$/u),
+    managedIdentityClientId: z.string().regex(/^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?$/iu),
+    startedAt: int64,
+  }).strict().optional(),
+  authGeneration: z.string().uuid().optional(),
+  // A CLI/identity recovery may ignore, but must never later reuse, an unknown secret.
+  connectionUncertain: z.boolean().optional(),
+  updatedAt: int64.optional(),
   lastPullAt: int64.optional(),
   lastPushAt: int64.optional(),
   lastError: optionalText(4096),

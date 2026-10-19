@@ -233,3 +233,37 @@ test('lease lifecycle separates the acquire client from the bound renew/release 
   await manager.break('leases/a');
   assert.deepEqual(calls, ['ensure:leases/a', 'lease:leases/a', 'acquire:60', 'lease:leases/a:lease-id', 'renew', 'release', 'lease:leases/a', 'break:0']);
 });
+
+test('cleanup blob identity, conditional deletion and lease break preserve exact object ETags', async () => {
+  const calls: unknown[] = [];
+  const container = { getBlobClient: (name: string) => ({
+    getProperties: async () => {
+      if (name === 'missing') throw failure(404, 'BlobNotFound');
+      return { etag: 'blob-etag', leaseStatus: 'locked' };
+    },
+    deleteIfExists: async (options: unknown) => { calls.push(['delete', name, options]); },
+    getBlobLeaseClient: () => ({ breakLease: async (period: number, options: unknown) => { calls.push(['break', name, period, options]); } }),
+  }) } as unknown as ContainerClient;
+  const blob = new BlobStore(container);
+  assert.equal(await blob.identity('missing'), undefined);
+  assert.deepEqual(await blob.identity('lease'), { etag: 'blob-etag', leased: true });
+  await blob.breakLeaseIfMatch('lease', 'blob-etag');
+  await blob.deleteIfExists('lease', 'blob-etag');
+  assert.deepEqual(calls, [
+    ['break', 'lease', 0, { conditions: { ifMatch: 'blob-etag' } }],
+    ['delete', 'lease', { conditions: { ifMatch: 'blob-etag' } }],
+  ]);
+});
+
+test('cleanup fails closed on missing ETags and changed blob/lease objects', async () => {
+  const container = { getBlobClient: () => ({
+    getProperties: async () => ({}),
+    deleteIfExists: async () => { throw failure(412, 'ConditionNotMet'); },
+    getBlobLeaseClient: () => ({ breakLease: async () => { throw failure(412, 'ConditionNotMet'); } }),
+  }) } as unknown as ContainerClient;
+  const blob = new BlobStore(container);
+  await assert.rejects(blob.identity('unknown'), (error: unknown) => error instanceof AzureSyncError && error.code === 'INVALID_RECORD');
+  for (const action of [() => blob.deleteIfExists('changed', 'old-etag'), () => blob.breakLeaseIfMatch('changed', 'old-etag')]) {
+    await assert.rejects(action, (error: unknown) => error instanceof AzureSyncError && error.code === 'PRECONDITION');
+  }
+});

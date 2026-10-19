@@ -53,7 +53,9 @@ export class ImportRecovery {
   async repairAll(): Promise<{ readonly repaired: readonly string[]; readonly failed: readonly string[] }> {
     const candidates: ImportCandidate[] = [];
     for (const [sessionId, record] of this.local.listSessions()) {
-      if (record.importState === undefined || record.importState === 'complete') continue;
+      // Cold catch-ups own a separate retry lifecycle and always re-prove a fresh
+      // committed prefix; first-import recovery must not pin or resume their writer.
+      if (record.catchUpPending || record.importState === undefined || record.importState === 'complete') continue;
       const header = await this.localHeader(sessionId);
       candidates.push({ sessionId, ...(header?.parentSession === undefined ? {} : { parentSession: header.parentSession }), ...(header?.delegationDepth === undefined ? {} : { delegationDepth: header.delegationDepth }), ...(record.subagent === true ? { subagent: true } : {}) });
     }

@@ -119,6 +119,9 @@ export class AttachmentSync {
           }
           bytes = Buffer.concat(chunks);
         }
+        // Apply the same configured transfer cap to image bytes and file data,
+        // before authorization, metadata hashing, or any Azure PUT.
+        if (bytes.byteLength > this.options.maxBytes) throw new AzureSyncError('LIMIT', 'An attachment exceeds the configured size limit.');
       } catch {
         missing.push(ref.id);
         continue;
