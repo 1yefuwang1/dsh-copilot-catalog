@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Config } from '../src/config.js';
-import { Uploader } from '../src/sync/uploader.js';
-import type { BatchRow, CloudSessionEntity, LocalSessionRecord } from '../src/schema.js';
-import type { CloudRepository, StoredManifest } from '../src/sync/cloud-repository.js';
-import type { SessionLease, SessionLeaseManager } from '../src/sync/lease-manager.js';
+import { Uploader, type UploadDependencies } from '../src/sync/uploader.js';
+import { batchRowSchema, type BatchRow, type CloudSessionEntity, type LocalSessionRecord } from '../src/schema.js';
+import { candidateBlobName, type CloudRepository, type StoredManifest } from '../src/sync/cloud-repository.js';
+import { planBatch } from '../src/sync/batcher.js';
+import { batchBlobMetadata } from '../src/sync/blob-metadata.js';
+import type { SessionLease, SessionLeaseManager, SessionLeaseSeconds } from '../src/sync/lease-manager.js';
+import { SyncService } from '../src/sync/service.js';
 import type { SessionSource, SourceSnapshot } from '../src/sync/session-source.js';
 import { AzureSyncError } from '../src/azure/errors.js';
 import { cloudSession, event, localSession, pathMapping, sessionHeader } from './helpers.js';
@@ -13,7 +16,9 @@ import { payloadBytes } from '../src/sync/canonical.js';
 import { gzipSync } from 'node:zlib';
 import { batchRow } from './helpers.js';
 import { nodeCwdFs, type CwdBinding } from '../src/sync/effective-cwd.js';
-import type { AttachmentSync } from '../src/sync/attachments.js';
+import { AttachmentSync } from '../src/sync/attachments.js';
+import type { AttachmentStore } from '@deepseek-ai/dsh-attachment';
+import type { BlobStore } from '../src/azure/blob.js';
 import { mkdtemp, mkdir, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -47,7 +52,10 @@ class MemoryRepository {
     this.blobs.set(name, { bytes: Uint8Array.from(bytes), metadata });
     return { status: 'created' };
   }
-  readonly blob = { getMetadata: async (name: string) => this.blobs.get(name)?.metadata ?? {} };
+  private async *listCandidates(prefix: string) {
+    for (const [name, blob] of this.blobs) if (name.startsWith(prefix)) yield { name, sizeBytes: blob.bytes.byteLength };
+  }
+  readonly blob = { getMetadata: async (name: string) => this.blobs.get(name)?.metadata ?? {}, list: (prefix: string) => this.listCandidates(prefix) };
   async readCandidate(name: string): Promise<Buffer> { return Buffer.from(this.blobs.get(name)?.bytes ?? new Uint8Array()); }
   async commitBatch(proof: StoredManifest, row: BatchRow, next: CloudSessionEntity): Promise<StoredManifest> {
     if (this.beforeCommit !== undefined) await this.beforeCommit();
@@ -69,17 +77,21 @@ class MemoryLeases {
   lost = false;
   renews = 0;
   releases = 0;
+  takeovers = 0;
+  readonly durations: SessionLeaseSeconds[] = [];
   constructor(private readonly repo: MemoryRepository) {}
-  async acquire(sessionId: string): Promise<SessionLease> {
+  async acquire(sessionId: string, _signal?: AbortSignal, seconds: SessionLeaseSeconds = 60): Promise<SessionLease> {
+    this.durations.push(seconds);
     if (this.beforeAcquire !== undefined) await this.beforeAcquire();
     const manifest = this.repo.manifest;
     assert.ok(manifest);
     const epoch = manifest.entity.writerEpoch + 1;
-    const entity: CloudSessionEntity = { ...manifest.entity, writerEpoch: epoch, leaseOwner: 'device-a', leaseUntil: Date.now() + 60_000, updatedAt: 1 };
+    const entity: CloudSessionEntity = { ...manifest.entity, writerEpoch: epoch, leaseOwner: 'device-a', leaseUntil: Date.now() + seconds * 1000, updatedAt: 1 };
     await this.repo.updateManifest(entity, manifest.etag);
     this.epoch = epoch;
-    return { sessionId, deviceId: 'device-a', epoch, handle: {} as never, manifest: (await this.repo.getManifest()) as StoredManifest };
+    return { sessionId, deviceId: 'device-a', epoch, handle: {} as never, manifest: (await this.repo.getManifest()) as StoredManifest, durationSeconds: seconds };
   }
+  async takeover(sessionId: string, signal?: AbortSignal, seconds: SessionLeaseSeconds = 60): Promise<SessionLease> { this.takeovers++; return this.acquire(sessionId, signal, seconds); }
   async proof(_sessionId: string, epoch: number): Promise<StoredManifest> {
     if (this.lost) throw new AzureSyncError('LEASE_LOST', 'synthetic lost');
     const manifest = await this.repo.getManifest();
@@ -99,14 +111,19 @@ class MemoryLeases {
 
 function localFake(record: LocalSessionRecord) {
   let current = record;
+  let lane: Promise<unknown> = Promise.resolve();
   return {
     getSession: () => current,
     putSession: async (next: LocalSessionRecord) => { current = next; },
+    transactSession: (_id: string, fn: (value: LocalSessionRecord | undefined) => LocalSessionRecord | undefined) => {
+      const task = lane.then(() => { const next = fn(current); if (next !== undefined) current = next; return next; });
+      lane = task.then(() => undefined, () => undefined); return task;
+    },
     get: () => current,
   };
 }
 
-function fixture(events: unknown[], options: { materialized?: boolean; maxBatchEvents?: number; renewEveryMs?: number; cwdBinding?: () => Promise<CwdBinding | undefined>; attachments?: AttachmentSync } = {}) {
+function fixture(events: unknown[], options: { materialized?: boolean; maxBatchEvents?: number; renewEveryMs?: number; cwdBinding?: () => Promise<CwdBinding | undefined>; attachments?: AttachmentSync; gitMetadata?: UploadDependencies['gitMetadata'] } = {}) {
   const repo = new MemoryRepository();
   const leases = new MemoryLeases(repo);
   const local = localFake(localSession({ sessionId: 'session-test' }));
@@ -125,9 +142,163 @@ function fixture(events: unknown[], options: { materialized?: boolean; maxBatchE
     ...(options.renewEveryMs === undefined ? {} : { renewEveryMs: options.renewEveryMs }),
     ...(options.cwdBinding === undefined ? {} : { cwdBinding: options.cwdBinding }),
     ...(options.attachments === undefined ? {} : { attachments: options.attachments }),
+    ...(options.gitMetadata === undefined ? {} : { gitMetadata: options.gitMetadata }),
   });
   return { repo, leases, local, source, uploader, setEvents: (next: unknown[]) => { currentEvents = next; }, setMaterialized: (next: boolean) => { materialized = next; }, setNow: (next: number) => { now = next; } };
 }
+
+for (const importState of ['planned', 'creating', 'appending', 'attachments', 'warming', 'failed', 'degraded'] as const) {
+  test(`incomplete ${importState} import cannot enable, publish, prove ownership, or break a lease before repair`, async () => {
+    const f = fixture([event(0)]);
+    await f.local.putSession({ ...f.local.get(), importState, imported: true });
+    const before = structuredClone(f.local.get());
+    f.source.flush = async () => { assert.fail('incomplete import must stop before persistence/cloud work'); };
+    const incomplete = (error: unknown) => error instanceof AzureSyncError && error.code === 'IMPORT_INCOMPLETE';
+    await assert.rejects(f.uploader.enable('session-test'), incomplete);
+    await assert.rejects(f.uploader.sync('session-test'), incomplete);
+    assert.deepEqual(await f.uploader.ensureOwnership('session-test'), { owned: false, reason: 'ownership-unverified' });
+    await assert.rejects(f.uploader.takeover('session-test'), incomplete);
+    await assert.rejects(f.uploader.snapshotForResurrection('session-test'), incomplete);
+    assert.deepEqual(f.local.get(), before, 'failed actions never grant permission or change the durable import record');
+    assert.equal(f.repo.manifest, undefined); assert.equal(f.repo.rows.size, 0); assert.equal(f.repo.blobs.size, 0);
+    assert.equal(f.leases.epoch, 0); assert.equal(f.leases.renews, 0); assert.equal(f.leases.releases, 0);
+    await f.local.putSession({ ...before, enabled: false, detached: true, state: 'disabled', status: 'detached' });
+    const stopped = structuredClone(f.local.get());
+    await assert.rejects(f.uploader.enable('session-test'), incomplete);
+    assert.deepEqual(f.local.get(), stopped, 'rejected On preserves explicit local opt-out');
+    assert.equal((await f.uploader.sync('session-test')).status, 'disabled');
+    assert.deepEqual(await f.uploader.ensureOwnership('session-test'), { owned: false, reason: 'ownership-unverified' });
+  });
+}
+
+test('advisory Git metadata publishes only sanitized allowlisted facts and never grants disabled permission', async () => {
+  const facts = { v: 1 as const, root: '/local/project', branch: 'main', commit: 'a'.repeat(40), detached: false, unborn: false, worktree: false, dirty: 'clean' as const, remote: 'https://example.invalid/repo' };
+  const f = fixture([event(0)], { gitMetadata: async () => facts }); await f.uploader.sync('session-test');
+  assert.deepEqual(JSON.parse(f.repo.manifest!.entity.gitJson!), facts); assert.equal(f.repo.manifest!.entity.eventCount, 1);
+  const bad = fixture([event(0)], { gitMetadata: async () => ({ ...facts, remote: 'https://example.invalid/repo?sig=must-not-cross' }) });
+  await bad.uploader.sync('session-test'); assert.equal(bad.repo.manifest!.entity.gitJson, undefined); assert.ok(!JSON.stringify(bad.repo.manifest).includes('must-not-cross'));
+  for (const scheme of ['http', 'https']) for (const userinfo of ['CANARYTOKEN', 'CANARYUSER:12345']) {
+    const remote = `${scheme}://${userinfo}${String.fromCharCode(92)}@example.invalid/repo.git`;
+    const unsafe = fixture([event(0)], { gitMetadata: async () => ({ ...facts, remote }) });
+    await unsafe.uploader.sync('session-test', { release: true });
+    assert.equal(unsafe.repo.manifest!.entity.gitJson, undefined); assert.ok(!JSON.stringify(unsafe.repo.manifest).includes('CANARY'));
+  }
+  for (const remote of ['CANARYUSER:12345@example.invalid:team/repo.git', 'org:glpat-CANARY@example.invalid:team/repo.git']) {
+    const unsafe = fixture([event(0)], { gitMetadata: async () => ({ ...facts, remote }) }); await unsafe.uploader.sync('session-test', { release: true });
+    assert.equal(unsafe.repo.manifest!.entity.gitJson, undefined); assert.doesNotMatch(JSON.stringify(unsafe.repo.manifest), /CANARY/iu);
+  }
+  let reads = 0; const off = fixture([event(0)], { gitMetadata: async () => { reads++; return facts; } });
+  await off.local.putSession({ ...off.local.get(), enabled: false, detached: true }); assert.equal((await off.uploader.sync('session-test')).status, 'disabled'); assert.equal(reads, 0); assert.equal(off.repo.manifest, undefined);
+});
+
+test('a newer off during advisory Git IO still preempts every later cloud write and metadata checkpoint', async () => {
+  let ready!: () => void, release!: () => void; const started = new Promise<void>(done => { ready = done; }), pending = new Promise<void>(done => { release = done; });
+  const f = fixture([event(0)], { gitMetadata: async () => { ready(); await pending; return null; } });
+  const sync = f.uploader.sync('session-test'); const rejected = assert.rejects(sync, error => error instanceof AzureSyncError && error.code === 'CANCELLED');
+  await started; const disabling = f.uploader.disable('session-test');
+  await f.local.transactSession('session-test', () => undefined); assert.equal(f.local.get().enabled, false);
+  release(); await disabling; const stopped = structuredClone(f.local.get()); await rejected;
+  assert.deepEqual(f.local.get(), stopped); assert.equal(f.local.get().enabled, false); assert.equal(f.repo.manifest, undefined); assert.equal(f.repo.blobs.size, 0); assert.equal(f.leases.epoch, 0);
+});
+
+test('cold 30s handles have no background renewal and a native proof promotes through a new 60s epoch', async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] }); const f = fixture([event(0)]); t.after(() => f.uploader.close());
+  assert.equal((await f.uploader.ensureOwnership('session-test', undefined, 30)).owned, true); assert.deepEqual(f.leases.durations, [30]);
+  t.mock.timers.tick(90_000); await new Promise<void>(done => setImmediate(done)); assert.equal(f.leases.renews, 0, 'stalled cold controls must not keep renewing forever');
+  const priorEpoch = f.local.get().writerEpoch;
+  assert.equal((await f.uploader.ensureOwnership('session-test', undefined, 60)).owned, true); assert.deepEqual(f.leases.durations, [30, 60]); assert.equal(f.leases.releases, 1); assert.ok(f.local.get().writerEpoch > priorEpoch);
+});
+
+test('a cold hint never downgrades, breaks or releases a pre-existing native 60s foreground lease', async t => {
+  const f = fixture([event(0)]); t.after(() => f.uploader.close()); await f.uploader.ensureOwnership('session-test');
+  const epoch = f.local.get().writerEpoch;
+  assert.equal((await f.uploader.ensureOwnership('session-test', undefined, 30)).owned, true);
+  await f.uploader.sync('session-test', { release: true, leaseSeconds: 30 });
+  assert.equal((await f.uploader.takeover('session-test', undefined, 30)).owned, true);
+  assert.deepEqual(f.leases.durations, [60]); assert.equal(f.leases.takeovers, 0); assert.equal(f.leases.releases, 0); assert.equal(f.local.get().writerEpoch, epoch); assert.equal(f.uploader.hasHeld('session-test'), true);
+});
+
+test('cold-to-native promotion that loses acquisition returns nonowned, never the old cold grant', async t => {
+  const f = fixture([event(0)]); t.after(() => f.uploader.close()); await f.uploader.ensureOwnership('session-test', undefined, 30);
+  f.leases.beforeAcquire = async () => { throw new AzureSyncError('CONFLICT', 'another owner won'); };
+  const result = await f.uploader.ensureOwnership('session-test', undefined, 60); assert.deepEqual(result, { owned: false, reason: 'paused-other-device' }); assert.equal(f.uploader.hasHeld('session-test'), false); assert.equal(f.leases.releases, 1);
+});
+
+test('cancelled promotion cleans a late accepted 60s acquisition without installing renewal or new local authority', async t => {
+  const f = fixture([event(0)]); t.after(() => f.uploader.close()); await f.uploader.ensureOwnership('session-test', undefined, 30);
+  let enter!: () => void, release!: () => void; const entered = new Promise<void>(done => { enter = done; }), wait = new Promise<void>(done => { release = done; });
+  f.leases.beforeAcquire = async () => { enter(); await wait; };
+  const before = structuredClone(f.local.get()), stop = new AbortController(); const promotion = f.uploader.ensureOwnership('session-test', stop.signal, 60);
+  const rejected = assert.rejects(promotion, error => error instanceof AzureSyncError && error.code === 'CANCELLED'); await entered; stop.abort(); release(); await rejected;
+  assert.deepEqual(f.leases.durations, [30, 60]); assert.equal(f.leases.releases, 2); assert.equal(f.uploader.hasHeld('session-test'), false); assert.deepEqual(f.local.get(), before);
+});
+
+for (const action of ['on', 'sync', 'takeover', 'inspection'] as const) test(`cold service ${action} requests 30s and immediately cleans its capability`, async t => {
+  const f = fixture([event(0)]);
+  if (action === 'takeover') { await f.uploader.sync('session-test', { release: true, leaseSeconds: 30 }); f.leases.durations.length = 0; f.leases.releases = 0; }
+  const service = new SyncService({ uploader: f.uploader, local: f.local as never, source: f.source, agents: { get: () => undefined } as never }); t.after(() => service.close());
+  if (action === 'on') await service.enable('session-test');
+  else if (action === 'sync') await service.sync('session-test');
+  else if (action === 'takeover') assert.equal((await service.takeover('session-test')).owned, true);
+  else assert.equal((await service.ensureOwnership('session-test', undefined, { inspection: true })).owned, true);
+  assert.deepEqual(f.leases.durations, [30]); assert.equal(f.uploader.hasHeld('session-test'), false); assert.equal(f.leases.releases, 1);
+});
+
+test('a failed cold On still releases its 30s capability and never installs background renewal', async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] }); const f = fixture([event(0)]); f.repo.failCommit = true;
+  const service = new SyncService({ uploader: f.uploader, local: f.local as never, source: f.source, agents: { get: () => undefined } as never }); t.after(() => service.close());
+  await assert.rejects(service.enable('session-test'), error => error instanceof AzureSyncError && error.code === 'PRECONDITION');
+  assert.deepEqual(f.leases.durations, [30]); assert.equal(f.leases.releases, 1); assert.equal(f.uploader.hasHeld('session-test'), false); assert.equal(f.repo.rows.size, 0); assert.notEqual(f.local.get().status, 'synced');
+  t.mock.timers.tick(90_000); await new Promise<void>(done => setImmediate(done)); assert.equal(f.leases.renews, 0);
+});
+
+test('Agent appearance followed by foreign promotion loss fails closed instead of returning the old cold proof', async t => {
+  const f = fixture([event(0)]); let live = false;
+  f.leases.beforeAcquire = async () => { if (f.leases.durations.length === 1) live = true; else throw new AzureSyncError('CONFLICT', 'foreign owner won'); };
+  const service = new SyncService({ uploader: f.uploader, local: f.local as never, source: f.source, agents: { get: () => live ? { status: 'busy' } : undefined } as never }); t.after(() => service.close());
+  await assert.rejects(service.ensureOwnership('session-test', undefined, { inspection: true }), error => error instanceof AzureSyncError && error.code === 'OWNERSHIP_UNVERIFIED');
+  assert.deepEqual(f.leases.durations, [30, 60]); assert.equal(f.uploader.hasHeld('session-test'), false); assert.equal(f.leases.releases, 1);
+});
+
+for (const action of ['on', 'takeover', 'inspection'] as const) test(`a native Agent appearing during cold ${action} is promoted before the control completes`, async t => {
+  const f = fixture([event(0)]); let live = false;
+  if (action === 'takeover') { await f.uploader.sync('session-test', { release: true, leaseSeconds: 30 }); f.leases.durations.length = 0; f.leases.releases = 0; }
+  f.leases.beforeAcquire = async () => { live = true; };
+  const service = new SyncService({ uploader: f.uploader, local: f.local as never, source: f.source, agents: { get: () => live ? { status: 'busy' } : undefined } as never }); t.after(() => service.close());
+  if (action === 'on') await service.enable('session-test');
+  else if (action === 'takeover') assert.equal((await service.takeover('session-test')).owned, true);
+  else assert.equal((await service.ensureOwnership('session-test', undefined, { inspection: true })).owned, true);
+  assert.deepEqual(f.leases.durations, [30, 60]); assert.equal(f.leases.releases, 1, 'only the old cold handle is released'); assert.equal(f.uploader.hasHeld('session-test'), true);
+});
+
+test('an older queued cold inspection cannot downgrade or release the new foreground 60s proof', async t => {
+  const f = fixture([event(0)]); let live = false, enter!: () => void, release!: () => void;
+  const entered = new Promise<void>(done => { enter = done; }), wait = new Promise<void>(done => { release = done; });
+  f.leases.beforeAcquire = async () => { enter(); await wait; live = true; };
+  const native = f.uploader.ensureOwnership('session-test', undefined, 60); await entered;
+  const service = new SyncService({ uploader: f.uploader, local: f.local as never, source: f.source, agents: { get: () => live ? { status: 'busy' } : undefined } as never }); t.after(() => service.close());
+  const cold = service.ensureOwnership('session-test', undefined, { inspection: true }); release();
+  assert.equal((await native).owned, true); assert.equal((await cold).owned, true);
+  assert.deepEqual(f.leases.durations, [60]); assert.equal(f.leases.releases, 0); assert.equal(f.uploader.hasHeld('session-test'), true);
+});
+
+for (const action of ['on', 'inspection'] as const) test(`Agent appearance during queued cold ${action} finalization promotes the retained 30s handle`, async t => {
+  const f = fixture([event(0)]); let live = false;
+  const releaseInspection = f.uploader.releaseInspection.bind(f.uploader);
+  t.mock.method(f.uploader, 'releaseInspection', async (id: string, predicate: () => boolean) => { live = true; return releaseInspection(id, predicate); });
+  const service = new SyncService({ uploader: f.uploader, local: f.local as never, source: f.source, agents: { get: () => live ? { status: 'busy' } : undefined } as never }); t.after(() => service.close());
+  if (action === 'on') await service.enable('session-test'); else assert.equal((await service.ensureOwnership('session-test', undefined, { inspection: true })).owned, true);
+  assert.deepEqual(f.leases.durations, [30, 60]); assert.equal(f.leases.releases, 1); assert.equal(f.uploader.heldLeaseSeconds('session-test'), 60);
+});
+
+test('failed cold On finalization never promotes a failed operation into active background renewal', async t => {
+  const f = fixture([event(0)]); let live = false; f.repo.failCommit = true;
+  const releaseInspection = f.uploader.releaseInspection.bind(f.uploader);
+  t.mock.method(f.uploader, 'releaseInspection', async (id: string, predicate: () => boolean) => { live = true; return releaseInspection(id, predicate); });
+  const service = new SyncService({ uploader: f.uploader, local: f.local as never, source: f.source, agents: { get: () => live ? { status: 'busy' } : undefined } as never }); t.after(() => service.close());
+  await assert.rejects(service.enable('session-test'), error => error instanceof AzureSyncError && error.code === 'PRECONDITION');
+  assert.deepEqual(f.leases.durations, [30]); assert.equal(f.uploader.heldLeaseSeconds('session-test'), 30); assert.notEqual(f.local.get().status, 'synced');
+});
 
 test('uploader writes blobs before atomic batches and advances the epoch', async () => {
   const f = fixture([event(0), event(1), event(2)], { maxBatchEvents: 2 });
@@ -427,9 +598,13 @@ test('background sync never revives a remote disabled state or changed generatio
   assert.equal(f.repo.manifest?.entity.state, 'disabled');
   assert.equal(f.repo.manifest?.entity.enabled, false);
 
-  f.repo.manifest = { entity: { ...manifest.entity, generation: 2 }, etag: manifest.etag };
-  await assert.rejects(f.uploader.sync('session-test'), (error: unknown) => error instanceof AzureSyncError && error.code === 'GENERATION_CHANGED');
-  assert.equal(f.local.get().generation, 1);
+  assert.equal(f.local.get().enabled, false);
+  assert.equal((await f.uploader.sync('session-test')).status, 'disabled');
+  const changed = fixture([event(0)]);
+  changed.repo.manifest = { entity: { ...manifest.entity, generation: 2 }, etag: manifest.etag };
+  await assert.rejects(changed.uploader.sync('session-test'), (error: unknown) => error instanceof AzureSyncError && error.code === 'GENERATION_CHANGED');
+  assert.equal(changed.local.get().generation, 1);
+  assert.equal(changed.local.get().enabled, false);
 
   f.repo.manifest = { entity: { ...manifest.entity, state: 'disabled', enabled: false }, etag: manifest.etag };
   await f.uploader.enable('session-test');
@@ -499,7 +674,9 @@ test('an owned fast-path CAS failure falls back and confirms the shared opt-out'
   await f.uploader.disable('session-test');
   assert.equal(f.local.get().enabled, false);
   assert.equal(f.repo.manifest?.entity.state, 'disabled');
-  assert.equal(f.local.get().status, 'synced');
+  assert.equal(f.repo.manifest?.entity.enabled, false);
+  assert.equal(f.local.get().status, 'detached');
+  assert.equal(f.local.get().detached, true);
 });
 
 test('disabling a tombstoned thread preserves the tombstone', async () => {
@@ -583,6 +760,14 @@ test('uploader uploads referenced attachments before committing the event batch'
   assert.equal(f.repo.rows.size, 1);
 });
 
+test('a real capped image attachment cannot publish bytes, metadata or a fully-synced event tip', async () => {
+  let puts = 0;
+  const attachments = new AttachmentSync({ maxBytes: 4, now: () => 1, store: { readImage: async () => ({ data: Buffer.alloc(5) }) } as unknown as AttachmentStore, blob: { putIfAbsent: async () => { puts++; throw new Error('over-cap bytes must never reach Blob'); } } as unknown as BlobStore });
+  const f = fixture([event(0, 'user/message', { content: [{ type: 'image', attachmentId: 'oversize', mediaType: 'image/png' }] })], { attachments });
+  await assert.rejects(f.uploader.sync('session-test'), error => error instanceof AzureSyncError && error.code === 'ATTACHMENT_UNSUPPORTED');
+  assert.equal(puts, 0); assert.equal(f.repo.rows.size, 0); assert.equal(f.repo.blobs.size, 0); assert.equal(f.repo.manifest?.entity.eventCount, 0); assert.notEqual(f.local.get().status, 'synced');
+});
+
 test('uploader blocks a synced state when a referenced attachment is missing', async () => {
   const attachments = { upload: async (refs: { id: string }[]) => ({ uploaded: [], missing: refs.map((ref) => ref.id) }) } as unknown as AttachmentSync;
   const f = fixture([event(0, 'user/message', { content: [{ type: 'file', attachmentId: 'file-1', name: 'a.txt', bytes: 1 }] })], { attachments });
@@ -623,4 +808,262 @@ test('imported upload keeps the exact canonical Windows header/prefix instead of
   const canonical = await (f.uploader as unknown as { canonicalSnapshot(record: unknown, snapshot: unknown): Promise<{ header: { cwd?: string }; events: { data: { cwd?: string } }[] }> }).canonicalSnapshot(record, { header: { ...sessionHeader({ id: sessionId }), cwd: join(realLocal, 'app') }, inheritedEventCount: 0, events: [localEvent] });
   assert.equal(canonical.header.cwd, 'C:\\work\\app');
   assert.equal(canonical.events[0]?.data.cwd, 'C:\\work\\app\\sub');
+});
+
+test('retry adopts the longest verified next candidate across epochs and ignores invalid/divergent siblings', async () => {
+  const f = fixture([]);
+  await f.uploader.sync('session-test', { release: true });
+  const manifest = f.repo.manifest!;
+  const events = [event(0), event(1), event(2)];
+  f.setEvents(events);
+  const seed = (values: typeof events, count: number, epoch: number, corrupt = false) => {
+    const plan = planBatch(values, 0, { maxEvents: count, maxBytes: 1_000_000 }, manifest.entity.chainHash)!;
+    const name = candidateBlobName('session-test', 1, 0, epoch, plan.payloadHash);
+    const metadata = batchBlobMetadata({ ...plan.chain, headerHash: manifest.entity.headerHash, generation: 1, createdEpoch: epoch, deviceId: 'old-device', schemaVersion: 4 });
+    f.repo.blobs.set(name, { bytes: corrupt ? gzipSync(Buffer.from('invalid\n')) : plan.gzip, metadata: { ...metadata } });
+    return name;
+  };
+  seed(events, 1, 1);
+  const longest = seed(events, 2, 1);
+  seed(events, 3, 5, true);
+  seed([event(0, 'user/message', { text: 'unchosen' }), event(1), event(2)], 3, 7);
+  const result = await f.uploader.sync('session-test', { release: true });
+  assert.equal(result.uploadedBatches, 2);
+  const committed = [...f.repo.rows.values()];
+  assert.equal(committed[0]?.blobName, longest);
+  assert.equal(committed[0]?.createdEpoch, 1);
+  assert.equal(committed[0]?.deviceId, 'old-device');
+  assert.equal(committed[1]?.startSeq, 2);
+  assert.equal(f.repo.manifest?.entity.eventCount, 3);
+  assert.equal(f.repo.manifest?.entity.writerEpoch, 2);
+});
+
+function cancellationGate() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+function watchCancellation(f: ReturnType<typeof fixture>, signal: AbortSignal) {
+  const cloudMutations: string[] = [];
+  const localWrites: LocalSessionRecord[] = [];
+  const create = f.repo.createManifest.bind(f.repo);
+  f.repo.createManifest = async (entity) => {
+    if (signal.aborted) cloudMutations.push('createManifest');
+    return create(entity);
+  };
+  const update = f.repo.updateManifest.bind(f.repo);
+  f.repo.updateManifest = async (entity, etag) => {
+    if (signal.aborted) cloudMutations.push('updateManifest');
+    return update(entity, etag);
+  };
+  const acquire = f.leases.acquire.bind(f.leases);
+  f.leases.acquire = async (id) => {
+    if (signal.aborted) cloudMutations.push('acquire');
+    return acquire(id);
+  };
+  const put = f.local.putSession.bind(f.local);
+  f.local.putSession = async (record) => {
+    if (signal.aborted) localWrites.push(structuredClone(record));
+    await put(record);
+  };
+  return { cloudMutations, localWrites };
+}
+
+const cancelled = (error: unknown) => error instanceof AzureSyncError && error.code === 'CANCELLED';
+
+test('cancelled pre-write reads cannot create a manifest, acquire a lease, or publish local state', async (t) => {
+  const phases = ['source-read', 'unmaterialized-read', 'canonical-binding', 'get-manifest', 'pre-create-parent-read'] as const;
+  const cases = (['sync', 'ownership'] as const).flatMap((mode) => phases.map((phase) => ({ mode, phase })));
+  for (const { mode, phase } of cases) {
+    await t.test(`${mode}/${phase}`, async (t) => {
+      const entered = cancellationGate();
+      const release = cancellationGate();
+      const controller = new AbortController();
+      const f = fixture([event(0)], phase === 'canonical-binding' ? {
+        cwdBinding: async () => { entered.resolve(); await release.promise; return undefined; },
+      } : {});
+      t.after(() => f.uploader.pause('session-test'));
+      const audit = watchCancellation(f, controller.signal);
+      const beforeLocal = structuredClone(f.local.get());
+      if (phase === 'source-read' || phase === 'unmaterialized-read') {
+        const read = f.source.read.bind(f.source);
+        f.source.read = async (id) => {
+          const result = phase === 'unmaterialized-read' ? undefined : await read(id);
+          entered.resolve();
+          await release.promise;
+          return result;
+        };
+      } else if (phase === 'get-manifest') {
+        const get = f.repo.getManifest.bind(f.repo);
+        f.repo.getManifest = async () => {
+          const result = await get();
+          entered.resolve();
+          await release.promise;
+          return result;
+        };
+      } else if (phase === 'pre-create-parent-read') {
+        f.source.read = async () => ({
+          ...snapshot([event(0)]),
+          header: sessionHeader({ id: 'session-test', origin: 'subagent', parentSession: 'parent-test' }) as never,
+        });
+        const get = f.repo.getManifest.bind(f.repo);
+        f.repo.getManifest = async (id?: string) => {
+          if (id !== 'parent-test') return get();
+          const parent = { entity: cloudSession({ sessionId: 'parent-test', rootSessionId: 'parent-test', rootGeneration: 1 }), etag: 'parent-etag' };
+          entered.resolve();
+          await release.promise;
+          return parent;
+        };
+      }
+      const pending = mode === 'sync'
+        ? f.uploader.sync('session-test', { signal: controller.signal })
+        : f.uploader.ensureOwnership('session-test', controller.signal);
+      const observed = pending.then(
+        (result) => ({ owned: 'owned' in result ? result.owned : undefined, error: undefined }),
+        (error: unknown) => ({ owned: undefined, error }),
+      );
+      await entered.promise;
+      assert.equal(f.repo.manifest, undefined);
+      controller.abort(new AzureSyncError('CANCELLED', 'Synthetic pre-write cancellation.'));
+      release.resolve();
+      const outcome = await observed;
+      assert.ok(cancelled(outcome.error) || (mode === 'ownership' && outcome.owned === false), 'cancelled IO must reject sync or refuse ownership');
+      assert.deepEqual(audit.cloudMutations, [], `cancelled ${phase} must not initiate a new cloud mutation`);
+      assert.equal(f.repo.manifest, undefined);
+      assert.equal(f.repo.rows.size, 0);
+      assert.equal(f.repo.blobs.size, 0);
+      assert.equal(f.leases.epoch, 0);
+      assert.equal(f.leases.releases, 0);
+      assert.equal(f.uploader.hasHeld('session-test'), false);
+      assert.deepEqual(audit.localWrites, []);
+      assert.deepEqual(f.local.get(), beforeLocal);
+    });
+  }
+});
+
+test('a lease accepted by the server but returned after sync cancellation is released exactly once', async (t) => {
+  const f = fixture([event(0)]);
+  t.after(() => f.uploader.pause('session-test'));
+  const entered = cancellationGate();
+  const release = cancellationGate();
+  const controller = new AbortController();
+  const audit = watchCancellation(f, controller.signal);
+  const activeHandles = new Set<SessionLease['handle']>();
+  const acquire = f.leases.acquire.bind(f.leases);
+  f.leases.acquire = async (id) => {
+    const lease = await acquire(id);
+    activeHandles.add(lease.handle);
+    entered.resolve();
+    await release.promise;
+    return lease;
+  };
+  const releaseLease = f.leases.release.bind(f.leases);
+  f.leases.release = async (lease?: SessionLease) => {
+    if (lease !== undefined) activeHandles.delete(lease.handle);
+    await releaseLease();
+  };
+  const pending = f.uploader.sync('session-test', { signal: controller.signal });
+  const rejection = assert.rejects(pending, cancelled);
+  await entered.promise;
+  assert.equal(f.repo.manifest?.entity.leaseOwner, 'device-a', 'the server has already granted ownership');
+  assert.equal(activeHandles.size, 1);
+  assert.equal(f.uploader.hasHeld('session-test'), false);
+  controller.abort(new AzureSyncError('CANCELLED', 'Synthetic late acquisition cancellation.'));
+  release.resolve();
+  await rejection;
+  assert.equal(f.leases.releases, 1);
+  assert.equal(activeHandles.size, 0, 'the late grant cannot become an unreachable leaked resource');
+  assert.equal(f.uploader.hasHeld('session-test'), false);
+  assert.equal(f.repo.rows.size, 0);
+  assert.equal(f.repo.blobs.size, 0);
+  assert.deepEqual(audit.cloudMutations, [], 'only cleanup may occur after the accepted grant is cancelled');
+  assert.deepEqual(audit.localWrites, []);
+});
+
+test('an aborted ownership proof cannot install a late held-lease renewal or publish syncing', async (t) => {
+  const f = fixture([event(0)]);
+  await f.uploader.sync('session-test', { release: false });
+  t.after(() => f.uploader.pause('session-test'));
+  const entered = cancellationGate();
+  const release = cancellationGate();
+  const controller = new AbortController();
+  const audit = watchCancellation(f, controller.signal);
+  const previousLocal = structuredClone(f.local.get());
+  let lateRenewal: SessionLease | undefined;
+  const renew = f.leases.renew.bind(f.leases);
+  f.leases.renew = async (lease) => {
+    const renewed = await renew(lease);
+    lateRenewal = { ...renewed, manifest: { ...renewed.manifest, etag: 'late-proof-result' } };
+    entered.resolve();
+    await release.promise;
+    return lateRenewal;
+  };
+  const observed = f.uploader.ensureOwnership('session-test', controller.signal).then(
+    (proof) => ({ proof, error: undefined }),
+    (error: unknown) => ({ proof: undefined, error }),
+  );
+  await entered.promise;
+  controller.abort(new AzureSyncError('CANCELLED', 'Synthetic held proof cancellation.'));
+  release.resolve();
+  const outcome = await observed;
+  assert.ok(outcome.proof?.owned === false || cancelled(outcome.error), 'an aborted proof must not grant execution');
+  const held = (f.uploader as unknown as { held: Map<string, SessionLease> }).held.get('session-test');
+  assert.notEqual(held, lateRenewal, 'late renewal must not overwrite retained lifecycle ownership');
+  assert.equal(audit.localWrites.some((record) => record.status === 'syncing'), false);
+  assert.deepEqual(f.local.get(), previousLocal, 'an aborted proof cannot publish stale state');
+  assert.deepEqual(audit.cloudMutations, []);
+});
+
+function seedUncommittedCandidate(f: ReturnType<typeof fixture>, events: ReturnType<typeof event>[], deviceId: string): string {
+  const manifest = f.repo.manifest;
+  assert.ok(manifest);
+  const plan = planBatch(events, 0, { maxEvents: events.length, maxBytes: 1_000_000 }, manifest.entity.chainHash);
+  assert.ok(plan);
+  const epoch = manifest.entity.writerEpoch;
+  const name = candidateBlobName('session-test', 1, 0, epoch, plan.payloadHash);
+  const metadata = batchBlobMetadata({
+    ...plan.chain, headerHash: manifest.entity.headerHash, generation: 1, createdEpoch: epoch,
+    deviceId, schemaVersion: 4,
+  });
+  f.repo.blobs.set(name, { bytes: plan.gzip, metadata: { ...metadata } });
+  return name;
+}
+
+test('candidate adoption ignores an otherwise verified candidate whose device id cannot form a valid batch row', async (t) => {
+  const f = fixture([]);
+  t.after(() => f.uploader.pause('session-test'));
+  await f.uploader.sync('session-test', { release: true });
+  const events = [event(0), event(1)];
+  const valid = seedUncommittedCandidate(f, events.slice(0, 1), 'previous-device');
+  const malformed = seedUncommittedCandidate(f, events, 'x'.repeat(257));
+  f.setEvents(events);
+  const result = await f.uploader.sync('session-test', { release: true });
+  assert.equal(result.status, 'synced');
+  assert.equal(result.uploadedBatches, 2);
+  const committed = [...f.repo.rows.values()];
+  assert.equal(committed[0]?.blobName, valid, 'a malformed longest candidate must not displace a shorter valid candidate');
+  assert.equal(committed.some((row) => row.blobName === malformed), false);
+  assert.ok(committed.every((row) => batchRowSchema.safeParse(row).success), 'every adopted candidate must produce a schema-valid whole row');
+  assert.equal(f.repo.blobs.has(malformed), true, 'unchosen candidate remains uncommitted, not destructively removed');
+  assert.equal(f.repo.manifest?.entity.eventCount, events.length);
+});
+
+test('candidate adoption respects maxBatchEvents even when a longer exact candidate has valid hashes and metadata', async (t) => {
+  const f = fixture([], { maxBatchEvents: 1 });
+  t.after(() => f.uploader.pause('session-test'));
+  await f.uploader.sync('session-test', { release: true });
+  const events = [event(0), event(1), event(2)];
+  const oversized = seedUncommittedCandidate(f, events, 'previous-device');
+  f.setEvents(events);
+  const result = await f.uploader.sync('session-test', { release: true });
+  assert.equal(result.status, 'synced');
+  assert.equal(result.uploadedBatches, 3);
+  const committed = [...f.repo.rows.values()];
+  assert.deepEqual(committed.map((row) => row.eventCount), [1, 1, 1]);
+  assert.deepEqual(committed.map((row) => row.startSeq), [0, 1, 2]);
+  assert.equal(committed.some((row) => row.blobName === oversized), false);
+  assert.ok(committed.every((row) => batchRowSchema.safeParse(row).success));
+  assert.equal(f.repo.blobs.has(oversized), true);
+  assert.equal(f.repo.manifest?.entity.eventCount, events.length);
 });

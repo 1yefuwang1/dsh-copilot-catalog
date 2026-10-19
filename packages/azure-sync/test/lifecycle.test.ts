@@ -11,7 +11,11 @@ test('lifecycle schedules without awaiting uploads and gates pre-step through th
   const handlers = new Map<string, (...args: never[]) => unknown>();
   const ctx = { on: (name: string, handler: (...args: never[]) => unknown) => { handlers.set(name, handler); return () => undefined; } } as never;
   let record: LocalSessionRecord = localSession({ sessionId: 'session-test', writerEpoch: 1 });
-  const local = { getSession: () => record, putSession: async (next: LocalSessionRecord) => { record = next; } } as unknown as LocalStore;
+  const local = {
+    getSession: () => record,
+    putSession: async (next: LocalSessionRecord) => { record = next; },
+    mutateSession: async (_id: string, fn: (current: LocalSessionRecord) => LocalSessionRecord) => { record = fn(record); },
+  } as unknown as LocalStore;
   const scheduled: string[] = [], flushed: string[] = [], drained: string[] = [], activities: string[] = [];
   const scheduler = { schedule: (id: string) => scheduled.push(id), flushNow: async (id: string) => { flushed.push(id); } } as unknown as UploadScheduler;
   let owned = true;

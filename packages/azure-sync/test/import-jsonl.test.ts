@@ -35,9 +35,15 @@ test('importer works against a real JSONL persistence handle with no synthetic c
     readCandidate: async () => gzipSync(payloadBytes([e0])),
   } as unknown as CloudRepository;
   const records = new Map<string, ReturnType<typeof localSession>>();
+  let lane: Promise<unknown> = Promise.resolve();
   const local = {
     getSession: (id: string) => records.get(id),
     putSession: async (record: ReturnType<typeof localSession>) => { records.set(record.sessionId, record); },
+    transactSession: (id: string, fn: (value: ReturnType<typeof localSession> | undefined) => ReturnType<typeof localSession> | undefined) => {
+      const task = lane.then(() => { const next = fn(records.get(id)); if (next !== undefined) { assert.equal(next.sessionId, id); records.set(id, next); } return next; });
+      lane = task.then(() => undefined, () => undefined); return task;
+    },
+    deleteSessionIf: async (id: string, fn: (value: ReturnType<typeof localSession>) => boolean) => { const value = records.get(id); return value !== undefined && fn(value) ? records.delete(id) : false; },
   } as unknown as LocalStore;
   const ctx = new Context();
   await jsonl.apply(ctx, { root: join(root, 'data') });

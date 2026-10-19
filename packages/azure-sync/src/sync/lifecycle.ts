@@ -7,7 +7,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import type { LocalStore } from '../local/store.js';
 import type { Agent } from '@deepseek-ai/dsh-agent';
 import type { Session } from '@deepseek-ai/dsh-session';
-import { admitPreStep } from './admission.js';
+import { admitPreStep, requiresCloudAdmission, type OwnershipProof } from './admission.js';
 import type { UploadScheduler } from './scheduler.js';
 import type { SyncService } from './service.js';
 
@@ -17,6 +17,29 @@ export interface LifecycleDependencies {
   readonly scheduler: UploadScheduler;
   readonly local: LocalStore;
   readonly now: () => number;
+  /** Startup installed the conservative hook before async auth/setup. */
+  readonly admissionInstalled?: boolean;
+}
+
+/** Install immediately after loading local intent, even if auth/setup is unavailable. */
+export function registerSyncAdmission(deps: {
+  readonly ctx: Context;
+  readonly local: LocalStore;
+  readonly ownership: (sessionId: string) => Promise<OwnershipProof>;
+  readonly now: () => number;
+  readonly noteActivity?: (sessionId: string) => void;
+}): () => void {
+  return deps.ctx.on('agent/pre-step', async (payload, next) => {
+    const sessionId = payload.agent.session.id;
+    if (!requiresCloudAdmission(deps.local.getSession(sessionId))) return next();
+    deps.noteActivity?.(sessionId);
+    const result = await admitPreStep({
+      agent: payload.agent as Agent, sessionId, messages: payload.messages,
+      turn: payload.turn, step: payload.step, local: deps.local,
+      ownership: () => deps.ownership(sessionId), now: deps.now,
+    });
+    return result.kind === 'enter' ? next() : { kind: 'reject' };
+  });
 }
 
 /** Register the sync lifecycle; returns one disposer for all subscriptions. */
@@ -38,20 +61,9 @@ export function registerSyncLifecycle(deps: LifecycleDependencies): () => void {
   disposers.push(deps.ctx.on('session/created', (session: Session) => {
     if (enabled(session.id)) deps.scheduler.schedule(session.id);
   }));
-  disposers.push(deps.ctx.on('agent/pre-step', async (payload, next) => {
-    if (!enabled(payload.agent.session.id)) return next();
-    activity(payload.agent.session.id);
-    const result = await admitPreStep({
-      agent: payload.agent as Agent,
-      sessionId: payload.agent.session.id,
-      messages: payload.messages,
-      turn: payload.turn,
-      step: payload.step,
-      local: deps.local,
-      ownership: () => deps.service.ensureOwnership(payload.agent.session.id),
-      now: deps.now,
-    });
-    return result.kind === 'enter' ? next() : { kind: 'reject' };
+  if (!deps.admissionInstalled) disposers.push(registerSyncAdmission({
+    ctx: deps.ctx, local: deps.local, now: deps.now,
+    ownership: (sessionId) => deps.service.ensureOwnership(sessionId), noteActivity: activity,
   }));
   disposers.push(deps.ctx.on('agent/status', (payload) => {
     if (!enabled(payload.agent.session.id)) return;

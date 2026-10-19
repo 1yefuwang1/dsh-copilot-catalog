@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { batchRowKey, sessionRowKey, type BatchRow, type CloudSessionEntity, type LocalSessionRecord, type PathMappingRecord } from '../src/schema.js';
+import { batchRowKey, encodeKeyPart, sessionRowKey, type BatchRow, type CloudSessionEntity, type LocalSessionRecord, type PathMappingRecord } from '../src/schema.js';
 
 export const HEX_A = 'a'.repeat(64);
 export const HEX_B = 'b'.repeat(64);
@@ -45,12 +45,12 @@ export function cloudSession(overrides: Partial<CloudSessionEntity> = {}): Cloud
     batchCount: 1,
     lastBatchRowKey: batchRowKey(sessionId, 1, 0),
     lastBatchGeneration: 1,
-    lastBatchBlobName: `v1/sessions/${sessionId}/gen-1/batches/0-1-${HEX_A.slice(0, 16)}.jsonl.gz`,
+    lastBatchBlobName: `v1/sessions/${encodeKeyPart(sessionId)}/gen-1/batches/0-1-${HEX_A.slice(0, 16)}.jsonl.gz`,
     cwd: '/remote/project',
     sourceDeviceId: 'device-a',
     sourcePlatform: 'linux',
     rootSessionId: sessionId,
-    rootGeneration: 1,
+    rootGeneration: overrides.generation ?? 1,
     updatedAt: 10,
   };
   return { ...base, ...overrides };
@@ -66,7 +66,7 @@ export function batchRow(sessionId: string, generation: number, startSeq: number
     startSeq,
     endSeq: startSeq,
     eventCount: 1,
-    blobName: `v1/sessions/${sessionId}/gen-${generation}/batches/${startSeq}-1-${HEX_A.slice(0, 16)}.jsonl.gz`,
+    blobName: `v1/sessions/${encodeKeyPart(sessionId)}/gen-${generation}/batches/${startSeq}-1-${HEX_A.slice(0, 16)}.jsonl.gz`,
     payloadHash: HEX_A,
     prevChainHash: HEX_A,
     chainHash: HEX_B,

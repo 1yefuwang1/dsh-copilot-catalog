@@ -92,10 +92,12 @@ export class TableStore {
     }
   }
 
-  async *list<T extends object>(filter?: string): AsyncGenerator<StoredEntity<T>> {
+  async *list<T extends object>(filter?: string, signal?: AbortSignal): AsyncGenerator<StoredEntity<T>> {
     try {
-      const options = filter === undefined ? this.requestOptions() : { ...this.requestOptions(), queryOptions: { filter } };
+      signal?.throwIfAborted();
+      const options = { ...this.requestOptions(), ...(filter === undefined ? {} : { queryOptions: { filter } }), ...(signal === undefined ? {} : { abortSignal: signal }) };
       for await (const value of this.client.listEntities<T>(options)) {
+        signal?.throwIfAborted();
         yield { value, ...(value.etag === undefined ? {} : { etag: value.etag }) };
       }
     } catch (error) {

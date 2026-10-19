@@ -36,11 +36,13 @@ export class RemoteSessionReader {
     this.options = options;
   }
 
-  async read(sessionId: string): Promise<RemoteSession | undefined> {
+  async read(sessionId: string, options: { readonly allowDisabled?: boolean } = {}): Promise<RemoteSession | undefined> {
     const manifest = await this.repository.getManifest(sessionId);
     if (manifest === undefined) return undefined;
     if (manifest.entity.state === 'deleted') throw new AzureSyncError('REMOVED_REMOTELY', 'The cloud session is a tombstone.');
-    if (manifest.entity.state === 'disabled') throw new AzureSyncError('DISABLED', 'The cloud session is disabled.');
+    // Explicit re-enable may verify retained bytes while publication is disabled;
+    // every other reader remains fail-closed and tombstones are never readable.
+    if ((manifest.entity.state === 'disabled' || !manifest.entity.enabled) && !options.allowDisabled) throw new AzureSyncError('DISABLED', 'The cloud session is disabled.');
     if (manifest.entity.sessionId !== sessionId) throw new AzureSyncError('CORRUPT_REMOTE', 'The cloud manifest identity does not match the requested session.');
     let header: SessionHeader;
     try { header = JSON.parse(manifest.entity.headerJson) as SessionHeader; }

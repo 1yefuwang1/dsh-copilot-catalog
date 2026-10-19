@@ -137,17 +137,17 @@ test('publication allowlists and bounds cover every leaf and its exact extras', 
     'dsh-copilot-tool-schema': ['index', 'plugin', 'schema', 'types'],
     '@1yefuwang1/dsh-worktrees': ['index', 'types', 'errors', 'runtime', 'schema', 'store', 'sessions', 'context', 'service', 'git', 'naming', 'rpc', 'projects', 'project-store', 'project-rpc', 'project-context', 'quiet-rpc', 'first-message', 'cleanup-store', 'cleanup', 'recovery-rpc'],
     '@1yefuwang1/dsh-azure-sync': [
-      'index', 'config', 'auth', 'runtime', 'schema', 'azure/errors', 'azure/blob', 'azure/table', 'azure/lease',
+      'index', 'config', 'auth', 'runtime', 'schema', 'protocol', 'controller', 'commands', 'rpc', 'settings', 'azure/errors', 'azure/blob', 'azure/table', 'azure/lease',
       'sync/canonical', 'sync/chain', 'sync/committed-index', 'sync/effective-cwd', 'sync/import-state', 'sync/guards',
       'sync/admission', 'sync/batcher', 'sync/blob-metadata', 'sync/cloud-repository', 'sync/drain-coordinator',
       'sync/lease-drain', 'sync/lease-manager', 'sync/lifecycle', 'sync/scheduler', 'sync/service', 'sync/session-source',
-      'sync/uploader', 'sync/remote-session', 'sync/attachments', 'sync/projection-warmer', 'sync/importer', 'sync/import-service', 'sync/recovery', 'sync/live-guard', 'sync/conflict', 'sync/reconciler', 'sync/tombstone', 'sync/tombstone-manager', 'sync/poller', 'sync/cleanup', 'sync/workspace', 'local/store',
+      'sync/uploader', 'sync/remote-session', 'sync/attachments', 'sync/projection-warmer', 'sync/importer', 'sync/import-service', 'sync/recovery', 'sync/live-guard', 'sync/conflict', 'sync/reconciler', 'sync/tombstone', 'sync/tombstone-manager', 'sync/poller', 'sync/cleanup', 'sync/workspace', 'local/store', 'git/probe', 'git/sanitize', 'git/guidance',
     ],
   };
   for (const [name, names] of Object.entries(modules)) {
     const policy = publicationPolicy(name);
     const extras = name === '@1yefuwang1/dsh-worktrees' ? ['dist/client.js', 'locale/en.json', 'icon.svg']
-      : name === '@1yefuwang1/dsh-azure-sync' ? ['locale/en.json', 'icon.svg'] : [];
+      : name === '@1yefuwang1/dsh-azure-sync' ? ['dist/client.js', 'locale/en.json', 'icon.svg'] : [];
     const maxBytes = name === '@1yefuwang1/dsh-worktrees' ? 825_000 : name === '@1yefuwang1/dsh-azure-sync' ? 720_000 : 150_000;
     assert.deepEqual(policy.files, [...common, ...names.flatMap(module => [`dist/${module}.js`, `dist/${module}.d.ts`]), ...extras].sort());
     assert.equal(policy.maxBytes, maxBytes);
@@ -177,6 +177,23 @@ test('worktree tarball metadata rejects extra/missing files, wrong identity and 
   assert.equal(manifest.scripts.prepare, undefined);
   assert.equal(manifest.scripts.install, undefined);
   assert.equal(manifest.scripts.postinstall, undefined);
+});
+
+test('azure-sync browser tarball identity and exact asset are enforced without widening other leaves', async () => {
+  const [selected] = await packages(resolve(root, 'packages/azure-sync'));
+  assert.ok(selected);
+  const { manifest } = selected;
+  const files = publicationPolicy(manifest.name).files;
+  const packed = { name: manifest.name, version: manifest.version, files: files.map(path => ({ path })) };
+  assert.equal(manifest.exports['./client'], './dist/client.js');
+  assert.deepEqual(validatePublicationMetadata(manifest, packed), files);
+  for (const missing of ['dist/client.js', 'locale/en.json']) assert.throws(() => validatePublicationMetadata(manifest, { ...packed, files: packed.files.filter(file => file.path !== missing) }), /Unexpected published files/u);
+  for (const extra of ['client.ts', 'dist/client.js.map', 'dist/client-model.js']) assert.throws(() => validatePublicationMetadata(manifest, { ...packed, files: [...packed.files, { path: extra }] }), /Unexpected published files/u);
+  const source = await readFile(resolve(root, 'packages/azure-sync/client.ts'), 'utf8');
+  assert.match(source, /window\.__ModuleLoader__\.load\(\{\s*id: '@1yefuwang1\/dsh-azure-sync'/u);
+  assert.match(source, /name: 'plugins\.row\.config', key: '@1yefuwang1\/dsh-azure-sync#azure-sync'/u);
+  assert.equal(publicationPolicy('@1yefuwang1/dsh-azure-sync').maxBytes, 720_000);
+  assert.equal(publicationPolicy('@1yefuwang1/dsh-worktrees').maxBytes, 825_000);
 });
 
 test('azure-sync keeps implicit lifecycle hooks unset', async () => {

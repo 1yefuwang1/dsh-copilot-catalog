@@ -10,6 +10,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./client": "./dist/client.js",
+    "./protocol": {
+      "types": "./dist/protocol.d.ts",
+      "import": "./dist/protocol.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -22,14 +27,17 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p test/tsconfig.json",
-    "test": "pnpm run build && node --import tsx --test test/config.test.ts test/auth.test.ts test/azure.test.ts test/schema.test.ts test/canonical.test.ts test/chain.test.ts test/committed-index.test.ts test/effective-cwd.test.ts test/import-state.test.ts test/guards.test.ts test/local-store.test.ts test/uploader.test.ts test/admission.test.ts test/drain.test.ts test/drain-coordinator.test.ts test/lease.test.ts test/scheduler.test.ts test/lifecycle.test.ts test/session-source.test.ts test/cloud-repository.test.ts test/remote-session.test.ts test/attachments.test.ts test/projection-warmer.test.ts test/importer.test.ts test/early-claims.test.ts test/workspace.test.ts test/recovery.test.ts test/import-jsonl.test.ts test/live-guard.test.ts test/conflict.test.ts test/reconciler.test.ts test/tombstone.test.ts test/poller.test.ts test/cleanup.test.ts test/tombstone-manager.test.ts",
+    "build": "tsc -p tsconfig.json && node scripts/build-client.mjs",
+    "typecheck": "tsc -p tsconfig.json && tsc -p test/tsconfig.json && tsc -p tsconfig.client.json",
+    "test": "pnpm run build && node --import tsx --test test/config.test.ts test/auth.test.ts test/azure.test.ts test/schema.test.ts test/canonical.test.ts test/chain.test.ts test/committed-index.test.ts test/effective-cwd.test.ts test/import-state.test.ts test/guards.test.ts test/local-store.test.ts test/uploader.test.ts test/admission.test.ts test/drain.test.ts test/drain-coordinator.test.ts test/lease.test.ts test/scheduler.test.ts test/lifecycle.test.ts test/session-source.test.ts test/cloud-repository.test.ts test/remote-session.test.ts test/attachments.test.ts test/projection-warmer.test.ts test/importer.test.ts test/early-claims.test.ts test/workspace.test.ts test/recovery.test.ts test/import-jsonl.test.ts test/live-guard.test.ts test/conflict.test.ts test/reconciler.test.ts test/tombstone.test.ts test/poller.test.ts test/cleanup.test.ts test/tombstone-manager.test.ts test/two-store.test.ts test/service.test.ts test/resurrection.test.ts test/startup.test.ts test/settings.test.ts test/protocol.test.ts test/rpc.test.ts test/commands.test.ts test/controller.test.ts test/takeover-control.test.ts test/catalog-page.test.ts test/control-cancel.test.ts test/publication-races.test.ts test/client-model.test.ts test/client-blocks.test.ts test/client-ui.test.ts test/client-source.test.ts test/client-sdk.test.ts test/repair-flow.test.ts test/git.test.ts",
     "check": "pnpm run typecheck && tsx ../../scripts/check.ts",
     "verify": "pnpm run check:secrets && pnpm run check && pnpm run test && pnpm run test:azurite && pnpm run test:pack",
     "check:secrets": "tsx ../../scripts/check-secrets.ts",
-    "test:pack": "pnpm run build && tsx ../../scripts/check-pack.ts .",
-    "test:azurite": "pnpm run build && node --import tsx --test test/azurite.test.ts"
+    "test:pack": "pnpm run build && tsx ../../scripts/check-pack.ts . && node --import tsx --test test/package-smoke.test.ts",
+    "test:azurite": "pnpm run build && node --import tsx --test test/azurite.test.ts test/control-runtime.test.ts test/cost-profile.test.ts",
+    "test:integration": "pnpm run test:azurite",
+    "test:types": "pnpm run build && tsc -p test/tsconfig.json",
+    "measure:cost": "pnpm run build && node --import tsx --test test/cost-profile.test.ts"
   },
   "license": "MIT",
   "repository": {
@@ -46,11 +54,36 @@
     "registry": "https://registry.npmjs.org/"
   },
   "devDependencies": {
+    "@deepseek-ai/dsh-agent-loop": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-locale": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-store": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-conversation": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-layout": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-plugin-manager": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-session": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-settings": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-sidebar": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-slots": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-llm": "0.2.1-rc.2",
     "@deepseek-ai/dsh-session-persistence-jsonl": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-session-projection": "0.2.1-rc.2",
     "@deepseek-ai/dsh-storage": "0.2.1-rc.2",
     "@deepseek-ai/dsh-storage-domain": "0.2.1-rc.2",
     "@deepseek-ai/dsh-storage-json": "0.2.1-rc.2",
-    "azurite": "3.37.0"
+    "@deepseek-ai/dsh-system-prompt": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-working-directory": "0.2.1-rc.2",
+    "@types/jsdom": "30.0.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "azurite": "3.37.0",
+    "esbuild": "0.28.2",
+    "immer": "10.1.1",
+    "jsdom": "30.1.2",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "zustand": "4.5.7"
   },
   "dependencies": {
     "@azure/core-auth": "1.11.0",
@@ -81,6 +114,15 @@
     "manifestVersion": 1,
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-workspace",
+        "@deepseek-ai/dsh-api-remotes"
+      ]
     }
   }
 }
