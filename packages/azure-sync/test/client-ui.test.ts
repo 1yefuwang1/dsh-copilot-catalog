@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import React, { act } from 'react';
 import { JSDOM } from 'jsdom';
 import type { CloudClient, CloudLocalView, CloudRequest, CloudSettingsView } from '../client-model.js';
+import type { CloudImportRequest } from '../src/import/protocol.js';
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost/' });
 Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, HTMLInputElement: dom.window.HTMLInputElement, Event: dom.window.Event, MouseEvent: dom.window.MouseEvent, IS_REACT_ACT_ENVIRONMENT: true });
@@ -18,16 +19,18 @@ function deferred<T>() { let resolve!: (value: T) => void, reject!: (error: unkn
 const settingsBase: CloudSettingsView = { auth: 'auto', accountName: '', managedIdentityClientId: '', connectionRef: 'AZURE_SYNC_CONNECTION_STRING', container: 'sessions', table: 'sessions', endpointSuffix: 'core.windows.net', defaultEnabled: false, pullOnStartup: true, pollSeconds: 60, authPending: false, connection: { configured: false, writable: true } };
 function local(sessionId: string, patch: Partial<CloudLocalView> = {}): CloudLocalView { return { sessionId, enabled: true, state: 'active', status: 'synced', generation: 1, detached: false, admissionRequired: true, admissionStopped: false, restartRequired: false, needsFolder: false, mappingUnstable: false, degradedAttachmentCount: 0, degradedAcknowledged: false, hasConflictBackup: false, ...patch }; }
 interface Call { route: string; endpoint: string; request: CloudRequest; signal?: AbortSignal }
+interface ImportCall { route: string; endpoint: string; request: CloudImportRequest; signal?: AbortSignal }
 interface Slot { options: { name: string; key?: string; id?: string; locale?: string; inject?: () => object }; component: React.ComponentType<any> }
 interface Definition { id: string; factory(require: (name: string) => unknown): { inject: string[]; apply(ctx: any): void } }
 
 /** Exercise the actual bundled factory/model through public SDK service faces only. */
-function fixture(options: { blank?: boolean; settings?: CloudSettingsView; status?: CloudLocalView; pickDirectory?: () => Promise<string | null>; reply?: (call: Call) => unknown | Promise<unknown> } = {}) {
+function fixture(options: { blank?: boolean; settings?: CloudSettingsView; status?: CloudLocalView; pickDirectory?: () => Promise<string | null>; reply?: (call: Call) => unknown | Promise<unknown>; importReply?: (call: ImportCall) => unknown | Promise<unknown> } = {}) {
   let definition!: Definition;
   const register = vm.runInThisContext(`(function(window) { ${source}\n})`, { filename: 'azure-sync-client.js' }) as (window: unknown) => void;
   register({ __ModuleLoader__: { load(value: Definition) { definition = value; } } });
   const required: string[] = [], plugin = definition.factory(name => { required.push(name); assert.equal(name, 'react'); return React; });
-  const slots: Slot[] = [], disposers: (() => unknown)[] = [], calls: Call[] = [], opened: string[] = [], panels: (string | null)[] = [];
+  const slots: Slot[] = [], disposers: (() => unknown)[] = [], calls: Call[] = [], importCalls: ImportCall[] = [], opened: string[] = [], panels: (string | null)[] = [];
+  const importPlans = new Map<string, Extract<CloudImportRequest, { action: 'plan-import' }>>();
   const slotListeners = new Map<string, Set<() => void>>();
   const notifySlots = (name: string) => { for (const fn of [...(slotListeners.get(name) ?? [])]) fn(); };
   const sessions = store({ byId: { selected: { retainedBy: { mainView: 1 }, origin: 'native', blank: options.blank ?? false } } } as { byId: Record<string, { retainedBy: { mainView: number }; origin: string; blank?: boolean }> });
@@ -39,6 +42,23 @@ function fixture(options: { blank?: boolean; settings?: CloudSettingsView; statu
     locale: { register(namespace: string, dictionaries: { en: Record<string, string> }) { assert.equal(namespace, 'azureSync.ui'); assert.deepEqual(dictionaries.en, dictionary); return () => undefined; }, bind: () => text },
     connection: { generation: connection, rpc: { async call(route: string, endpoint: string, payload: { v: number; request: CloudRequest }, signal?: AbortSignal) {
       assert.equal(route, '/api'); assert.equal(payload.v, 1); assert.deepEqual(Object.keys(payload).sort(), ['request', 'v']);
+      if (endpoint === 'azure-sync/import') {
+        const request = payload.request as unknown as CloudImportRequest;
+        const call: ImportCall = { route, endpoint, request: structuredClone(request), signal }; importCalls.push(call);
+        const supplied = await options.importReply?.(call); if (supplied !== undefined) return supplied;
+        if (request.action === 'import-admission') {
+          const plan = [...importPlans.values()].find(value => value.sessionId === request.sessionId);
+          return envelope({ version: 2, kind: 'import-admission', sessionId: request.sessionId, reserved: !!plan, ready: true, continued: !plan, ...(plan ? { operationId: plan.operationId, generation: plan.generation } : {}) });
+        }
+        if (request.action === 'import-capabilities') return envelope({ version: 2, kind: 'import-capabilities', local: true, worktree: false, seeded: false, folders: [] });
+        if (request.action === 'inspect-import') return envelope({ version: 2, kind: 'import-source', sessionId: request.sessionId, generation: request.generation, cwd: '/remote/repo', platform: 'linux', eventCount: 2, eligible: true, gitUsable: false, seeded: false });
+        if (request.action === 'plan-import') { importPlans.set(request.operationId, request); return envelope({ version: 2, kind: 'import-plan', sessionId: request.sessionId, generation: request.generation, operationId: request.operationId, revision: 1, expiresAt: Date.now() + 60_000, eventCount: 2, cwd: request.destination.kind === 'local' ? request.destination.folderPath : '/managed/worktree', destination: request.destination.kind, warnings: ['source-code-unverified', 'local-code-unverified'], codeMismatch: true }); }
+        if ('operationId' in request && 'sessionId' in request) {
+          const plan = importPlans.get(request.operationId); currentStatus = local(request.sessionId, { generation: plan?.generation ?? 1, importState: 'complete' });
+          return envelope({ version: 2, kind: 'import-operation', operationId: request.operationId, sessionId: request.sessionId, generation: plan?.generation ?? 1, revision: 4, phase: request.action === 'cancel-import' ? 'cancelled' : 'ready', destination: plan?.destination.kind ?? 'local', continuable: request.action === 'continue-import', pendingInput: false });
+        }
+        throw new Error('Unsupported fixture import action');
+      }
       assert.equal(endpoint, payload.request.action === 'status' || payload.request.action === 'mappings' ? 'azure-sync/status' : 'azure-sync/action');
       const call = { route, endpoint, request: structuredClone(payload.request), signal }; calls.push(call);
       if (options.reply) { const answer = await options.reply(call); if (answer !== undefined) return answer; }
@@ -74,7 +94,7 @@ function fixture(options: { blank?: boolean; settings?: CloudSettingsView; statu
     await act(async () => { root.render(React.createElement(slot.component, { ...injected, t: text, sessionId: 'selected', ...props })); });
   }
   async function dispose() { await act(async () => { root.unmount(); }); for (const dispose of [...disposers].reverse()) await dispose(); container.remove(); }
-  return { definition, plugin, required, slots, calls, sessions, connection, blocks, blockFor, opened, panels, container, render, dispose, get cloud() { return cloud; }, get refreshes() { return refreshes; }, setStatus(value: CloudLocalView | undefined) { currentStatus = value; } };
+  return { definition, plugin, required, slots, calls, importCalls, sessions, connection, blocks, blockFor, opened, panels, container, render, dispose, get cloud() { return cloud; }, get refreshes() { return refreshes; }, setStatus(value: CloudLocalView | undefined) { currentStatus = value; } };
 }
 function button(root: ParentNode, label: string) { const value = [...root.querySelectorAll('button')].find(node => node.textContent === label || node.getAttribute('aria-label') === label); assert.ok(value, `button ${label}`); return value as HTMLButtonElement; }
 function input(root: ParentNode, label: string) { const value = [...root.querySelectorAll('label')].find(node => node.textContent?.startsWith(label))?.querySelector('input,select'); assert.ok(value, `input ${label}`); return value as HTMLInputElement; }
@@ -82,6 +102,15 @@ async function click(node: HTMLElement) { await act(async () => { node.click(); 
 async function change(node: HTMLInputElement, value: string) { await act(async () => { const prototype = node.tagName === 'SELECT' ? dom.window.HTMLSelectElement.prototype : dom.window.HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(prototype, 'value')!.set!.call(node, value); node.dispatchEvent(new dom.window.Event(node.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true })); }); }
 async function settle() { await act(async () => { await Promise.resolve(); }); }
 async function dialog(run: ReturnType<typeof fixture>) { await click(button(run.container, text('details'))); return run.container.querySelector('[role=dialog]')!; }
+async function confirmDestination(run: ReturnType<typeof fixture>) {
+  const root = run.container.querySelector('[role=dialog]')!;
+  await change(input(root, text('import.destinationFolder')), '/local/exact-folder');
+  await click(button(root, text('import.review')));
+  assert.equal(button(root, text('import.confirmHere')).disabled, true, 'unverified code must not inherit general import confirmation');
+  await click(input(root, text('import.codeAck')));
+  await click(button(root, text('import.confirmHere')));
+  await click(button(root, text('close')));
+}
 
 for (const blank of [true, false]) test(`public header exposes cloud settings and toggle for ${blank ? 'blank' : 'nonblank'} native thread`, async () => {
   const run = fixture({ blank }); try {
@@ -200,14 +229,15 @@ test('remote listing is paginated, opens no Agent, and imports only one explicit
     if (request.action === 'pull' && !request.sessionId) return envelope({ kind: 'remote', items: [item(request.cursor ? 'remote-two' : 'remote-one')], ...(request.cursor ? {} : { nextCursor: 'next-page' }) });
     if (request.action === 'pull' && request.sessionId) { imported = true; return envelope({ kind: 'action', action: 'pull', sessionId: request.sessionId, state: 'synced' }); }
     if (request.action === 'status' && request.sessionId?.startsWith('remote-') && imported) return envelope({ kind: 'status', revision: 1, projectionRevision: 'b'.repeat(64), settings: settingsBase, items: [local(request.sessionId, { importState: 'complete' })] });
-  } });
+  }, importReply: call => { if (call.request.action === 'commit-import') imported = true; } });
   try {
     await run.render('plugins.row.config', { view: 'page' }); await click(button(run.container, text('listRemote'))); assert.deepEqual(run.opened, []);
     assert.equal(run.calls.filter(call => call.request.action === 'pull' && call.request.sessionId).length, 0);
     await click(button(run.container, text('more'))); assert.ok(run.calls.some(call => call.request.action === 'pull' && call.request.cursor === 'next-page'));
     await click(button(run.container, text('import'))); assert.equal(imported, false); assert.match(run.container.querySelector('[role=dialog]')!.textContent!, /remote-two/);
-    await click(button(run.container.querySelector('[role=dialog]')!, text('confirm')));
-    assert.deepEqual(run.calls.filter(call => call.request.action === 'pull' && call.request.sessionId).map(call => call.request), [{ action: 'pull', sessionId: 'remote-two' }]);
+    await confirmDestination(run);
+    assert.deepEqual(run.importCalls.filter(call => call.request.action === 'commit-import').map(call => 'sessionId' in call.request ? call.request.sessionId : undefined), ['remote-two']);
+    assert.equal(run.calls.filter(call => call.request.action === 'pull' && call.request.sessionId).length, 0, 'destination import does not reuse legacy cold pull');
     assert.deepEqual(run.opened, []); assert.ok(run.refreshes > 0); await click(button(run.container, text('open'))); assert.deepEqual(run.opened, ['remote-two']);
   } finally { await run.dispose(); }
 });
@@ -217,9 +247,12 @@ test('unverified or incomplete cold import cannot offer opening a partial model 
     const request = call.request;
     if (request.action === 'pull' && !request.sessionId) return envelope({ kind: 'remote', items: [{ sessionId: 'remote-one', generation: 1, state: 'active', enabled: true, eventCount: 2, updatedAt: 1, sourcePlatform: 'linux', rootSessionId: 'remote-one', rootGeneration: 1 }] });
     if (request.action === 'status' && request.sessionId === 'remote-one') return envelope({ kind: 'status', revision: 1, projectionRevision: 'c'.repeat(64), settings: settingsBase, items: [local('remote-one', { importState: 'failed', status: 'import-incomplete' })] });
+  }, importReply: call => {
+    const request = call.request;
+    if (request.action === 'commit-import') return envelope({ version: 2, kind: 'import-operation', operationId: request.operationId, sessionId: request.sessionId, generation: 1, revision: 4, phase: 'recovery-required', destination: 'local', continuable: false, pendingInput: false, reason: 'binding-incomplete' });
   } });
   try {
-    await run.render('plugins.row.config', { view: 'page' }); await click(button(run.container, text('listRemote'))); await click(button(run.container, text('import'))); await click(button(run.container.querySelector('[role=dialog]')!, text('confirm')));
+    await run.render('plugins.row.config', { view: 'page' }); await click(button(run.container, text('listRemote'))); await click(button(run.container, text('import'))); await confirmDestination(run);
     assert.equal([...run.container.querySelectorAll('button')].some(node => node.textContent === text('open')), false); assert.deepEqual(run.opened, []); assert.ok(run.container.textContent!.includes(text('incompleteWarning')));
   } finally { await run.dispose(); }
 });
@@ -336,10 +369,10 @@ test('explicit Open rechecks import completeness and cannot reuse an import rece
     if (request.action === 'status' && request.sessionId === 'remote-one') return envelope({ kind: 'status', revision: 1, projectionRevision: 'd'.repeat(64), settings: settingsBase, items: [local('remote-one', { generation, importState: complete ? 'complete' : 'failed', status: complete ? 'synced' : 'import-incomplete' })] });
   } });
   try {
-    await run.render('plugins.row.config', { view: 'page' }); await click(button(run.container, text('listRemote'))); await click(button(run.container, text('import'))); await click(button(run.container.querySelector('[role=dialog]')!, text('confirm'))); assert.ok(button(run.container, text('open')));
+    await run.render('plugins.row.config', { view: 'page' }); await click(button(run.container, text('listRemote'))); await click(button(run.container, text('import'))); await confirmDestination(run); assert.ok(button(run.container, text('open')));
     complete = false; await click(button(run.container, text('open'))); assert.deepEqual(run.opened, []); assert.ok(run.container.textContent!.includes(text('incompleteWarning')));
     complete = true; generation = 2; await click(button(run.container, text('listRemote'))); assert.equal([...run.container.querySelectorAll('button')].some(node => node.textContent === text('open')), false);
-    assert.equal(run.calls.filter(call => call.request.action === 'pull' && call.request.sessionId).length, 1, 'new generation is never automatically imported');
+    assert.equal(run.importCalls.filter(call => call.request.action === 'commit-import').length, 1, 'new generation is never automatically imported');
   } finally { await run.dispose(); }
 });
 

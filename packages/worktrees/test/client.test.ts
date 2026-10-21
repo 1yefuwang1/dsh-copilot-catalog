@@ -3,8 +3,8 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
-import { webcrypto } from 'node:crypto';
 import { Context, Service } from '@deepseek-ai/cordis';
+import { clientArtifact, clientProtocol, staticClientSource } from './client-artifact.js';
 
 interface RepositoryStatus { settingsHash: string; repository: { root: string; head: string; branch: string | null }; remotes: { name: string; identity: string }[]; defaults: { remote: string; branch: string }; }
 interface BranchGeneration { branchSource?: string; currentBranch?: string | null; defaultBranch: string | null; remote?: string; remoteIdentity?: string; observedAt: number; items: { name: string; oid: string }[]; nextCursor?: string; }
@@ -50,20 +50,12 @@ const require = createRequire(import.meta.url);
 
 
 
-// Static assertions ignore emitted line wrapping; VM execution keeps the original text.
+// Static-only source invariants remain readable; ALL behavioral helpers below
+// come from the actual minified ModuleLoader factory.protocol, never slices.
 function staticSource(text: string): string { return text.replace(/\s+/g, ' '); }
-const source = await readFile(new URL('../dist/client.js', import.meta.url), 'utf8');
-// Execute only the actual pure protocol/guard declarations. No React, DOM,
-// browser, component renderer, or screenshot substitute is constructed.
-const start = source.indexOf('class WorktreeError extends Error');
-const end = source.indexOf('function Icon(', start);
-assert.ok(start > 0 && end > start);
+const source = staticClientSource;
 function loadHelpers(signal: typeof AbortSignal = AbortSignal): VmValue {
-  return vm.runInNewContext(`(() => { const NS = 'worktrees.ui', PANEL = 'dsh-worktrees'; ${source.slice(start, end)}; return {
-  decodeReply, validateData, requestHost, currentActor, sourceEligible, inputEmpty,
-  captureDraft, draftUnchanged, advertisedDefault, acquireBlock, releaseAfterMainOwnership, retainDiscoveredSession,
-  rootFolderValue, writeRootFolder, NATIVE_SUBMIT_ABI, leaseNativeSink, setupProgress, prepareWorktree, waitForDraftFiles, createWorktreeFlow, createRepositoryAvailability,
-}; })()`, { AbortController, AbortSignal: signal, crypto: webcrypto });
+  return clientProtocol({ AbortSignal: signal });
 }
 const helpers = loadHelpers();
 const success = <T>(data: T) => ({ ok: true, value: { v: 1, ok: true, data } });
@@ -85,7 +77,7 @@ test('persistent factory uses the scoped manifest id and only the React module',
   const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
   const patch = await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8');
   let registered!: VmModule;
-  vm.runInNewContext(source, { window: { __ModuleLoader__: { load(value: VmModule) { registered = value; } } } });
+  vm.runInNewContext(clientArtifact, { window: { __ModuleLoader__: { load(value: VmModule) { registered = value; } } } });
   assert.equal(manifest.name, '@1yefuwang1/dsh-worktrees');
   assert.equal(registered!.id, manifest.name);
   assert.match(patch, /id: git-worktrees\s+name: '@1yefuwang1\/dsh-worktrees'/u);
@@ -93,6 +85,10 @@ test('persistent factory uses the scoped manifest id and only the React module',
   assert.match(staticSource(source), /const NS = 'worktrees\.ui';/u);
   const requires = [...source.matchAll(/require\('([^']+)'\)/g)].map(match => match[1]);
   assert.deepEqual(requires, ['react']);
+  const actualRequires: string[] = [];
+  const actual = registered.factory(name => { actualRequires.push(name); return { createElement() {}, forwardRef: (component: unknown) => component }; });
+  assert.deepEqual(actualRequires, ['react'], 'actual minified factory has the same sole external dependency');
+  assert.ok(actual.inject.includes('connection')); assert.equal(typeof actual.protocol.decodeReply, 'function');
   assert.doesNotMatch(staticSource(source), /(?:document|window)\.(?:body|querySelector|getElementById)|innerHTML|appendChild|createPortal|openWorkspace\(/);
   assert.doesNotMatch(staticSource(source), /sessions\.create\(|danger-full-access|acceptRisk|permissionMode|grantPermission/);
 });

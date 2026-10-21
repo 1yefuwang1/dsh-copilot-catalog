@@ -135,13 +135,13 @@ test('publication allowlists and bounds cover every leaf and its exact extras', 
     'dsh-copilot-catalog': ['index', 'catalog', 'discovery', 'identity', 'plugin', 'runtime', 'types'],
     'dsh-copilot-search': ['index', 'auth', 'endpoint', 'errors', 'plugin', 'provider', 'refresh', 'responses', 'runtime', 'types'],
     'dsh-copilot-tool-schema': ['index', 'plugin', 'schema', 'types'],
-    '@1yefuwang1/dsh-worktrees': ['index', 'types', 'errors', 'runtime', 'schema', 'store', 'sessions', 'context', 'service', 'git', 'naming', 'rpc', 'projects', 'project-store', 'project-rpc', 'project-context', 'quiet-rpc', 'first-message', 'cleanup-store', 'cleanup', 'recovery-rpc'],
+    '@1yefuwang1/dsh-worktrees': ['index', 'types', 'import-contract', 'import-placement', 'portable-source', 'errors', 'runtime', 'schema', 'store', 'sessions', 'context', 'service', 'git', 'naming', 'rpc', 'projects', 'project-store', 'project-rpc', 'project-context', 'quiet-rpc', 'first-message', 'cleanup-store', 'cleanup', 'recovery-rpc'],
     '@1yefuwang1/dsh-azure-sync': [
       'index', 'config', 'auth', 'runtime', 'schema', 'protocol', 'controller', 'commands', 'rpc', 'settings', 'azure/errors', 'azure/blob', 'azure/table', 'azure/lease',
       'sync/canonical', 'sync/chain', 'sync/committed-index', 'sync/effective-cwd', 'sync/import-state', 'sync/guards',
       'sync/admission', 'sync/batcher', 'sync/blob-metadata', 'sync/cloud-repository', 'sync/drain-coordinator',
       'sync/lease-drain', 'sync/lease-manager', 'sync/lifecycle', 'sync/scheduler', 'sync/service', 'sync/session-source',
-      'sync/uploader', 'sync/remote-session', 'sync/attachments', 'sync/projection-warmer', 'sync/importer', 'sync/import-service', 'sync/recovery', 'sync/live-guard', 'sync/conflict', 'sync/reconciler', 'sync/tombstone', 'sync/tombstone-manager', 'sync/poller', 'sync/cleanup', 'sync/workspace', 'local/store', 'git/probe', 'git/sanitize', 'git/guidance',
+      'sync/uploader', 'sync/remote-session', 'sync/attachments', 'sync/projection-warmer', 'sync/importer', 'sync/import-service', 'sync/recovery', 'sync/live-guard', 'sync/conflict', 'sync/reconciler', 'sync/tombstone', 'sync/tombstone-manager', 'sync/poller', 'sync/cleanup', 'sync/workspace', 'local/store', 'git/probe', 'git/sanitize', 'git/guidance', 'git/context', 'import/protocol', 'import/claims', 'import/journal', 'import/guard', 'import/persistence', 'import/cwd-admission', 'import/bindings', 'import/plans', 'import/profile', 'import/materialize', 'import/coordinator', 'import/commands', 'import/local-code',
     ],
   };
   for (const [name, names] of Object.entries(modules)) {
@@ -166,7 +166,7 @@ test('worktree tarball metadata rejects extra/missing files, wrong identity and 
   assert.equal(manifest.name, '@1yefuwang1/dsh-worktrees');
   assert.deepEqual(manifest.publishConfig, { access: 'public', registry: 'https://registry.npmjs.org/' });
   const files = publicationPolicy(manifest.name).files;
-  assert.equal(files.length, 50);
+  assert.equal(files.length, 56);
   const packed = { name: manifest.name, version: manifest.version, files: files.map(path => ({ path })) };
   assert.deepEqual(validatePublicationMetadata(manifest, packed), files);
   assert.throws(() => validatePublicationMetadata(manifest, { ...packed, files: [...packed.files, { path: 'src/service.ts' }] }), /Unexpected published files/u);

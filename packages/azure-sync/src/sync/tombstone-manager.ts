@@ -234,6 +234,7 @@ export class TombstoneManager {
 
   private async recoverResurrection(sessionId: string, intent: ResurrectionIntent, signal?: AbortSignal): Promise<CloudSessionEntity> {
     const observed = this.local.getSession(sessionId);
+    if (observed?.destination) throw new AzureSyncError('GENERATION_CHANGED', 'Destination-scoped generation adoption is unavailable; retain the original placement and generation.');
     const fence = observed === undefined ? undefined : this.localFence(observed);
     try { return await this.finishResurrection(sessionId, intent, signal); }
     catch (error) {
@@ -396,6 +397,7 @@ export class TombstoneManager {
     // Capture at invocation, not after the exclusive queue: a newer explicit off
     // must also cancel an older resurrection waiting to start or finish cleanup.
     const entry = this.local.getSession(sessionId);
+    if (entry?.destination) return Promise.reject(new AzureSyncError('GENERATION_CHANGED', 'Destination-scoped generation adoption is unavailable; legacy resurrection cannot change it.'));
     const cancellationId = entry?.resurrectionCancellationId;
     const entryFence = entry === undefined ? undefined : this.localFence(entry);
     const fences = this.removalFences();

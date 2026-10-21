@@ -5,6 +5,7 @@ import { after, test } from 'node:test';
 import vm from 'node:vm';
 import React, { act } from 'react';
 import { JSDOM } from 'jsdom';
+import { exposeClient } from './client-artifact.js';
 
 interface RepositoryStatus { settingsHash: string; repository: { root: string; head: string; branch: string | null }; remotes: { name: string; identity: string }[]; defaults: { remote: string; branch: string }; }
 interface BranchGeneration { branchSource?: string; currentBranch?: string | null; defaultBranch: string | null; remote?: string; remoteIdentity?: string; observedAt: number; items: { name: string; oid: string }[]; nextCursor?: string; }
@@ -69,12 +70,9 @@ after(() => {
 });
 
 let module!: VmModule;
-const marker = /^[ \t]*inject:/gm;
-assert.equal([...source.matchAll(marker)].length, 1, 'the actual factory has one export seam');
-// Expose existing declarations in memory only. React, hooks, picker components,
-// guards, flow, cache and event handlers are all the shipped implementations.
-vm.runInNewContext(source.replace(marker,
-  'renderTest: { ChoicePicker, BranchPicker, NewWorktreeControls, SetupProgress, createWorktreeFlow, createRepositoryAvailability, Styles, en },\n$&'), {
+// Expose actual emitted keepNames bindings in memory; no readable-source or
+// component replacement is executed for these real React render tests.
+vm.runInNewContext(exposeClient(source, ['ChoicePicker', 'BranchPicker', 'NewWorktreeControls', 'SetupProgress', 'createWorktreeFlow', 'createRepositoryAvailability', 'Styles', 'en']), {
   window: { __ModuleLoader__: { load(value: VmModule) { module = value; } } },
   AbortController, AbortSignal, crypto: webcrypto,
 }, { filename: clientUrl.pathname });

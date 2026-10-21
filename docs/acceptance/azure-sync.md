@@ -1,10 +1,14 @@
 # Azure Sync v1 — acceptance matrix and manual checklist
 
+**Historical v1 checkpoint.** The subsequent Local/New worktree implementation and portable Git-context
+extension are tracked in the [destination acceptance ledger](<cloud-import-destination.md>). The v1
+counts, package sizes and approvals below do not establish acceptance of that later changeset.
+
 **T1–T9 DONE — BOTH FINAL REVIEWS APPROVED / PARENT VERIFIED / AUTOMATED CHECKS GREEN.** Updated 2026-10-19 UTC.
 This records evidence for working-tree `@1yefuwang1/dsh-azure-sync@0.1.0`, not a
 published release, installed GUI or live Azure deployment. Final implementation approvals and parent verification are recorded below; manual evidence is not inferred.
 
-The [approved v4 plan](<../plan/azure-cloud-sync.md>) defines scope. Its current task
+The [approved v4 plan](<../plan/2026-10-20-200116-HKT-azure-cloud-sync.md>) defines scope. Its current task
 ledger/review record and the user-revised **GPT + Grok** gate supersede historical
 three-reviewer and stale implementation-status paragraphs. T1–T9 are implemented and approved by
 BOTH required reviewers; parent independently verified the final pipeline results and audit/diff status.
@@ -18,8 +22,7 @@ This closes the code objective under checked/deferred DoD, not deployment/public
 skips/failures, types/audit/whitespace, and an exact pack of **108 files / 680,104
 source bytes**, below the unchanged 720,000-byte Azure-only cap. Evidence:
 [temporary T8 log](</tmp/azure-sync-t8-scp-frozen.yIajPp.log>); review provenance is
-in the [handoff](<../../HANDOFF.md#t8-final-checkpoint--approved-by-both-required-reviewers>)
-and [plan review record](<../plan/azure-cloud-sync.md#10-review-record>).
+in the [plan review record](<../plan/2026-10-20-200116-HKT-azure-cloud-sync.md#10-review-record>).
 Temporary logs may disappear and are not shipped artifacts; the test sources and
 commands below are the reproducible evidence. Counts above must not be relabelled T9.
 

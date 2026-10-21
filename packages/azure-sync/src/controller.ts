@@ -28,6 +28,7 @@ export interface ControllerDependencies {
   readonly now?: () => number;
   readonly fs?: CwdFs;
   readonly gitMetadata?: (sessionId: string, signal?: AbortSignal) => Promise<GitFacts | null>;
+  readonly destinations?: { reserved(sessionId: string): Promise<boolean>; cancelSession(sessionId: string): Promise<unknown>; legacy(sessionId: string): Promise<never> };
 }
 
 function localView(record: LocalSessionRecord) {
@@ -145,6 +146,7 @@ export class CloudController implements CloudControllerPort {
   }
 
   private affected(record: LocalSessionRecord, mappings: readonly PathMappingRecord[]): boolean {
+    if (record.destination !== undefined) return false; // Frozen per-SID bindings are not global-map clients.
     return mappings.some(mapping => {
       if (record.importMappingId === mapping.id) return true;
       if (record.localCwd !== undefined && isInside(mapping.localPrefix, record.localCwd)) return true;
@@ -165,6 +167,13 @@ export class CloudController implements CloudControllerPort {
 
   private async localAction(request: Extract<CloudRequest, { action: 'toggle' | 'detach' | 'export' }>, fallback: string | undefined, signal: AbortSignal) {
     const sessionId = this.target(request, fallback);
+    if (request.action !== 'export' && await this.deps.destinations?.reserved(sessionId)) {
+      await this.deps.destinations!.cancelSession(sessionId);
+      this.check(signal);
+      // The journal owns this veto before the readable artifact. Never create a
+      // legacy-repairable LocalSessionRecord merely to represent Off/Detach.
+      if (this.deps.local.getSession(sessionId) === undefined) return { kind: 'action', action: request.action, sessionId, state: 'detached', detail: { cloudConfirmed: false } };
+    }
     const ready = this.deps.current?.();
     let detail: unknown;
     if (ready !== undefined && !ready.signal?.aborted) {
@@ -313,6 +322,7 @@ export class CloudController implements CloudControllerPort {
               ...(entity.title === undefined ? {} : { title: entity.title.replace(/[\u0000-\u001f\u007f]/gu, ' ').slice(0, 256) }),
             })), ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor }) };
           } else {
+            if (await this.deps.destinations?.reserved(request.sessionId)) await this.deps.destinations!.legacy(request.sessionId);
             if (this.deps.local.getSession(request.sessionId) === undefined) await core.service.importSession(request.sessionId, current);
             else await core.service.reconcile(request.sessionId, current);
             result = { kind: 'action', action: 'pull', sessionId: request.sessionId, state: core.service.status(request.sessionId).status };

@@ -119,6 +119,8 @@ export interface WorktreeSetupProgress {
   readonly worktreeId?: string;
 }
 
+import type { PortableCreationBase } from './import-contract.js';
+
 export type CreateCheckoutInput = {
   id: string;
   repository: RepositoryInfo;
@@ -142,6 +144,16 @@ export type CreateCheckoutInput = {
   remoteBranch: string;
   localBranch?: never;
   localOid?: never;
+  commitOid?: never;
+  verifyRef?: never;
+} | {
+  /** Import-only exact local object; never fetches or changes a source ref. */
+  branchSource: 'commit';
+  commitOid: string;
+  /** Optional reviewed local ref/HEAD, atomically verified while pinning the base. */
+  verifyRef?: string;
+  requiredDirectories?: readonly string[];
+  remote?: never; remoteIdentity?: never; remoteBranch?: never; localBranch?: never; localOid?: never;
 });
 export interface CreatedCheckout {
   checkoutRoot: string;
@@ -149,6 +161,8 @@ export interface CreatedCheckout {
   baseOid: string;
   baseRef: string;
   fetchedAt: number;
+  /** Local-only capture at the actual checkout creation boundary. */
+  creationBase?: PortableCreationBase;
 }
 export interface PatchFile { path: string; status: string; binary: boolean }
 export interface WorktreePreview {

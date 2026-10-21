@@ -14,7 +14,8 @@ import { TableStore } from '../src/azure/table.js';
 import { LeaseManager } from '../src/azure/lease.js';
 import { CloudRepository, leaseBlobName } from '../src/sync/cloud-repository.js';
 import { SessionLeaseManager } from '../src/sync/lease-manager.js';
-import { Uploader } from '../src/sync/uploader.js';
+import { Uploader, type UploadDependencies } from '../src/sync/uploader.js';
+import { decodeGitContextJson } from '../src/git/context.js';
 import { SyncService } from '../src/sync/service.js';
 import { RemoteSessionReader } from '../src/sync/remote-session.js';
 import { Importer } from '../src/sync/importer.js';
@@ -32,7 +33,7 @@ import { startAzurite, temporaryRoot, removeTemporaryRoot } from './azurite-help
  * No URL, header, body, account key, or conversation content enters the report.
  * The proxy does not alter ordinary requests/responses or substitute cloud state.
  */
-function empty() { return { blobWrites: 0, blobReads: 0, blobLists: 0, blobOther: 0, tableReads: 0, tableQueries: 0, tableWrites: 0, tableBatches: 0, tableOther: 0, putBlocks: 0, putBlockLists: 0, leaseOperations: 0, leaseAcquisitions30: 0, leaseAcquisitions60: 0, failedResponses: 0 }; }
+function empty() { return { blobWrites: 0, blobReads: 0, blobLists: 0, blobOther: 0, tableReads: 0, tableQueries: 0, tableWrites: 0, tableBatches: 0, tableOther: 0, putBlocks: 0, putBlockLists: 0, leaseOperations: 0, leaseAcquisitions30: 0, leaseAcquisitions60: 0, leaseBlobWrites: 0, historyBlobWrites: 0, failedResponses: 0 }; }
 type Counts = ReturnType<typeof empty>;
 const baseKeys = ['blobWrites', 'blobReads', 'blobLists', 'blobOther', 'tableReads', 'tableQueries', 'tableWrites', 'tableBatches', 'tableOther'] as const;
 const total = (value: Counts) => baseKeys.reduce((sum, key) => sum + value[key], 0);
@@ -73,7 +74,13 @@ test('measured real-Azurite HTTP profile supports an explicit retail cost model,
             if (incoming.headers['x-ms-lease-duration'] === '60') counts.leaseAcquisitions60++;
           }
         }
-        else if (method === 'PUT') { counts.blobWrites++; if (comp === 'block') counts.putBlocks++; if (comp === 'blocklist') counts.putBlockLists++; }
+        else if (method === 'PUT') {
+          counts.blobWrites++; if (comp === 'block') counts.putBlocks++; if (comp === 'blocklist') counts.putBlockLists++;
+          // Subsets only; never add these to billable operation totals a second time.
+          const objectPath = decodeURIComponent(url.pathname);
+          if (objectPath.includes('/v1/leases/')) counts.leaseBlobWrites++;
+          if (objectPath.includes('/v1/sessions/')) counts.historyBlobWrites++;
+        }
         else if (method === 'GET' && !['container', 'service'].includes(url.searchParams.get('restype') ?? '')) counts.blobReads++;
         else counts.blobOther++;
       }
@@ -106,17 +113,17 @@ test('measured real-Azurite HTTP profile supports an explicit retail cost model,
   const a = await acceptanceDevice(join(root, 'a'), 'device-a', new AcceptanceCloud()); devices.push(a); await a.service.close();
   const b = await acceptanceDevice(join(root, 'b'), 'device-b', new AcceptanceCloud(), a.cwd); devices.push(b); await b.service.close();
   const config = Config({ maxBatchEvents: 1 });
-  function makeService(device: AcceptanceDevice, maxBatchEvents: number, imported = false) {
+  function makeService(device: AcceptanceDevice, maxBatchEvents: number, imported = false, gitContext?: UploadDependencies['gitContext']) {
     const binding = { mapping: pathMapping({ remotePrefix: a.cwd, localPrefix: device.cwd, revision: '1'.repeat(64) }), fs: nodeCwdFs };
     const leases = new SessionLeaseManager({ repository, leases: new LeaseManager(blob), deviceId: imported ? 'device-b' : 'device-a', now: Date.now });
-    const uploader = new Uploader({ config: Config({ maxBatchEvents }), source: device.source, repository, leases, local: device.local, deviceId: imported ? 'device-b' : 'device-a', platform: 'linux', now: Date.now, renewEveryMs: 1_000_000, ...(imported ? { cwdBinding: async () => binding } : {}) });
+    const uploader = new Uploader({ config: Config({ maxBatchEvents }), source: device.source, repository, leases, local: device.local, deviceId: imported ? 'device-b' : 'device-a', platform: 'linux', now: Date.now, renewEveryMs: 1_000_000, ...(imported ? { cwdBinding: async () => binding } : {}), ...(gitContext ? { gitContext } : {}) });
     const reader = new RemoteSessionReader(repository, { maxCompressedBytes: 1_048_576, maxExpandedBytes: config.maxBatchBytes });
     const warmer = new ProjectionWarmer({ pollMs: 1, cache: {
       coldSnapshot(header: SessionHeader, inherited: number, events: readonly SessionEvent[]) { const restored = device.ctx.sessionProjections.restore({}, events, 0 as never, header, inherited as never); device.checkpoints.set(header.id, restored.snapshot); },
       cachedSnapshot: header => device.checkpoints.get(header.id),
     } });
     const imports = new ImportService(new Importer({ config, persistence: device.ctx.sessionPersistence, repository, local: device.local, cwdBinding: async () => binding, projection: warmer, now: Date.now }));
-    const service = new SyncService({ uploader, local: device.local, repository, reader, source: device.source, imports, agents: device.ctx.agents, now: Date.now }); services.push(service);
+    const service = new SyncService({ uploader, local: device.local, repository, reader, source: device.source, imports, agents: device.ctx.agents, now: Date.now, refreshGitOnSync: !!gitContext }); services.push(service);
     return { service, uploader, leases, reader };
   }
   const one = makeService(a, 1000), eight = makeService(a, 1), steadyEight = makeService(a, 1000), imported = makeService(b, 1, true);
@@ -201,6 +208,28 @@ test('measured real-Azurite HTTP profile supports an explicit retail cost model,
   await measure('catalog_logical_pages_of_one', async () => { let cursor: string | undefined; do { const page = await repository.listManifestsPage({ limit: 1, ...(cursor ? { cursor } : {}) }); cursor = page.nextCursor; } while (cursor); });
   assert.ok(profiles.catalog_logical_pages_of_one!.tableQueries >= 3);
   await measure('retire_off', () => one.service.disable(rootOne));
+  // New optional Git-v2 path: measured separately, deliberately NOT folded into the old monthly workload.
+  const metadataId = `session-${randomUUID()}`; await log(metadataId, 1);
+  let metadataHead = 'a'.repeat(40), metadataObservation = 0;
+  const metadata = makeService(a, 1000, false, async (_sid, anchor) => ({
+    v: 2, observation: { ...anchor, deviceId: 'device-a', observedAt: ++metadataObservation },
+    repository: { objectFormat: 'sha1', root: a.cwd, worktree: false },
+    creationBase: { kind: 'remote', ref: 'refs/heads/dev', oid: 'a'.repeat(40), remote: { name: 'origin', sanitizedUrl: 'https://example.invalid/fixture' } },
+    current: { branchRef: 'refs/heads/fixture', headOid: metadataHead, detached: false, unborn: false, dirty: 'unknown' },
+  }));
+  await measure('git_v2_seed_one_batch', () => metadata.service.enable(metadataId));
+  const metadataBefore = (await repository.getManifest(metadataId))!.entity;
+  const metadataHistory = (entity: typeof metadataBefore) => ({ headerHash: entity.headerHash, eventCount: entity.eventCount, batchCount: entity.batchCount, headHash: entity.headHash, chainHash: entity.chainHash, lastBatchRowKey: entity.lastBatchRowKey });
+  metadataHead = 'b'.repeat(40);
+  await measure('git_v2_no_event_refresh', () => metadata.service.sync(metadataId));
+  const metadataAfter = (await repository.getManifest(metadataId))!.entity, observedGit = decodeGitContextJson(metadataAfter.gitJson);
+  assert.ok(observedGit?.v === 2); assert.equal(observedGit.current.headOid, metadataHead);
+  assert.deepEqual(metadataHistory(metadataAfter), metadataHistory(metadataBefore));
+  assert.equal(profiles.git_v2_no_event_refresh!.historyBlobWrites, 0, 'lease preparation can PUT an existing lease object, but metadata refresh writes no history batch');
+  assert.ok(profiles.git_v2_no_event_refresh!.tableBatches >= 1);
+  await measure('git_v2_repeated_explicit_refresh', () => metadata.service.sync(metadataId));
+  await measure('git_v2_verified_one_batch_read', () => metadata.reader.read(metadataId));
+  assert.equal(profiles.git_v2_verified_one_batch_read!.leaseOperations, 0);
   assert.equal(a.llmCalls + b.llmCalls, 0, 'public proof paths do not send prompts or call a model');
   assert.equal(profiles.idle_eight_batches!.blobWrites + profiles.idle_eight_batches!.blobOther - profiles.idle_eight_batches!.blobReads, 0);
   assert.equal(profiles.idle_eight_batches!.leaseOperations, 0, 'unchanged idle refresh does not churn leases');
@@ -210,5 +239,5 @@ test('measured real-Azurite HTTP profile supports an explicit retail cost model,
   const monthly = combine([[profiles.infrastructure!, 1], [profiles.first_opt_in_one_batch!, assumptions.threadLifetimes], [profiles.incremental_sync_eight_existing_batches!, assumptions.publishedBatchesAcrossSmallThreadLifetimes - assumptions.threadLifetimes], [profiles.idle_imported_eight_batches!, polls], [profiles.imported_first_proof_eight_batches!, firstProofs], [profiles.imported_held_proof_eight_batches!, assumptions.modelSteps - firstProofs], [profiles.cold_imported_inspection_eight_batches!, assumptions.coldInspections], [profiles.retire_off!, assumptions.threadLifetimes * assumptions.devices], [profiles.cold_import_eight_batches!, assumptions.coldImports], [profiles.attachment_upload_10_mib!, assumptions.attachmentFilesOf10MiB], [profiles.attachment_repeat_10_mib!, assumptions.attachmentRepeatAttempts], [profiles.attachment_download_10_mib!, assumptions.attachmentFilesOf10MiB], [profiles.background_lease_renew!, assumptions.activeWriterHours * 3600 / 30], [profiles.catalog_logical_pages_of_one!, assumptions.catalogPasses], [profiles.incremental_with_one_cas_retry!, assumptions.extraCasRetryActions]]);
   const operations = operationUSD(monthly), capacity = 0.0208 * assumptions.retainedBlobGiB + 0.045 * assumptions.retainedTableGB, modeledUSD = capacity + operations * (1 + assumptions.operationContingency);
   assert.ok(modeledUSD < 1, 'only this explicit bounded workload targets <$1; not a bill or arbitrary-history guarantee');
-  console.log('COST_PROFILE\n' + JSON.stringify({ evidence: 'Azurite loopback HTTP attempts, not Azure billing; body/header/URL data omitted', profiles, assumptions, monthlyRequests: monthly, USD: { capacity, operations, contingency: operations * assumptions.operationContingency, modeledUSD }, notes: ['Valid Table EGT is one billable transaction, not one per entity.', 'Imported per-step proofs re-read history more than unchanged idle refresh.', 'The 10MiB byte source is controlled; Azure requests use actual AttachmentSync, BlobStore and the same actual lease proof guard as Uploader.', '730 attachment repeats cover 100 files times 7 later publications plus 30 extra retry-shaped sync actions; they are not assumed deduplicated free.', 'SDK-only block upload and synthetic transient HEAD are sensitivity checks, not plugin workload.', 'The enabled-record bound includes every subagent descendant; this model has no enabled descendants.', 'First proofs cover all thread lifetimes plus imports; explicit retire Off on both devices and 30 cold inspections are included.', 'Forced takeovers are measured separately but this worked workload assumes zero; add them if used.', 'Retire/turn off threads before exceeding the 8-batch active-history bound; 3000 publications are not one growing thread.', 'Default 3MiB batch cap assumed; egress/tax/features/negotiated pricing excluded.'] }, null, 2));
+  console.log('COST_PROFILE\n' + JSON.stringify({ evidence: 'Azurite loopback HTTP attempts, not Azure billing; body/header/URL data omitted', profiles, assumptions, monthlyRequests: monthly, USD: { capacity, operations, contingency: operations * assumptions.operationContingency, modeledUSD }, notes: ['Optional git_v2_* profiles measure real SDK HTTP overhead separately and are NOT included in this legacy monthly model; snapshot refresh is not continuous Git polling and synthetic Git facts do not prove real remote publication.', 'Destination wizard may verify a source multiple times; git_v2_verified_one_batch_read is ONE reader call, not a complete wizard/second-device cost guarantee.', 'Valid Table EGT is one billable transaction, not one per entity.', 'Imported per-step proofs re-read history more than unchanged idle refresh.', 'The 10MiB byte source is controlled; Azure requests use actual AttachmentSync, BlobStore and the same actual lease proof guard as Uploader.', '730 attachment repeats cover 100 files times 7 later publications plus 30 extra retry-shaped sync actions; they are not assumed deduplicated free.', 'SDK-only block upload and synthetic transient HEAD are sensitivity checks, not plugin workload.', 'The enabled-record bound includes every subagent descendant; this model has no enabled descendants.', 'First proofs cover all thread lifetimes plus imports; explicit retire Off on both devices and 30 cold inspections are included.', 'Forced takeovers are measured separately but this worked workload assumes zero; add them if used.', 'Retire/turn off threads before exceeding the 8-batch active-history bound; 3000 publications are not one growing thread.', 'Default 3MiB batch cap assumed; egress/tax/features/negotiated pricing excluded.'] }, null, 2));
 });

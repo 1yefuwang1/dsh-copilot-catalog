@@ -1,5 +1,7 @@
 /// <reference path="./client.types.d.ts" />
 import { createCloudClient, type CloudLocalView } from './client-model.js';
+import { createImportWizard } from './client-import.js';
+import { createImportClient } from './client-import-model.js';
 import type { CloudRequest, CloudMapping, CloudAuth } from './src/protocol.js';
 import locale from './locale/en.json';
 import { gitGuidance } from './src/git/guidance.js';
@@ -28,6 +30,10 @@ window.__ModuleLoader__.load({
         onKeyDown: event => { if (event.key === 'Escape') { event.stopPropagation(); close(); } if (event.key === 'Tab') { event.stopPropagation(); const items = root.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),[tabindex="0"]'); if (!items?.length) { event.preventDefault(); return; } const first = items[0], last = items[items.length - 1]; if (event.shiftKey && (document.activeElement === first || document.activeElement === root.current)) { event.preventDefault(); last?.focus(); } else if (!event.shiftKey && (document.activeElement === last || document.activeElement === root.current)) { event.preventDefault(); first?.focus(); } } } },
         h('div', { className: 'dsh-az-row' }, h('h2', { id }, title), h(Button, { onClick: close, 'aria-label': t('close') }, t('close'))), children));
     }
+    const DestinationImport = createImportWizard(React, { Button, Field, Check, Dialog, reason(code, t) {
+      const key = 'import.reason.' + (code ?? 'profile-required');
+      return Object.hasOwn(locale.ui, key) ? t(key) : t('import.genericReason');
+    } });
     interface Confirmation { title: string; warning: string; request: CloudRequest; acknowledge?: string }
     function Confirm({ value, close, accept, t }: { value: Confirmation; close(): void; accept(): void; t: AzureUI.Translate }) {
       const [checked, setChecked] = React.useState(false);
@@ -115,8 +121,8 @@ window.__ModuleLoader__.load({
     }
     function Thread({ runtime, cloud, t, sessionId }: AzureUI.HeaderProps) {
       const thread = useThread(cloud, sessionId), status = thread?.status, action = useAction(cloud, t, sessionId);
-      const [confirmation, setConfirmation] = React.useState<Confirmation | null>(null), [exportPath, setExportPath] = React.useState('');
-      React.useEffect(() => { setConfirmation(null); setExportPath(''); }, [sessionId]);
+      const [confirmation, setConfirmation] = React.useState<Confirmation | null>(null), [exportPath, setExportPath] = React.useState(''), [destinationOpen, setDestinationOpen] = React.useState(false);
+      React.useEffect(() => { setConfirmation(null); setExportPath(''); setDestinationOpen(false); }, [sessionId]);
       const request = (value: CloudRequest, preempt = false) => { void action.run(value, reply => { if (reply.kind === 'action' && reply.detail && typeof reply.detail === 'object' && !Array.isArray(reply.detail) && typeof reply.detail.exportPath === 'string') setExportPath(reply.detail.exportPath); }, preempt); };
       const confirm = (name: string, warning: string, value: CloudRequest, acknowledge?: string) => setConfirmation({ title: t(name), warning: t(warning), request: value, ...(acknowledge ? { acknowledge: t(acknowledge) } : {}) });
       const busy = action.busy || !!thread?.pending, enabled = status?.enabled === true && !status.detached;
@@ -138,6 +144,7 @@ window.__ModuleLoader__.load({
         incomplete && warning !== 'incompleteWarning' && h('p', { role: 'alert', className: 'dsh-az-notice' }, t('incompleteWarning')),
         degraded && h('p', { role: 'alert' }, projectionDegraded ? t('projectionDegradedWarning') : t('degradedWarning') + ' ' + t('degradedCount') + ': ' + status.degradedAttachmentCount),
         h('div', { className: 'dsh-az-row' },
+          status?.importState !== undefined && thread?.flags.destinationAdmitted === false && h(Button, { onClick: () => setDestinationOpen(true) }, t('import.openControls')),
           h(Check, { label: t('enabled'), 'aria-label': t('enabled'), checked: enabled,
             disabled: !enabled && (thread?.loading || busy || incomplete || degraded),
             title: incomplete ? t('incompleteWarning') : degraded ? t(projectionDegraded ? 'projectionDegradedWarning' : 'degradedWarning') : undefined,
@@ -158,7 +165,8 @@ window.__ModuleLoader__.load({
           action.busy && h(Button, { onClick: action.cancel }, t('stopAction'))),
         h(GitAdvice, { runtime, cloud, t, sessionId }),
         exportPath && h('p', { role: 'status' }, t('exportPath') + ': ', h('code', null, exportPath)), h(Feedback, { action, t }),
-        confirmation && h(Confirm, { key: confirmation.request.action, value: confirmation, t, close: () => setConfirmation(null), accept: () => { const value = confirmation.request; setConfirmation(null); request(value, value.action === 'detach'); } }));
+        confirmation && h(Confirm, { key: confirmation.request.action, value: confirmation, t, close: () => setConfirmation(null), accept: () => { const value = confirmation.request; setConfirmation(null); request(value, value.action === 'detach'); } }),
+        destinationOpen && h(DestinationImport, { runtime, t, sessionId, generation: status?.generation ?? 1, close: () => setDestinationOpen(false), completed() { void cloud.refresh(sessionId); } }));
     }
     function Auth({ runtime, cloud, t }: Props) {
       const snapshot = useCloud(cloud), settings = snapshot.settings;
@@ -222,17 +230,8 @@ window.__ModuleLoader__.load({
     }
     function Remote({ runtime, cloud, t }: Props) {
       type Page = Awaited<ReturnType<Cloud['request']>> & { kind: 'remote' };
-      const [page, setPage] = React.useState<Page | null>(null), [confirmation, setConfirmation] = React.useState<Confirmation | null>(null), [imported, setImported] = React.useState<string[]>([]), [inspected, setInspected] = React.useState<string | null>(null);
+      const [page, setPage] = React.useState<Page | null>(null), [importing, setImporting] = React.useState<{ sessionId: string; generation: number } | null>(null), [imported, setImported] = React.useState<string[]>([]), [inspected, setInspected] = React.useState<string | null>(null);
       const action = useAction(cloud, t, 'catalog');
-      async function importOne(request: CloudRequest) {
-        const reply = await action.run(request);
-        if (reply?.kind !== 'action' || reply.action !== 'pull') return;
-        await action.run({ action: 'status', sessionId: reply.sessionId }, result => {
-          if (result.kind !== 'status') return;
-          const view = result.items.find(item => item.sessionId === reply.sessionId);
-          if (verifiedImport(view)) { const key = reply.sessionId + ':' + view.generation; setImported(value => value.includes(key) ? value : [...value, key]); }
-        });
-      }
       const list = (cursor?: string) => { void action.run({ action: 'pull', ...(cursor ? { cursor } : {}), limit: 25 }, reply => { if (reply.kind === 'remote') setPage(reply); }); };
       function openOne(sessionId: string, generation: number) {
         void action.run({ action: 'status', sessionId }, result => {
@@ -245,11 +244,13 @@ window.__ModuleLoader__.load({
         page && (page.items.length ? h('ul', null, ...page.items.map(item => h('li', { key: item.sessionId + ':' + item.generation, className: 'dsh-az-card' },
           h('h3', null, item.title || item.sessionId), h(Details, { entries: [[t('thread'), item.sessionId], [t('generation'), item.generation], [t('state'), item.state], [t('events'), item.eventCount], [t('platform'), item.sourcePlatform], ...(item.cwd ? [[t('sourceFolder'), item.cwd] as [string, AzureUI.Node]] : []), ...(item.sourceDeviceId ? [[t('sourceDevice'), item.sourceDeviceId] as [string, AzureUI.Node]] : []), ...(item.lastWriterDevice ? [[t('writer'), item.lastWriterDevice] as [string, AzureUI.Node]] : []), ...(item.leaseUntil !== undefined ? [[t('lease'), String(item.leaseUntil)] as [string, AzureUI.Node]] : [])] }),
           item.git && h('details', null, h('summary', null, t('gitSource')), h('p', { className: 'dsh-az-notice' }, t('gitWarning')), h(GitSummary, { facts: item.git, t })),
-          h(Button, { disabled: action.busy || item.state === 'deleted', onClick: () => setConfirmation({ title: t('import'), warning: t('importWarning') + '\n' + item.sessionId + ' · ' + t('generation') + ': ' + item.generation + (item.cwd ? '\n' + item.cwd : ''), request: { action: 'pull', sessionId: item.sessionId } }) }, t('import')),
+          h(Button, { disabled: action.busy || item.state === 'deleted', onClick: () => { setInspected(item.sessionId); setImporting({ sessionId: item.sessionId, generation: item.generation }); } }, t('import')),
           imported.includes(item.sessionId + ':' + item.generation) && h(Button, { disabled: action.busy, onClick: () => openOne(item.sessionId, item.generation) }, t('open'))))) : h('p', null, t('emptyRemote'))),
         page?.nextCursor && h(Button, { disabled: action.busy, onClick: () => list(page.nextCursor) }, t('more')), h(Feedback, { action, t }),
         inspected && h(Thread, { key: inspected, runtime, cloud, t, sessionId: inspected }),
-        confirmation && h(Confirm, { value: confirmation, t, close: () => setConfirmation(null), accept: () => { const request = confirmation.request; setConfirmation(null); if ('sessionId' in request && request.sessionId) setInspected(request.sessionId); void importOne(request); } }));
+        importing && h(DestinationImport, { key: importing.sessionId + ':' + importing.generation, runtime, t, ...importing, close: () => setImporting(null), completed(sessionId, generation) {
+          const key = sessionId + ':' + generation; setImported(value => value.includes(key) ? value : [...value, key]); void cloud.refresh(sessionId);
+        } }));
     }
     function Settings(props: AzureUI.SettingsProps) {
       const snapshot = useCloud(props.cloud);
@@ -266,7 +267,12 @@ window.__ModuleLoader__.load({
       inject: ['slots', 'locale', 'connection', 'conversation', 'sessions', 'uiWorkspace', 'layout'],
       apply(ctx: AzureUI.Context) {
         ctx.effect(() => ctx.locale.register(NS, { en: locale.ui }));
-        const cloud = createCloudClient(ctx);
+        const importClient = createImportClient(ctx);
+        ctx.effect(() => () => importClient.dispose());
+        const cloud = createCloudClient(ctx, { async importAdmission(sessionId, signal) {
+          const reply = await importClient.request({ action: 'import-admission', sessionId }, signal);
+          return reply.kind === 'import-admission' && (!reply.reserved || reply.ready && reply.continued);
+        } });
         ctx.effect(() => () => cloud.dispose());
         const connectionScope = <P extends object,>(component: import('react').ComponentType<P>) => {
           // A Host generation switch discards every view draft/confirmation and aborts

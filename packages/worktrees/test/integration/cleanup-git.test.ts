@@ -104,7 +104,8 @@ test('default cleanup coordinator, managed real Git and strict JSON receipts rec
   await git(local, 'add', '.'); await git(local, 'commit', '-m', 'fixture base');
   const engine = new GitOperations(executor, config), repository = await engine.discover(project), id = randomUUID(), operationId = randomUUID();
   const parent = join(managed, createHash('sha256').update(repository.commonDir).digest('hex').slice(0, 24), id); await mkdir(parent, { recursive: true });
-  const created = await engine.create({ id, repository, destination: join(parent, `worktree-${id}`), branchSource: 'local', localBranch: 'main', localOid: repository.head, baseRef: `refs/dsh-worktrees/${id}/base` });
+  const { creationBase, ...created } = await engine.create({ id, repository, destination: join(parent, `worktree-${id}`), branchSource: 'local', localBranch: 'main', localOid: repository.head, baseRef: `refs/dsh-worktrees/${id}/base` });
+  assert.equal(creationBase?.kind, 'local'); // Advisory creation facts belong to the separate source journal, never the strict legacy worktree row.
   const recordedAt = Date.now(), now = recordedAt + 20 * 86400000, sourceId = SessionId(randomUUID());
   const record: WorktreeRecord = { id, operationId, repoRoot: repository.root, commonDir: repository.commonDir, projectSubdir: 'project', ...created, remote: 'local', remoteIdentity: 'fixture-local-repository', remoteBranch: 'main', branchSource: 'local', localBranch: 'main', createdAt: recordedAt, sessionIds: [sourceId], workspaceId: randomUUID(), branch: null, protected: false, archived: true, state: 'ready', error: null };
   const branch = `worktree/cleanup-smoke-${id}`; const named = await engine.createBranch(record, branch); record.branch = named.branch;

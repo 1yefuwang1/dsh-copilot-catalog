@@ -1,9 +1,35 @@
 # @1yefuwang1/dsh-azure-sync changelog
 
-## Unreleased — 0.1.0 experimental v1
+## Unreleased — destination import extension (implemented; both final reviews approved)
 
-This is a working-tree version, **not a published release**. T1–T8 are approved;
-T9 final verification and independent reviews remain pending. The repository
+- Add an explicit Local/New worktree wizard retaining the original cloud SID, separate reviewed plans
+  and pre-effect reservations, pinned per-thread mappings, required native/project/managed binding,
+  and read-only Open distinct from explicit Continue. No helper thread or first model prompt.
+- Add an independent public persistence guard/provider with permanent user-profile dependency gates,
+  runtime opaque proof/scopes, fresh local Continue activation, and cross-process SID/CWD admission.
+  A package bundle/schema failure alone is not a safe downgrade barrier. The profile is not edited
+  or installed automatically.
+- Add an optional versioned Worktrees port for exact available-commit checkout creation and portable
+  creation-base export. No automatic fetch/push/reset, dirty-file transfer or existing-SID relocation.
+- Version Git metadata inside gitJson, keeping creation base/current HEAD/upstream separate and
+  refreshing with owner/epoch/ETag/root fencing even without new history events. Preserve strict old
+  pull/status DTOs; new import/source/admission data uses a separate negotiated v2 channel.
+- Preserve cancelled effects/receipts and local disabled retained repair without cloud resurrection;
+  unproven seeded/Windows/claim recovery paths refuse rather than invent success or steal stale state.
+- Keep existing package byte/security bounds. Compact generated assets while preserving observable
+  names; actual artifact/runtime/type/regression evidence remains a release gate.
+
+This section is not a release or deployment claim. I1–I6 and whole-source verification have completed;
+both independent GPT + Grok implementation reviews approve the accepted corrections: separate Local/
+Worktree unverified-code consent and revalidation, first-On original base preservation after descendant
+cwd changes, exact stale Git bytes on read failure, and neutral comparison/recovery UI wording. See the repository's
+[destination acceptance ledger](<../../docs/acceptance/cloud-import-destination.md>).
+
+## Historical working-tree checkpoint — 0.1.0 experimental v1
+
+This was a working-tree checkpoint, **not a published release**. T1–T9 subsequently completed
+verification and both required independent reviews; that historical approval does not cover the
+new destination-import extension above. The repository
 [acceptance matrix](<../../docs/acceptance/azure-sync.md>) records tested, pending
 and deferred criteria. Live Azure, deployed GUI, Windows and actual billing are
 not established by the automated evidence.

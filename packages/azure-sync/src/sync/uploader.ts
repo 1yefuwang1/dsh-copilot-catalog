@@ -7,6 +7,8 @@
 import { gunzipSync } from 'node:zlib';
 import { randomUUID } from 'node:crypto';
 import { parseGitFacts, type GitFacts } from '../git/sanitize.js';
+import { decodeGitContextJson, parseGitContext, type GitContext } from '../git/context.js';
+import type { GitObservationAnchor } from '../git/probe.js';
 import type { AzureSyncConfig } from '../config.js';
 import { AzureSyncError } from '../azure/errors.js';
 import type { LocalStore } from '../local/store.js';
@@ -45,6 +47,8 @@ export interface UploadDependencies {
   readonly isOptingOut?: (sessionId: string) => boolean;
   /** Advisory LOCAL-only read; never an ownership or history proof. */
   readonly gitMetadata?: (sessionId: string) => Promise<GitFacts | null>;
+  readonly gitContext?: (sessionId: string, anchor: GitObservationAnchor, local: SourceSnapshot, signal?: AbortSignal) => Promise<GitContext | null>;
+  readonly destinationReady?: (sessionId: string) => Promise<boolean>;
 }
 
 export interface UploadSummary {
@@ -445,6 +449,8 @@ export class Uploader {
   }
 
   async ensureOwnership(sessionId: string, signal?: AbortSignal, seconds: SessionLeaseSeconds = 60): Promise<OwnershipProof> {
+    try { if (this.deps.destinationReady && !await this.deps.destinationReady(sessionId)) return { owned: false, reason: 'ownership-unverified' }; }
+    catch { return { owned: false, reason: 'ownership-unverified' }; }
     const leaseSeconds = validateSessionLeaseSeconds(seconds);
     const token = this.beginOperation(sessionId);
     const cancel = () => { const operation = this.operations.get(token); if (operation !== undefined) operation.aborted = true; };
@@ -456,6 +462,7 @@ export class Uploader {
 
   /** Explicit, confirmed takeover still proves the exact local prefix before breaking any lease. */
   async takeover(sessionId: string, signal?: AbortSignal, seconds: SessionLeaseSeconds = 60): Promise<OwnershipProof> {
+    if (this.deps.destinationReady && !await this.deps.destinationReady(sessionId)) return { owned: false, reason: 'ownership-unverified' };
     const leaseSeconds = validateSessionLeaseSeconds(seconds);
     const token = this.beginOperation(sessionId);
     const cancel = () => { const operation = this.operations.get(token); if (operation !== undefined) operation.aborted = true; };
@@ -579,7 +586,7 @@ export class Uploader {
       let manifest = await this.deps.repository.getManifest(sessionId);
       this.assertOperation(sessionId, generation);
       if (manifest === undefined) {
-        const initial = await this.initialManifest(sessionId, snapshot);
+        const initial = await this.initialManifest(sessionId, snapshot, raw);
         this.assertOperation(sessionId, generation);
         await this.deps.repository.createManifest(initial);
         this.assertOperation(sessionId, generation);
@@ -708,6 +715,7 @@ export class Uploader {
   }
 
   private async syncImpl(sessionId: string, options: UploadOptions = {}, generation = 0): Promise<UploadSummary> {
+    if (this.deps.destinationReady && !await this.deps.destinationReady(sessionId)) throw new AzureSyncError('IMPORT_INCOMPLETE', 'The recorded destination is not ready for publication.');
     if (generation !== 0) this.assertOperation(sessionId, generation);
     const leaseSeconds = validateSessionLeaseSeconds(options.leaseSeconds ?? (options.release === true ? 30 : 60));
     const record = this.deps.local.getSession(sessionId);
@@ -734,12 +742,10 @@ export class Uploader {
         throw new AzureSyncError(status === 'no-cwd' ? 'NO_CWD' : status === 'schedule-unsafe' ? 'SCHEDULE_UNSAFE' : 'PRESET_MISSING', guard.detail ?? 'The session cannot be synced.');
       }
 
-      const gitJson = await this.gitJson(sessionId);
-      this.assertOperation(sessionId, generation);
       let manifest = await this.deps.repository.getManifest(sessionId);
       this.assertOperation(sessionId, generation);
       if (manifest === undefined) {
-        const initial = await this.initialManifest(sessionId, snapshot);
+        const initial = await this.initialManifest(sessionId, snapshot, raw);
         this.assertOperation(sessionId, generation);
         await this.deps.repository.createManifest(initial);
         this.assertOperation(sessionId, generation);
@@ -868,10 +874,9 @@ export class Uploader {
           };
           const titleEvent = snapshot.events.slice(plan.startSeq, plan.endSeq + 1).reverse().find(event => event.type === 'session/title');
           const title = titleEvent?.type === 'session/title' ? titleEvent.data.title.slice(0, 4096) : undefined;
-          const next: CloudSessionEntity = {
+          const nextTip: CloudSessionEntity = {
             ...proof.entity,
             ...(title === undefined ? {} : { title }),
-            ...(this.deps.gitMetadata === undefined ? {} : { gitJson }),
             eventCount: plan.endSeq + 1,
             headSeq: plan.endSeq,
             headHash: plan.chain.headHash,
@@ -883,10 +888,20 @@ export class Uploader {
             lastWriterDevice: this.deps.deviceId,
             updatedAt: this.deps.now(),
           };
+          const gitJson = await this.gitJson(sessionId, nextTip, raw, options.signal);
+          this.assertOperation(sessionId, generation);
+          const next: CloudSessionEntity = { ...nextTip, ...(!this.deps.gitMetadata && !this.deps.gitContext ? {} : { gitJson }) };
           const root = proof.entity.rootSessionId === sessionId ? undefined : await this.deps.repository.getManifest(proof.entity.rootSessionId);
           this.assertOperation(sessionId, generation);
           if (proof.entity.rootSessionId !== sessionId && (root === undefined || root.entity.state !== 'active' || root.entity.generation !== proof.entity.rootGeneration)) {
             throw new AzureSyncError('LEASE_LOST', 'The child session root is no longer active.');
+          }
+          const afterCapture = await this.deps.leases.proof(sessionId, heldLease.epoch, options.signal);
+          this.assertOperation(sessionId, generation); this.verifyLocalPrefix(afterCapture, snapshot, record.generation);
+          if (afterCapture.etag !== proof.etag) {
+            committed = afterCapture;
+            if (++attempts >= 3) throw new AzureSyncError('PRECONDITION', 'The publication candidate changed during Git capture.');
+            continue;
           }
           let retryBatch = false;
           for (;;) {
@@ -932,6 +947,10 @@ export class Uploader {
         }
         this.assertOperation(sessionId, generation);
         this.verifyLocalPrefix(committed, snapshot, record.generation);
+        if (this.deps.gitContext) {
+          committed = await this.refreshGitContext(sessionId, heldLease, snapshot, raw, generation, options.signal);
+          heldLease = { ...heldLease, manifest: committed };
+        }
         await this.update(current, {
           status: 'synced', lastSyncedEventCount: committed.entity.eventCount,
           lastSyncedChainHash: committed.entity.chainHash, lastSyncedHeaderHash: committed.entity.headerHash,
@@ -1019,12 +1038,48 @@ export class Uploader {
     return best;
   }
 
-  private async gitJson(sessionId: string): Promise<string | undefined> {
-    try { const facts = parseGitFacts(await this.deps.gitMetadata?.(sessionId)); return facts ? JSON.stringify(facts) : undefined; }
-    catch { return undefined; } // An unavailable advisory probe never changes sync permission.
+  private async refreshGitContext(sessionId: string, lease: SessionLease, snapshot: SourceSnapshot, local: SourceSnapshot, token: number, signal?: AbortSignal): Promise<StoredManifest> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const proof = await this.deps.leases.proof(sessionId, lease.epoch, signal);
+      this.assertOperation(sessionId, token); this.verifyLocalPrefix(proof, snapshot);
+      const gitJson = await this.gitJson(sessionId, proof.entity, local, signal);
+      this.assertOperation(sessionId, token);
+      const root = proof.entity.rootSessionId === sessionId ? undefined : await this.deps.repository.getManifest(proof.entity.rootSessionId);
+      const fresh = await this.deps.leases.proof(sessionId, lease.epoch, signal);
+      this.assertOperation(sessionId, token); this.verifyLocalPrefix(fresh, snapshot);
+      if (fresh.etag !== proof.etag) continue; // Capture again for the newly fetched candidate, never re-stamp.
+      if (gitJson === proof.entity.gitJson) return proof;
+      try {
+        const result = await this.deps.repository.commitMetadata(proof, { ...proof.entity, gitJson, updatedAt: this.deps.now() }, root);
+        this.assertOperation(sessionId, token); this.verifyLocalPrefix(result, snapshot);
+        return result;
+      } catch (error) {
+        if (!(error instanceof AzureSyncError) || !['PRECONDITION', 'CONFLICT'].includes(error.code) || attempt === 2) throw error;
+      }
+    }
+    throw new AzureSyncError('PRECONDITION', 'The Git metadata candidate kept changing; no stale observation was published.');
   }
 
-  private async initialManifest(sessionId: string, snapshot: SourceSnapshot): Promise<CloudSessionEntity> {
+  private async gitJson(sessionId: string, candidate: CloudSessionEntity, local: SourceSnapshot, signal?: AbortSignal): Promise<string | undefined> {
+    const stored = decodeGitContextJson(candidate.gitJson);
+    const prior = stored?.v === 2 && stored.observation.generation === candidate.generation && stored.observation.headerHash === candidate.headerHash && stored.observation.eventCount <= candidate.eventCount &&
+      (stored.observation.eventCount !== candidate.eventCount || stored.observation.chainHash === candidate.chainHash) ? stored : undefined;
+    // Transient read failure is not evidence that prior advisory data vanished.
+    // Retain exact candidate-valid v1/v2 bytes (with or without creationBase),
+    // NEVER refresh their clocks/history anchors or pretend old HEAD was reread.
+    const retained = prior || stored?.v === 1 ? candidate.gitJson : undefined;
+    try {
+      if (this.deps.gitContext) {
+        const context = parseGitContext(await this.deps.gitContext(sessionId, { generation: candidate.generation, headerHash: candidate.headerHash, eventCount: candidate.eventCount, chainHash: candidate.chainHash }, local, signal));
+        if (!context || context.observation.deviceId !== this.deps.deviceId || context.observation.generation !== candidate.generation || context.observation.headerHash !== candidate.headerHash || context.observation.eventCount !== candidate.eventCount || context.observation.chainHash !== candidate.chainHash) return retained;
+        const merged = prior?.creationBase ? parseGitContext({ ...context, creationBase: prior.creationBase }) : context;
+        return merged ? JSON.stringify(merged) : retained;
+      }
+      const facts = parseGitFacts(await this.deps.gitMetadata?.(sessionId)); return facts ? JSON.stringify(facts) : undefined;
+    } catch { return retained; } // Advisory failure cannot become writer authority or erase known creation provenance.
+  }
+
+  private async initialManifest(sessionId: string, snapshot: SourceSnapshot, local: SourceSnapshot): Promise<CloudSessionEntity> {
     const binding = headerHash(snapshot.header, snapshot.inheritedEventCount);
     const genesis = genesisHash(sessionId, 1, binding);
     const now = this.deps.now();
@@ -1037,7 +1092,7 @@ export class Uploader {
       rootSessionId = parent.entity.rootSessionId;
       rootGeneration = parent.entity.rootGeneration;
     }
-    return {
+    const initial: CloudSessionEntity = {
       partitionKey: 'account',
       rowKey: sessionRowKey(sessionId),
       schemaVersion: 4,
@@ -1061,7 +1116,7 @@ export class Uploader {
       rootSessionId,
       rootGeneration,
       updatedAt: now,
-      gitJson: await this.gitJson(sessionId),
     };
+    return { ...initial, gitJson: await this.gitJson(sessionId, initial, local) };
   }
 }

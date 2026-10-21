@@ -6,6 +6,7 @@ import { after, test } from 'node:test';
 import vm from 'node:vm';
 import React, { act } from 'react';
 import { JSDOM } from 'jsdom';
+import { exposeClient, staticClientSource } from './client-artifact.js';
 
 type Selector = (snapshot: VmValue) => VmValue; // React stub hook inputs cross the VM contract.
 
@@ -38,7 +39,8 @@ type VmModule = { id: string; factory: (require: (name: string) => unknown) => V
 const client = new URL('../dist/client.js', import.meta.url);
 // Static assertions ignore emitted line wrapping; VM execution keeps the original text.
 function staticSource(text: string): string { return text.replace(/\s+/g, ' '); }
-const source = await readFile(client, 'utf8');
+const artifact = await readFile(client, 'utf8');
+const source = staticClientSource; // static-only assertions, not behavioral execution
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost/' });
 const globals = new Map<string, PropertyDescriptor | undefined>();
 for (const [name, value] of Object.entries({ window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, HTMLDialogElement: dom.window.HTMLDialogElement, IS_REACT_ACT_ENVIRONMENT: true })) {
@@ -47,7 +49,7 @@ for (const [name, value] of Object.entries({ window: dom.window, document: dom.w
 const { createRoot } = await import('react-dom/client');
 after(() => { dom.window.close(); for (const [name, descriptor] of globals) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else Reflect.deleteProperty(globalThis, name); } });
 let module!: VmModule;
-vm.runInNewContext(source.replace(/^[ \t]*inject:/m, 'renderTest: { RecoveryNotice, Manager, RecordCard, NewWorktreeControls, Styles, en, zh },\n$&'), { window: { __ModuleLoader__: { load(value: VmModule) { module = value; } } }, AbortController, AbortSignal, crypto: webcrypto }, { filename: client.pathname });
+vm.runInNewContext(exposeClient(artifact, ['RecoveryNotice', 'Manager', 'RecordCard', 'NewWorktreeControls', 'Styles', 'en', 'zh']), { window: { __ModuleLoader__: { load(value: VmModule) { module = value; } } }, AbortController, AbortSignal, crypto: webcrypto }, { filename: client.pathname });
 const plugin = module.factory((name: string) => { assert.equal(name, 'react'); return React; }), real = plugin.renderTest;
 const A = 'a'.repeat(40), B = 'b'.repeat(40);
 const cleanup: WorktreeCleanupSummary = { phase: 'collected', inactivityDays: 10, lastActivityAt: 100, eligibleAfter: 200, reclaimedAt: 300, originalFolder: '/repo/project', recoveryRef: 'refs/dsh-worktrees/tree/gc-head', reason: null };

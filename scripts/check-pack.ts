@@ -21,7 +21,7 @@ const policies: Record<string, Policy> = {
     extras: [], maxBytes: 150_000,
   },
   '@1yefuwang1/dsh-worktrees': {
-    modules: ['index', 'types', 'errors', 'runtime', 'schema', 'store', 'sessions', 'context', 'service', 'git', 'naming', 'rpc', 'projects', 'project-store', 'project-rpc', 'project-context', 'quiet-rpc', 'first-message', 'cleanup-store', 'cleanup', 'recovery-rpc'],
+    modules: ['index', 'types', 'import-contract', 'import-placement', 'portable-source', 'errors', 'runtime', 'schema', 'store', 'sessions', 'context', 'service', 'git', 'naming', 'rpc', 'projects', 'project-store', 'project-rpc', 'project-context', 'quiet-rpc', 'first-message', 'cleanup-store', 'cleanup', 'recovery-rpc'],
     // Readable TypeScript-emitted Client formatting brings the unchanged 50-file
     // allowlist to ~779k; retain bounded headroom without widening other leaves.
     extras: ['dist/client.js', 'locale/en.json', 'icon.svg'], maxBytes: 825_000,
@@ -32,7 +32,7 @@ const policies: Record<string, Policy> = {
       'sync/canonical', 'sync/chain', 'sync/committed-index', 'sync/effective-cwd', 'sync/import-state', 'sync/guards',
       'sync/admission', 'sync/batcher', 'sync/blob-metadata', 'sync/cloud-repository', 'sync/drain-coordinator',
       'sync/lease-drain', 'sync/lease-manager', 'sync/lifecycle', 'sync/scheduler', 'sync/service', 'sync/session-source',
-      'sync/uploader', 'sync/remote-session', 'sync/attachments', 'sync/projection-warmer', 'sync/importer', 'sync/import-service', 'sync/recovery', 'sync/live-guard', 'sync/conflict', 'sync/reconciler', 'sync/tombstone', 'sync/tombstone-manager', 'sync/poller', 'sync/cleanup', 'sync/workspace', 'local/store', 'git/probe', 'git/sanitize', 'git/guidance',
+      'sync/uploader', 'sync/remote-session', 'sync/attachments', 'sync/projection-warmer', 'sync/importer', 'sync/import-service', 'sync/recovery', 'sync/live-guard', 'sync/conflict', 'sync/reconciler', 'sync/tombstone', 'sync/tombstone-manager', 'sync/poller', 'sync/cleanup', 'sync/workspace', 'local/store', 'git/probe', 'git/sanitize', 'git/guidance', 'git/context', 'import/protocol', 'import/claims', 'import/journal', 'import/guard', 'import/persistence', 'import/cwd-admission', 'import/bindings', 'import/plans', 'import/profile', 'import/materialize', 'import/coordinator', 'import/commands', 'import/local-code',
     ],
     extras: ['dist/client.js', 'locale/en.json', 'icon.svg'], maxBytes: 720_000,
   },

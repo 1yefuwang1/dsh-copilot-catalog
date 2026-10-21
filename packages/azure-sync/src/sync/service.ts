@@ -34,6 +34,8 @@ export interface SyncServiceDependencies {
   readonly refreshTimeoutMs?: number;
   readonly now?: () => number;
   readonly isOptingOut?: (sessionId: string) => boolean;
+  readonly destinationReady?: (sessionId: string) => Promise<boolean>;
+  readonly refreshGitOnSync?: boolean;
 }
 
 export class SyncService {
@@ -168,6 +170,7 @@ export class SyncService {
   }
 
   private async reconcileImpl(sessionId: string, signal?: AbortSignal): Promise<ReconcileDecision | undefined> {
+    if (this.deps.destinationReady && !await this.deps.destinationReady(sessionId)) throw new AzureSyncError('IMPORT_INCOMPLETE', 'The recorded destination is not ready.');
     const record = this.deps.local.getSession(sessionId);
     if (record === undefined || !record.enabled || record.detached || this.deps.isOptingOut?.(sessionId) || record.admissionStopped || record.mappingUnstable || this.deps.repository === undefined || this.deps.reader === undefined) return undefined;
     const manifest = await this.deps.repository.getManifest(sessionId);
@@ -246,6 +249,7 @@ export class SyncService {
 
   async enable(sessionId: string, signal?: AbortSignal): Promise<UploadSummary> {
     this.check(signal);
+    if (this.deps.destinationReady && !await this.deps.destinationReady(sessionId)) throw new AzureSyncError('IMPORT_INCOMPLETE', 'Finish the recorded destination operation before enabling sync.');
     this.invalidate(sessionId);
     const current = this.sessionSignal(sessionId, signal);
     const leaseSeconds = this.controlLeaseSeconds(sessionId);
@@ -284,7 +288,7 @@ export class SyncService {
     this.check(signal);
     const record = this.deps.local.getSession(sessionId);
     if (record?.status === 'conflict' || record?.status === 'remote-ahead-live' || decision?.stop) throw new AzureSyncError('CONFLICT', 'Cloud sync is blocked; resolve the conflict or restart the host for live catch-up.');
-    if (decision?.kind === 'remote-ahead' || (decision?.kind === 'same' && record?.status === 'synced')) {
+    if (decision?.kind === 'remote-ahead' || (decision?.kind === 'same' && record?.status === 'synced' && !this.deps.refreshGitOnSync)) {
       await this.settleControlLease(sessionId);
       return { status: record?.status === 'synced' ? 'synced' : 'disabled', eventCount: record?.lastSyncedEventCount ?? 0, uploadedBatches: 0 };
     }
@@ -337,6 +341,8 @@ export class SyncService {
 
   async ensureOwnership(sessionId: string, externalSignal?: AbortSignal, options: { inspection?: boolean } = {}): Promise<OwnershipProof> {
     if (this.lifetime.signal.aborted || this.suspension.signal.aborted) return { owned: false, reason: 'ownership-unverified' };
+    try { if (this.deps.destinationReady && !await this.deps.destinationReady(sessionId)) return { owned: false, reason: 'ownership-unverified' }; }
+    catch { return { owned: false, reason: 'ownership-unverified' }; }
     const record = this.deps.local.getSession(sessionId);
     if (this.deps.isOptingOut?.(sessionId) || record?.admissionStopped || record?.mappingUnstable || record?.resurrectionIntent !== undefined) return { owned: false, reason: 'ownership-unverified' };
     const status = record?.status;
@@ -423,6 +429,7 @@ export class SyncService {
 
   async resurrectInCloud(sessionId: string, signal?: AbortSignal) {
     this.check(signal);
+    if (this.deps.local.getSession(sessionId)?.destination) throw new AzureSyncError('GENERATION_CHANGED', 'Destination-scoped history requires explicit proof-bound generation adoption; legacy resurrection is unavailable.');
     if (this.deps.tombstones === undefined) throw new Error('azure-sync: tombstone manager is not ready.');
     const entrySignal = this.sessionSignal(sessionId, signal);
     const record = this.deps.local.getSession(sessionId);
