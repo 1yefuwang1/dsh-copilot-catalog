@@ -212,6 +212,16 @@ export const resurrectionIntentSchema = z.object({
 }).strict();
 export type ResurrectionIntent = z.infer<typeof resurrectionIntentSchema>;
 
+/** Device-local placement binding; absence alone denotes the legacy global-mapping path. */
+export const sessionDestinationSchema = z.object({
+  version: z.literal(1), operationId: z.string().uuid(), scope: nonEmpty(512), intentId: z.string().uuid(),
+  mode: z.enum(['local', 'worktree']), headerCwd: nonEmpty(MAX_PATH_LENGTH), localHeaderHash: hex64,
+  mapping: z.object({ id: z.string().uuid(), revision: hex64, remotePlatform: platformSchema, remotePrefix: nonEmpty(MAX_PATH_LENGTH), localRoot: nonEmpty(MAX_PATH_LENGTH) }).strict(),
+  phase: z.enum(['pending', 'ready', 'cancelled']), journalRevision: int64,
+  projectId: z.string().uuid().optional(), folderId: nonEmpty(256).optional(), worktreeId: z.string().uuid().optional(), workspaceId: nonEmpty(256).optional(),
+}).strict();
+export type SessionDestination = z.infer<typeof sessionDestinationSchema>;
+
 /** Per-session local sync state. */
 export const localSessionRecordSchema = z.object({
   sessionId: nonEmpty(256),
@@ -259,6 +269,7 @@ export const localSessionRecordSchema = z.object({
   admissionStopped: z.boolean().optional(),
   resurrectionIntent: resurrectionIntentSchema.optional(),
   resurrectionCancellationId: z.string().uuid().optional(),
+  destination: sessionDestinationSchema.optional(),
 }).strict();
 export type LocalSessionRecord = z.infer<typeof localSessionRecordSchema>;
 

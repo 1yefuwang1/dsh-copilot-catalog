@@ -149,7 +149,7 @@ export interface CloudThreadSnapshot {
   readonly sessionId: string; readonly phase: 'loading' | 'local' | 'ready' | 'blocked'; readonly blocked: boolean;
   readonly loading: boolean; readonly pending: boolean; readonly provisional: true; readonly reason: string;
   readonly status?: CloudLocalView; readonly error?: CloudClientErrorCode;
-  readonly flags: { readonly admissionRequired: boolean | undefined; readonly ownershipVerified: boolean; readonly importComplete: boolean; readonly degradedAcknowledged: boolean; readonly restartRequired: boolean };
+  readonly flags: { readonly admissionRequired: boolean | undefined; readonly ownershipVerified: boolean; readonly importComplete: boolean; readonly degradedAcknowledged: boolean; readonly restartRequired: boolean; readonly destinationAdmitted?: boolean };
 }
 export interface CloudClientSnapshot {
   readonly settings?: CloudSettingsView; readonly threads: Readonly<Record<string, CloudThreadSnapshot>>;
@@ -167,13 +167,18 @@ interface Scope {
   id: string; refs: number; version: number; work: AbortController; action?: AbortController;
   valid: boolean; status?: CloudLocalView; untracked: boolean; proof: boolean; attempted?: string; fingerprint?: string;
   loading: boolean; error?: CloudClientErrorCode; block?: () => void; refresh?: Promise<void>;
+  destinationAdmitted?: boolean;
 }
 const eligible = (view: CloudLocalView): boolean => view.admissionRequired && view.enabled && view.state === 'active' && !view.detached && !view.admissionStopped && !view.restartRequired && !view.needsFolder && !view.mappingUnstable &&
   (view.importState === undefined || view.importState === 'complete' || (view.importState === 'degraded' && view.degradedAcknowledged)) &&
   (view.degradedAttachmentCount === 0 || view.degradedAcknowledged) && ['synced', 'syncing', 'retrying', 'ownership-unverified', 'paused-other-device', 'lease-lost', 'degraded'].includes(view.status);
 const unknownThread = (sessionId: string): CloudThreadSnapshot => freeze({ sessionId, phase: 'loading', blocked: true, loading: true, pending: false, provisional: true, reason: 'cloud-sync:loading', flags: { admissionRequired: undefined, ownershipVerified: false, importComplete: false, degradedAcknowledged: false, restartRequired: false } });
 
-export function createCloudClient(runtime: CloudClientRuntime): CloudClient {
+export interface CloudClientOptions {
+  /** Separate v2 LOCAL admission lookup; no legacy wire DTO expansion and no Azure lease probe. */
+  readonly importAdmission?: (sessionId: string, signal: AbortSignal) => Promise<boolean>;
+}
+export function createCloudClient(runtime: CloudClientRuntime, options: CloudClientOptions = {}): CloudClient {
   const listeners = new Set<() => void>(), scopes = new Map<string, Scope>();
   const blocks = createComposerBlockOwner(runtime.conversation.blocks);
   const controllers = new Set<AbortController>(), providers = new Set<Promise<unknown>>();
@@ -194,13 +199,14 @@ export function createCloudClient(runtime: CloudClientRuntime): CloudClient {
     const complete = view !== undefined && (view.importState === undefined || view.importState === 'complete' || (view.importState === 'degraded' && view.degradedAcknowledged));
     const settling = actions.has(scope.id) || globalMutations.size > 0;
     // Local opt-out bypasses the cloud lease gate, never the Host's partial-import continuation guard.
-    const local = !settling && scope.valid && (scope.untracked || (view?.admissionRequired === false && complete));
-    const ready = !settling && scope.valid && scope.proof && view !== undefined && eligible(view) && !settingsView?.authPending && settingsView?.connection.available !== false && !settingsView?.connection.requiresUpdate;
+    const destination = options.importAdmission === undefined || scope.destinationAdmitted === true;
+    const local = destination && !settling && scope.valid && (scope.untracked || (view?.admissionRequired === false && complete));
+    const ready = destination && !settling && scope.valid && scope.proof && view !== undefined && eligible(view) && !settingsView?.authPending && settingsView?.connection.available !== false && !settingsView?.connection.requiresUpdate;
     const phase = local ? 'local' : ready ? 'ready' : scope.loading && view === undefined ? 'loading' : 'blocked';
     return freeze({ sessionId: scope.id, phase, blocked: !local && !ready, loading: scope.loading, pending: pending.has(scope.id), provisional: true,
       reason: phase === 'loading' ? 'cloud-sync:loading' : phase === 'blocked' ? 'cloud-sync:blocked' : 'cloud-sync:ready',
       ...(view === undefined ? {} : { status: view }), ...(scope.error === undefined ? {} : { error: scope.error }),
-      flags: { admissionRequired: scope.untracked ? false : view?.admissionRequired, ownershipVerified: scope.proof, importComplete: complete, degradedAcknowledged: view?.degradedAcknowledged ?? false, restartRequired: view?.restartRequired ?? false } });
+      flags: { admissionRequired: scope.untracked ? false : view?.admissionRequired, ownershipVerified: scope.proof, importComplete: complete, degradedAcknowledged: view?.degradedAcknowledged ?? false, restartRequired: view?.restartRequired ?? false, ...(options.importAdmission === undefined ? {} : { destinationAdmitted: scope.destinationAdmitted === true }) } });
   }
   function publish(): void {
     if (disposed) return;
@@ -215,7 +221,7 @@ export function createCloudClient(runtime: CloudClientRuntime): CloudClient {
   }
   function invalidate(scope: Scope): void {
     ++scope.version; scope.work.abort(); scope.work = new AbortController(); scope.refresh = undefined;
-    scope.valid = false; scope.proof = false; scope.attempted = undefined; scope.loading = true; scope.error = undefined;
+    scope.valid = false; scope.proof = false; scope.destinationAdmitted = undefined; scope.attempted = undefined; scope.loading = true; scope.error = undefined;
   }
   function count(key: string, delta: number): void { const next = (pending.get(key) ?? 0) + delta; if (next > 0) pending.set(key, next); else pending.delete(key); }
   async function send<R extends CloudRequest>(meta: R, payload: unknown, external?: AbortSignal): Promise<CloudReply<R>> {
@@ -273,9 +279,16 @@ export function createCloudClient(runtime: CloudClientRuntime): CloudClient {
         const request = { action: 'status', sessionId: scope.id } as const;
         const reply = await send(request, { v: 1, request }, signal);
         if (!current()) return;
-        applyStatus(reply, scope); scope.error = undefined; publish();
+        applyStatus(reply, scope); scope.error = undefined;
+        if (options.importAdmission) {
+          scope.destinationAdmitted = undefined; publish();
+          const admitted = await options.importAdmission(scope.id, signal);
+          if (!current()) return;
+          scope.destinationAdmitted = admitted;
+        }
+        publish();
         const view = scope.status;
-        if (view && eligible(view) && !settingsView?.authPending && settingsView?.connection.available !== false && !settingsView?.connection.requiresUpdate && scope.attempted !== scope.fingerprint) {
+        if ((options.importAdmission === undefined || scope.destinationAdmitted === true) && view && eligible(view) && !settingsView?.authPending && settingsView?.connection.available !== false && !settingsView?.connection.requiresUpdate && scope.attempted !== scope.fingerprint) {
           scope.attempted = scope.fingerprint;
           const capturedSettings = settingsEpoch;
           const check = { action: 'check-ownership', sessionId: scope.id } as const;

@@ -5,6 +5,10 @@ import { constants } from 'node:fs';
 import { lstat, open, opendir, readlink, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 import { parseGitFacts, sanitizeGitRemote, type GitFacts } from './sanitize.js';
+import { isGitBranchRef, parseGitContext, type GitContext, type GitUpstream } from './context.js';
+import type { WorktreeSourceContext } from '@1yefuwang1/dsh-worktrees/import-contract';
+
+export interface GitObservationAnchor { readonly generation: number; readonly headerHash: string; readonly eventCount: number; readonly chainHash: string }
 
 export interface GitProbeOptions { readonly executable?: string; readonly timeoutMs?: number; readonly defaultRemote?: string }
 export const GIT_PROBE_LIMITS = Object.freeze({ outputBytes: 262_144, files: 5_000, entries: 10_000, depth: 32, fileBytes: 1_048_576, totalBytes: 8_388_608 });
@@ -145,6 +149,77 @@ export class GitProbe {
     const work = this.read(cwd, scopeRoot, signal); this.flights.add(work);
     try { const facts = await work; if (!signal?.aborted) { if (this.cache.size >= 64) this.cache.delete(this.cache.keys().next().value!); this.cache.set(key, { at: Date.now(), facts }); } return facts; }
     finally { this.flights.delete(work); }
+  }
+  /** Fresh v2 capture for ONE conditional publication candidate; never re-stamp a cached observation. */
+  async capture(cwd: string, scopeRoot: string, deviceId: string, anchor: GitObservationAnchor, source?: WorktreeSourceContext, signal?: AbortSignal): Promise<GitContext | null> {
+    const facts = await this.read(cwd, scopeRoot, signal);
+    if (!facts || signal?.aborted) return null;
+    const budget = new Budget(Math.max(1, Math.min(this.options.timeoutMs ?? 5_000, 60_000)), signal);
+    try {
+      const local = await budget.wait(realpath(cwd)), scope = await budget.wait(realpath(scopeRoot));
+      if (!inside(scope, local) || !inside(scope, facts.root)) return null;
+      const binary = await budget.wait(trustedGit(this.options.executable ?? 'git')); if (!binary) return null;
+      const run = (args: readonly string[]) => budget.wait(execute(binary, local, args, budget));
+      const locations = await run(['rev-parse', '--path-format=absolute', '--git-common-dir', '--show-object-format']);
+      const [commonText, objectFormat] = locations.text.trimEnd().split('\n');
+      if (locations.code !== 0 || !commonText || (objectFormat !== 'sha1' && objectFormat !== 'sha256')) return null;
+      const common = await budget.wait(realpath(resolve(local, commonText)));
+      const branchResult = await run(['symbolic-ref', '--quiet', 'HEAD']);
+      if (branchResult.code !== 0 && branchResult.code !== 1) return null;
+      const branchRef = branchResult.code === 0 ? branchResult.text.trim() : undefined;
+      if (branchRef !== undefined && !isGitBranchRef(branchRef)) return null;
+      const headResult = await run(['rev-parse', '--verify', 'HEAD']);
+      const headOid = headResult.code === 0 && (objectFormat === 'sha1' ? /^[0-9a-f]{40}\n?$/u : /^[0-9a-f]{64}\n?$/u).test(headResult.text) ? headResult.text.trim() : undefined;
+      if (facts.commit !== headOid || facts.detached !== (branchRef === undefined) || facts.branch !== branchRef?.slice('refs/heads/'.length)) return null;
+      const configReads = new Map<string, Result>();
+      const remote = async (name: string) => {
+        if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$/u.test(name)) return undefined;
+        const result = await run(['config', '--null', '--get', `remote.${name}.url`]);
+        const previous = configReads.get(name);
+        if (previous && (previous.code !== result.code || previous.text !== result.text)) throw new Error('Git remote configuration changed during observation.');
+        configReads.set(name, result);
+        const sanitizedUrl = result.code === 0 && result.text.endsWith('\0') ? sanitizeGitRemote(result.text.slice(0, -1)) : undefined;
+        return sanitizedUrl ? { name, sanitizedUrl } : undefined;
+      };
+      const configuredRemote = await remote(this.options.defaultRemote ?? 'origin');
+      let upstream: GitUpstream | undefined, upstreamRead: Result | undefined;
+      if (branchRef) {
+        // Git itself resolves custom fetch refspecs and the branch's ACTUAL upstream.
+        // Never stuff this into the current local branch or infer publication of HEAD.
+        const result = await run(['for-each-ref', '--format=%(upstream:remotename)%00%(upstream:remoteref)%00', branchRef]); upstreamRead = result;
+        const fields = result.text.trimEnd().split('\0');
+        if (result.code === 0 && fields.length === 3 && fields[2] === '' && fields[0] && isGitBranchRef(fields[1])) {
+          if (fields[0] === '.') upstream = { kind: 'local', ref: fields[1]! };
+          else { const descriptor = await remote(fields[0]); if (descriptor) upstream = { kind: 'remote', ref: fields[1]!, remote: descriptor }; }
+        }
+      }
+      const endHead = await run(['rev-parse', '--verify', 'HEAD']), endBranch = await run(['symbolic-ref', '--quiet', 'HEAD']);
+      if (endHead.code !== headResult.code || endHead.text !== headResult.text || endBranch.code !== branchResult.code || endBranch.text !== branchResult.text) return null;
+      if (branchRef && upstreamRead) {
+        const checked = await run(['for-each-ref', '--format=%(upstream:remotename)%00%(upstream:remoteref)%00', branchRef]);
+        if (checked.code !== upstreamRead.code || checked.text !== upstreamRead.text) return null;
+      }
+      for (const [name, original] of configReads) {
+        const checked = await run(['config', '--null', '--get', `remote.${name}.url`]);
+        if (checked.code !== original.code || checked.text !== original.text) return null;
+      }
+      const checkedHead = await run(['rev-parse', '--verify', 'HEAD']), checkedBranch = await run(['symbolic-ref', '--quiet', 'HEAD']);
+      if (checkedHead.code !== headResult.code || checkedHead.text !== headResult.text || checkedBranch.code !== branchResult.code || checkedBranch.text !== branchResult.text) return null;
+      let creationBase: GitContext['creationBase'];
+      if (source) {
+        const headerCwd = await budget.wait(realpath(source.cwd));
+        // The public port binds immutable header cwd. A replayed descendant is
+        // valid only inside that SAME verified checkout/common directory; a
+        // sibling linked checkout sharing commonDir cannot borrow its base.
+        if (source.commonDir !== common || !inside(facts.root, headerCwd) || !inside(headerCwd, local)) return null;
+        creationBase = source.creationBase;
+      }
+      return parseGitContext({ v: 2, observation: { ...anchor, deviceId, observedAt: Date.now() },
+        repository: { objectFormat, root: facts.root, worktree: facts.worktree, ...(configuredRemote ? { configuredRemote } : {}) },
+        ...(creationBase ? { creationBase } : {}), current: { detached: branchRef === undefined, unborn: headOid === undefined, dirty: facts.dirty,
+          ...(branchRef ? { branchRef } : {}), ...(headOid ? { headOid } : {}), ...(upstream ? { upstream } : {}) } }) ?? null;
+    } catch { return null; }
+    finally { budget.close(); }
   }
   private async read(cwd: string, scopeRoot: string, signal?: AbortSignal): Promise<GitFacts | null> {
     const budget = new Budget(Math.max(1, Math.min(this.options.timeoutMs ?? 5_000, 60_000)), signal);

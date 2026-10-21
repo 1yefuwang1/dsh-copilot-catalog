@@ -80,7 +80,7 @@ for (const { path, manifest } of leaves) {
     }
   }
   if (path === 'packages/azure-sync') {
-    sources.push(`${path}/client.ts`, `${path}/client.types.d.ts`, `${path}/client-model.ts`, `${path}/client-blocks.ts`);
+    sources.push(`${path}/client.ts`, `${path}/client.types.d.ts`, `${path}/client-model.ts`, `${path}/client-blocks.ts`, `${path}/client-import-model.ts`, `${path}/client-import.ts`);
     const client = await readFile(join(root, path, 'client.ts'), 'utf8');
     const moduleId = client.match(/window\.__ModuleLoader__\.load\(\{\s*id: '([^']+)'/u)?.[1];
     const configKey = client.match(/name: 'plugins\.row\.config', key: '([^']+)'/u)?.[1];

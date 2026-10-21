@@ -1,5 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type { HostConnectionHandle } from '@deepseek-ai/dsh-client-connection';
+import { CLOUD_IMPORT_ENDPOINT, parseCloudImportPayload, type CloudImportControllerPort, type CloudImportRequest } from './import/protocol.js';
+import type { CloudRequest } from './protocol.js';
 import {
   boundedJson, cloudFailure, cloudSuccess, CloudControlError, CLOUD_JSON_MAX_BYTES,
   parseCloudPayload, type CloudControllerPort, type CloudEnvelope,
@@ -71,7 +73,7 @@ function carrier(value: unknown, endpoint: string): { rpcId: string; payload: un
  * Only the admitted shared browser Peer may reach parsing or the controller.
  * No agent is resolved, including for cold/status requests; RPC has no sid fallback.
  */
-export function registerCloudRpc(ctx: Context, controller: CloudControllerPort): () => Promise<void> {
+export function registerCloudRpc(ctx: Context, controller: CloudControllerPort, imports?: CloudImportControllerPort): () => Promise<void> {
   const connection = ctx.get('connection') as HostConnectionHandle | undefined;
   if (connection === undefined) return async () => undefined;
   const shutdown = new AbortController();
@@ -89,7 +91,7 @@ export function registerCloudRpc(ctx: Context, controller: CloudControllerPort):
       await Promise.allSettled([...flights]);
     })();
     try {
-      for (const endpoint of [CLOUD_STATUS_ENDPOINT, CLOUD_ACTION_ENDPOINT]) {
+      for (const endpoint of [CLOUD_STATUS_ENDPOINT, CLOUD_ACTION_ENDPOINT, ...(imports ? [CLOUD_IMPORT_ENDPOINT] : [])]) {
         const path = `/api/${endpoint}`;
         unregister.push(connection.fetch.register({ path, methods: ['POST'], requestBody: 'streaming', fetch: incoming => {
           let signal: AbortSignal;
@@ -111,14 +113,14 @@ export function registerCloudRpc(ctx: Context, controller: CloudControllerPort):
             try {
               const input = carrier(await readBody(incoming, signal), endpoint);
               rpcId = input.rpcId;
-              const request = parseCloudPayload(input.payload);
+              const request = endpoint === CLOUD_IMPORT_ENDPOINT ? parseCloudImportPayload(input.payload) : parseCloudPayload(input.payload);
               if (endpoint === CLOUD_STATUS_ENDPOINT && request.action !== 'status' && request.action !== 'mappings') return failure(rpcId, 'FORBIDDEN');
               if (signal.aborted) return failure(rpcId, 'CANCELLED');
               // Body readers can finish together: recheck provider capacity here.
               if (providers.size >= CLOUD_RPC_MAX_FLIGHTS) return failure(rpcId, 'CAPACITY');
-              const work = Promise.resolve().then(() => {
+              const work = Promise.resolve().then<unknown>(() => {
                 if (signal.aborted) throw new CloudControlError('CANCELLED');
-                return controller.execute(request, { origin: 'rpc', signal });
+                return endpoint === CLOUD_IMPORT_ENDPOINT ? imports!.execute(request as CloudImportRequest, { origin: 'rpc', signal }) : controller.execute(request as CloudRequest, { origin: 'rpc', signal });
               });
               providers.add(work);
               void work.then(() => providers.delete(work), () => providers.delete(work));

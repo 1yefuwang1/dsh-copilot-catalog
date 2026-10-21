@@ -7,6 +7,55 @@ catalog plugin, or the search plugin. The scoped name avoids collision with the
 unrelated npm package `dsh-worktrees`; stable tool, command and metadata names are
 unchanged.
 
+## Optional conversation-import placement
+
+The working tree adds the public **`worktreeImportPlacement` v1** capability and
+`./import-contract` type export for explicit cloud import. This is separate from
+normal Local/New first-Send creation; ordinary behavior and the legacy Worktrees
+metadata schema stay unchanged. It has no runtime dependency on the Azure package.
+
+A compatible importer supplies the original cloud SID, a reviewed source project
+folder, an exact **locally available commit**, and a genuine existing ordinary
+permission-context Agent with current session-specific Full access. Host defaults
+or an arbitrary actor string are not authority. Preview verifies all historical cwd
+directories in that exact tree before any private ref/check-out effect. Source
+branch, HEAD, files and settings are not copied or switched; no fetch, clone, reset,
+stash, push, model/naming call, helper conversation or first message is performed.
+
+Provisioning creates a fresh unique branch/root but no placeholder Native Workspace
+ID. Complete independently readable native history and an opaque runtime guard proof
+are required before `bindImported` creates the actual Workspace, attaches the exact
+original SID/project folder, and returns the bound revision2 receipt. Required Ready
+acknowledgment then releases the pending manager fence. Until that handshake,
+start/handoff/cleanup cannot treat the checkout as usable; a separate mandatory native
+provider also excludes unrelated-SID creation/model steps inside pending/stopped cwd.
+JSON copies, proof-shaped booleans and a saved receipt cannot replace current proof.
+
+Cancellation preserves exact known Git/native receipts and never deletes/recreates
+resources. `suspend` accepts only a fresh independent durable stop for the same IDs;
+late completion cannot become Ready. A missing checkout after a possible shared-ref
+effect, dead/uncertain claims or changed physical root requires explicit offline
+inspection, not blind recreation, stale-lock theft or generic ref deletion. New import
+placement is unavailable on Windows until its durability path is proven; this does not
+change the existing ordinary Worktrees platform scope.
+
+Normal managed creation now records the selected creation ref/OID and actual local
+base upstream at pin time in a **separate local source journal**, including while cloud
+sync is Off. Public source context checks SID/cwd/common directory/readability. A new
+receiving import placement never invents the original creation base from its own
+selected commit. Optional sync must separately preserve any previously known original
+base. A replayed descendant cwd does not change that immutable source lookup; it is
+accepted only inside the same verified checkout/common directory. If the immutable
+header scope is narrower than its Git root, bounded Git publication remains explicitly
+unavailable rather than reading ancestor contents or claiming an invented creation base.
+Sanitized location hints are not remote-publication or code-transfer guarantees.
+
+For the importer's required permanent user-profile setup, read-only Open/Continue,
+per-SID mapping, unsupported paths and acceptance evidence, see the repository
+[import guide](<../azure-sync/README.md#5-second-device-choose-local-or-new-worktree>) and
+[acceptance ledger](<../../docs/acceptance/cloud-import-destination.md>). No installation,
+profile edit, GUI deployment or publication is performed automatically.
+
 ## Projects and threads
 
 A **project** is a durable logical group containing one or more existing folders.

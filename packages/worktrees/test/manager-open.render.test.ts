@@ -5,6 +5,7 @@ import { after, test, type TestContext } from 'node:test';
 import vm from 'node:vm';
 import React, { act } from 'react';
 import { JSDOM } from 'jsdom';
+import { exposeClient } from './client-artifact.js';
 
 type Listener = () => void;
 type VmValue = any; // Only the inspected, in-memory factory export crosses this VM boundary.
@@ -61,11 +62,9 @@ class ClockedAbortSignal extends AbortSignal {
   }
 }
 let module!: VmModule;
-const marker = /^[ \t]*inject:/gm;
-assert.equal([...source.matchAll(marker)].length, 1, 'the actual client factory has exactly one export seam');
-// Expose only existing declarations, in memory. RecordCard, its hooks, guards,
+// Expose only actual minified bindings, in memory. RecordCard, hooks, guards,
 // retained-session helper and click handlers remain the shipped implementations.
-vm.runInNewContext(source.replace(marker, 'renderTest: { RecordCard, en },\n$&'), {
+vm.runInNewContext(exposeClient(source, ['RecordCard', 'en']), {
   window: { __ModuleLoader__: { load(value: VmModule) { module = value; } } },
   AbortController, AbortSignal: ClockedAbortSignal, crypto: webcrypto,
 }, { filename: clientUrl.pathname });

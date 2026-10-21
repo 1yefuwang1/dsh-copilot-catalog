@@ -128,7 +128,9 @@ function sameAuthority(expected: LocalSessionRecord | undefined, latest: LocalSe
     expected.importExpectedCount === latest.importExpectedCount && expected.importExpectedChainHash === latest.importExpectedChainHash &&
     expected.lastSyncedAt === latest.lastSyncedAt && expected.lastSyncedHeaderHash === latest.lastSyncedHeaderHash &&
     (expected.importState === 'complete' || expected.importState === 'degraded') === (latest.importState === 'complete' || latest.importState === 'degraded') &&
-    expected.resurrectionIntent?.operationId === latest.resurrectionIntent?.operationId;
+    expected.resurrectionIntent?.operationId === latest.resurrectionIntent?.operationId &&
+    expected.destination?.operationId === latest.destination?.operationId && expected.destination?.scope === latest.destination?.scope &&
+    expected.destination?.phase === latest.destination?.phase && expected.destination?.journalRevision === latest.destination?.journalRevision;
 }
 
 function snapshot(record: LocalSessionRecord | undefined): LocalSessionRecord | undefined {
@@ -229,6 +231,37 @@ export class Importer {
   }
 
   constructor(deps: ImportDependencies) { this.deps = deps; }
+
+  /** Prepared-placement continuation. Caller already cold-proved the exact initial
+   * artifact and published its destination-linked record. Never creates a SID or
+   * writes an initial planned record. */
+  async importPrepared(sessionId: string, remote: RemoteSession, binding: CwdBinding, localizedHeader: SessionHeader, options: ResumeImportOptions = {}): Promise<ImportResult> {
+    const operation = this.beginRequest(sessionId, options.signal);
+    let handle: SessionHandle | undefined;
+    let failureReady = false;
+    try {
+      const record = this.deps.local.getSession(sessionId);
+      if (!record?.destination || !record.imported || record.destination.headerCwd !== localizedHeader.cwd || ((!record.enabled || record.detached) && options.allowDisabledRead !== true)) throw new AzureSyncError('IMPORT_INCOMPLETE', 'The prepared destination record is unavailable.');
+      failureReady = true;
+      operation.check();
+      const preflight = await this.preflight(sessionId, remote, binding);
+      operation.check();
+      handle = await this.acquireHandle(sessionId, () => this.deps.persistence.open(sessionId as never, 'write'));
+      await this.validateHandle(sessionId, remote, binding, localizedHeader, handle);
+      const current = await this.waitActive(sessionId, () => handle!.read(0));
+      if (current.events.length > preflight.events.length) throw new AzureSyncError('PROVENANCE_MISMATCH', 'The prepared artifact advanced beyond the reviewed history.');
+      await verifyImportedProvenance(binding, remote.events.slice(0, current.events.length) as never, current.events as never, await this.provenanceOptions(remote, binding, current.events.length));
+      await this.update(sessionId, { importState: 'appending', status: 'importing' });
+      await this.appendAll(handle, preflight.events.slice(current.events.length), sessionId, remote, binding, undefined, current.events.length);
+      const result = await this.finalize(sessionId, remote, binding, handle, undefined, localizedHeader, true);
+      operation.check(); return result;
+    } catch (error) {
+      operation.check();
+      if (failureReady) await this.recordFailure(sessionId, error); throw error;
+    } finally {
+      try { await handle?.close(); } finally { this.requests.delete(sessionId); }
+    }
+  }
 
   private async update(sessionId: string, patch: Partial<LocalSessionRecord>): Promise<LocalSessionRecord> {
     const operation = this.operation(sessionId);
@@ -351,7 +384,7 @@ export class Importer {
     this.assertMapping(this.deps.local.getSession(sessionId), binding, confirmMapping);
   }
 
-  private async appendAll(handle: SessionHandle, events: readonly SessionEvent[], sessionId: string, remote?: RemoteSession, binding?: CwdBinding, checkRemote?: () => Promise<void>): Promise<void> {
+  private async appendAll(handle: SessionHandle, events: readonly SessionEvent[], sessionId: string, remote?: RemoteSession, binding?: CwdBinding, checkRemote?: () => Promise<void>, baseOffset = 0): Promise<void> {
     const size = Math.max(1, this.deps.config.maxBatchEvents);
     for (let offset = 0; offset < events.length; offset += size) {
       await checkRemote?.();
@@ -364,7 +397,7 @@ export class Importer {
         await verifyImportedProvenance(binding, remote.events.slice(0, read.events.length) as never, read.events as never, await this.provenanceOptions(remote, binding, read.events.length));
         importedThroughSeq = read.events.length === 0 ? undefined : read.events.length - 1;
       }
-      await this.update(sessionId, { importAppendedCount: Math.min(events.length, offset + size), status: 'importing', ...(importedThroughSeq === undefined ? {} : { importedThroughSeq }) });
+      await this.update(sessionId, { importAppendedCount: baseOffset + Math.min(events.length, offset + size), status: 'importing', ...(importedThroughSeq === undefined ? {} : { importedThroughSeq }) });
     }
   }
 
@@ -385,20 +418,20 @@ export class Importer {
     return { degraded: [] };
   }
 
-  private async finalize(sessionId: string, remote: RemoteSession, binding: CwdBinding, handle: SessionHandle, checkRemote?: () => Promise<void>): Promise<ImportResult> {
+  private async finalize(sessionId: string, remote: RemoteSession, binding: CwdBinding, handle: SessionHandle, checkRemote?: () => Promise<void>, localizedHeaderOverride?: SessionHeader, strictPlacement = false): Promise<ImportResult> {
     const readBack = await this.waitActive(sessionId, () => handle.read(0));
     await verifyImportedProvenance(binding, remote.events as never, readBack.events as never, await this.provenanceOptions(remote, binding, remote.events.length));
     await this.waitActive(sessionId, () => handle.flush());
     await this.update(sessionId, { importState: 'attachments', status: 'importing' });
     const attachments = await this.materializeAttachments(sessionId, remote);
     await this.update(sessionId, { importState: 'warming', status: 'importing', importExpectedCount: remote.events.length, importExpectedChainHash: remote.manifest.entity.chainHash });
-    const localizedHeader = remote.header.cwd === undefined ? remote.header : { ...remote.header, cwd: await remoteToLocal(binding, remote.header.cwd) };
+    const localizedHeader = localizedHeaderOverride ?? (remote.header.cwd === undefined ? remote.header : { ...remote.header, cwd: await remoteToLocal(binding, remote.header.cwd) });
     let warm: WarmResult = 'partial';
     if (this.deps.projection !== undefined) {
       try { warm = await this.waitActive(sessionId, () => this.deps.projection!.warm(sessionId, localizedHeader, remote.inheritedEventCount, readBack.events)); }
       catch { this.assertActive(sessionId); warm = 'partial'; }
     }
-    if (warm === 'complete' && this.deps.sessionController !== undefined) {
+    if (!strictPlacement && warm === 'complete' && this.deps.sessionController !== undefined) {
       try {
         const signal = this.operation(sessionId)?.signal ?? new AbortController().signal;
         const result = await this.waitActive(sessionId, () => this.deps.sessionController!.list({}, signal)) as { items?: readonly unknown[] } | readonly unknown[];
@@ -426,7 +459,7 @@ export class Importer {
       remapped: remote.header.cwd !== localizedHeader.cwd,
       ...(degraded ? { lastError: 'Import completed with degraded attachments/projection.' } : { lastError: undefined }),
     });
-    if (this.deps.workspace !== undefined) {
+    if (!strictPlacement && this.deps.workspace !== undefined) {
       const localizedCwd = remote.header.cwd === undefined ? undefined : await remoteToLocal(binding, remote.header.cwd);
       if (localizedCwd !== undefined) await this.waitActive(sessionId, () => this.deps.workspace!.attach(localizedCwd, undefined, sessionId));
     }
@@ -736,7 +769,7 @@ export class EarlyImportClaims {
   private readonly local: LocalStore;
   private readonly handles = new Map<string, SessionHandle>();
 
-  constructor(persistence: SessionPersistence, local: LocalStore) {
+  constructor(persistence: SessionPersistence, local: LocalStore, private readonly destinationReserved?: (sessionId: string) => Promise<boolean>) {
     this.persistence = persistence;
     this.local = local;
   }
@@ -745,6 +778,7 @@ export class EarlyImportClaims {
     const claimed: EarlyClaim[] = [];
     const raced: string[] = [];
     for (const [sessionId, record] of this.local.listSessions()) {
+      if (record.destination || await this.destinationReserved?.(sessionId)) continue;
       if (record.catchUpPending === true || record.importState === 'complete' || record.importState === undefined) continue;
       try {
         const handle = await this.persistence.open(sessionId as never, 'write');

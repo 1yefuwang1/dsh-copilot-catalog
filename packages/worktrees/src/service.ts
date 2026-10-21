@@ -12,6 +12,7 @@ import { fullAccessActions, mutationActions, hashValue, parseRequest } from './s
 import { SessionBootstrap, type SessionSettings } from './sessions.js';
 import { fallbackName, generateWorktreeName, NAMING_DEFAULTS, NAMING_INPUT_CHARS, namingConfig } from './naming.js';
 import type { WorktreeStore } from './store.js';
+import type { PortableCreationBase } from './import-contract.js';
 import type { ProjectController } from './projects.js';
 import type { CheckoutState, CreateCheckoutInput, LocalBranches, OperationRecord, RemoteBranches, RepositoryInfo, SessionResult, WorktreeCleanupSummary, WorktreeConfig, WorktreePreview, WorktreeRecord, WorktreeRequest, WorktreeReopenInfo, WorktreeReopenResult, WorktreeSetupProgress } from './types.js';
 
@@ -38,6 +39,9 @@ export interface ControllerDependencies {
   worktreeRoot?: () => string;
   localPath?: typeof localProjectPath;
   onNamingEligible?: (agent: Agent) => void;
+  /** Separate import/source journals; never fake a legacy create operation. */
+  importPending?: (record: WorktreeRecord) => boolean;
+  captureSource?: (record: WorktreeRecord, base: PortableCreationBase | undefined) => Promise<void>;
   projects?: Pick<ProjectController, 'resolveFolder' | 'folderForPath' | 'selectionForWorktree' | 'ensureFolder' | 'recordThread' | 'bindingFor'>;
 }
 interface ProjectSelection { projectId: string; folderId: string; path: string }
@@ -155,6 +159,7 @@ export class WorktreeController {
     });
   }
   hasPendingEffects(record: WorktreeRecord): boolean {
+    if (this.dependencies.importPending?.(record)) return true;
     if (this.namingPreparations.has(record.id) || ['generating', 'generated', 'renaming'].includes(record.firstMessageNaming?.phase ?? '')) return true;
     return [...this.store.operations.entries()].some(([, operation]) => !['ready', 'cancelled-before-effects'].includes(operation.phase)
       && (operation.worktreeId === record.id || (operation.targetRoot !== null && contained(record.checkoutRoot, operation.targetRoot))));
@@ -379,6 +384,7 @@ export class WorktreeController {
     return clone(record);
   }
   private usable(record: WorktreeRecord, allowProtected = true): void {
+    if (this.dependencies.importPending?.(record)) throw new WorktreeError('IMPORT_PENDING', 'The imported destination is not bound and acknowledged Ready. Resume its original import operation.');
     if (record.archived) throw new WorktreeError('ARCHIVED', 'Unarchive the worktree before using it.');
     if (record.state !== 'ready') throw new WorktreeError('RECOVERY_REQUIRED', 'The worktree is not ready. Inspect its operation status before proceeding.');
     if (!allowProtected && record.protected) throw new WorktreeError('PROTECTED', 'Unprotect the worktree before this operation.');
@@ -622,9 +628,10 @@ export class WorktreeController {
           onProgress: stage => this.progress(invocation, progressOperation, stage),
           ...(branchSource === 'local' ? { branchSource: 'local', localBranch: remoteBranch, ...(request.localOid === undefined ? {} : { localOid: request.localOid }) } : { branchSource: 'remote', remote, remoteIdentity: identity, remoteBranch }),
         };
-        const checkout = await git.create(sourceInput);
+        const { creationBase, ...checkout } = await git.create(sourceInput);
         let created = { ...record, ...checkout };
         await this.store.worktrees.put(created.id, clone(created)); operation = await this.receipt(operation, 'checkout-created');
+        await this.dependencies.captureSource?.(created, creationBase);
         await this.sameSettings(source, settings, request, invocation);
         if (created.checkoutRoot !== destination || created.effectiveCwd !== record.effectiveCwd || !contained(destination, created.effectiveCwd)) throw new WorktreeError('UNSAFE_PATH', 'The created checkout does not match its planned directory mapping.');
         {

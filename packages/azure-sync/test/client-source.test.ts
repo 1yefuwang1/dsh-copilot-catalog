@@ -8,7 +8,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 
 test('browser dependency graph stays browser-only and has no Host/provider/Agent authority', async () => {
   const result = await build({ absWorkingDir: root, entryPoints: ['client.ts'], bundle: true, platform: 'browser', format: 'iife', target: 'es2022', write: false, metafile: true, logLevel: 'silent' });
-  assert.deepEqual(Object.keys(result.metafile.inputs).sort(), ['client-blocks.ts', 'client-model.ts', 'client.ts', 'locale/en.json', 'src/git/guidance.ts', 'src/git/sanitize.ts', 'src/protocol.ts']);
+  assert.deepEqual(Object.keys(result.metafile.inputs).sort(), ['client-blocks.ts', 'client-import-model.ts', 'client-import.ts', 'client-model.ts', 'client.ts', 'locale/en.json', 'src/git/context.ts', 'src/git/guidance.ts', 'src/git/sanitize.ts', 'src/import/protocol.ts', 'src/protocol.ts']);
   assert.deepEqual(Object.values(result.metafile.outputs).flatMap(output => output.imports), []);
   const bundle = result.outputFiles[0]!.text;
   assert.doesNotMatch(bundle, /node:|@azure\/|resolveAgent|agents\.resolve|sessionPersistence|localStorage|sessionStorage|indexedDB|fetch\(/u);

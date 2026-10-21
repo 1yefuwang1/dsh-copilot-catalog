@@ -1,5 +1,21 @@
 # @1yefuwang1/dsh-worktrees changelog
 
+## Unreleased — guarded original-SID import placement
+
+- Add optional public Worktrees import-placement capability/type contract, exact available-object
+  commit/branch/HEAD provisioning and required historical-tree directory checks before Git effects.
+  Require a genuine existing permission actor; no first message, settings copy, helper thread or naming.
+- Keep placement/source journals separate from unchanged legacy records. Capture portable creation
+  branch/OID and actual upstream at normal creation time, even while cloud sync is Off locally.
+- Require opaque native guard proof and exact original-SID Native Workspace/project/managed binding.
+  Prepared receipts omit a not-yet-created workspace; bound revision2 records the actual native ID.
+  Ready acknowledgment fences setup/start/handoff/cleanup; durable suspend wins late completions.
+- Retain uncertain effects without stale stealing/recreating absent checkouts. Windows new import
+  placement remains explicitly unavailable before effects; ordinary existing workflows are unchanged.
+- Compact generated client with observable names preserved and no property mangling. Runtime tests
+  execute the actual minified factory; readable source checks are explicitly static-only. Package cap
+  remains825000 bytes. This is a working-tree extension, not a registry release or installed GUI claim.
+
 ## 0.2.23 — DSH 0.2.1-rc.2 compatibility, exact-session discovery and thread-switch-safe first Send
 
 - Treat switching to another thread, and the native attempt rollback it causes, as

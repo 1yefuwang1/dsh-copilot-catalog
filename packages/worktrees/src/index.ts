@@ -15,6 +15,7 @@ import { ProjectController, parseProjectRequest, projectParameterSchema } from '
 import { projectDomain, type ProjectStore } from './project-store.js';
 import { registerProjectRpc } from './project-rpc.js';
 import { ProjectReminders } from './project-context.js';
+import { WorktreeImportPlacement, importPlacementDomain, type ImportPlacementStore } from './import-placement.js';
 import { parseCommand, parseRequest, parameterSchema } from './schema.js';
 import { failureOf, WorktreeError } from './errors.js';
 import type { CommandEnvelope, WorktreeConfig } from './types.js';
@@ -80,12 +81,17 @@ export async function apply(ctx: Context, config: PluginConfig): Promise<void> {
   const projectStore: ProjectStore = { projects: projectsDomain.table('projects'), bindings: projectsDomain.table('bindings'), starts: projectsDomain.table('starts'), removals: projectsDomain.table('removals'), close: () => projectsDomain.close() };
   const lifecycleDomain = await facility.open(cleanupDomain).catch(async error => { await Promise.allSettled([domain.close(), projectsDomain.close()]); throw error; });
   const cleanupStore: CleanupStore = { cleanup: lifecycleDomain.table('cleanup'), reopens: lifecycleDomain.table('reopens'), close: () => lifecycleDomain.close() };
+  const placementDomain = await facility.open(importPlacementDomain).catch(async error => { await Promise.allSettled([domain.close(), projectsDomain.close(), lifecycleDomain.close()]); throw error; });
+  const placementStore: ImportPlacementStore = { placements: placementDomain.table('placements'), sources: placementDomain.table('sources'), close: () => placementDomain.close() };
+  let importPlacement: WorktreeImportPlacement;
   let controller: WorktreeController;
   let cleanup: WorktreeCleanup;
   let maintenanceContext = ctx;
   const projects = new ProjectController(ctx, projectStore, { records: () => controller.records() }, { operationTimeoutMs: resolvedConfig.operationTimeoutMs });
   let firstMessageNamer: FirstMessageNamer;
-  controller = new WorktreeController(ctx, resolvedConfig, store, { projects, worktreeRoot, lifecycle: () => cleanup, onNamingEligible: agent => firstMessageNamer.attach(agent) });
+  controller = new WorktreeController(ctx, resolvedConfig, store, { projects, worktreeRoot, lifecycle: () => cleanup, onNamingEligible: agent => firstMessageNamer.attach(agent), importPending: record => importPlacement?.hasPending(record) ?? false, captureSource: (record, base) => importPlacement.captureSource(record, base) });
+  importPlacement = new WorktreeImportPlacement(ctx, resolvedConfig, store, placementStore, controller, projects, { worktreeRoot });
+  ctx.provide('worktreeImportPlacement', importPlacement);
   cleanup = new WorktreeCleanup(ctx, resolvedConfig, store, cleanupStore, controller, { projects, settings: cleanupSettings, executionContext: () => maintenanceContext });
   ctx.inject(['fs', 'subprocess'], scope => {
     maintenanceContext = scope;
@@ -108,9 +114,10 @@ export async function apply(ctx: Context, config: PluginConfig): Promise<void> {
     await Promise.allSettled([...rpcStops].map(stop => stop()));
     reminders.close(); projectReminders.close(); recoveryReminders.close();
     await firstMessageNamer.close();
+    await importPlacement.close();
     try { await cleanup.close(); } finally {
       try { await controller.close(); } finally {
-        try { await projects.close(); } finally { await Promise.allSettled([store.close(), projectStore.close(), cleanupStore.close()]); }
+        try { await projects.close(); } finally { await Promise.allSettled([store.close(), projectStore.close(), cleanupStore.close(), placementStore.close()]); }
       }
     }
   }, 'worktrees: orderly teardown');
@@ -179,3 +186,6 @@ export type { ProjectFolder, ProjectRecord, ProjectThreadBinding, ProjectSnapsho
 export { GitOperations } from './git.js';
 export { WorktreeError } from './errors.js';
 export type * from './types.js';
+export * from './import-contract.js';
+export { WorktreeImportPlacement, importPlacementDomain } from './import-placement.js';
+export type { ImportPlacementStore, ImportPlacementDependencies, ImportProofVerifier } from './import-placement.js';

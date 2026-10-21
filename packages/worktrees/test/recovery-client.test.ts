@@ -1,11 +1,9 @@
 import type { WorktreeCleanupSummary, WorktreeReopenInfo } from '../dist/types.js';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import vm from 'node:vm';
-import { webcrypto } from 'node:crypto';
 import { Context } from '@deepseek-ai/cordis';
 import { createScope } from '@deepseek-ai/dsh-scope';
+import { clientProtocol, staticClientSource } from './client-artifact.js';
 import { parseRecoveryPayload, registerRecoveryRpc, RECOVERY_RPC_ENDPOINT } from '../dist/recovery-rpc.js';
 
 // React stub hook inputs cross the VM contract.
@@ -36,12 +34,10 @@ type VmValue = any;
 
 
 
-// Static assertions ignore emitted line wrapping; VM execution keeps the original text.
+// Readable source is static-only; behavior executes the actual emitted factory.
 function staticSource(text: string): string { return text.replace(/\s+/g, ' '); }
-const source = await readFile(new URL('../dist/client.js', import.meta.url), 'utf8');
-const start = source.indexOf('class WorktreeError extends Error');
-const end = source.indexOf('function Icon(', start);
-const p: VmValue = vm.runInNewContext(`(() => { const NS = 'worktrees.ui', PANEL = 'dsh-worktrees'; ${source.slice(start, end)}; return { cleanupData, recoveryRequest, recoveryData, validateData, projectData, requestRecovery, createRecoveryStore, recoveryBranches }; })()`, { AbortController, AbortSignal, crypto: webcrypto });
+const source = staticClientSource;
+const p: VmValue = clientProtocol();
 const A = 'a'.repeat(40), B = 'b'.repeat(40), C = 'c'.repeat(40);
 const cleanup: WorktreeCleanupSummary = { phase: 'collected', inactivityDays: 10, lastActivityAt: 100, eligibleAfter: 200, reclaimedAt: 300, originalFolder: '/repo/project', recoveryRef: 'refs/dsh-worktrees/tree/gc-head', reason: null };
 const info: WorktreeReopenInfo = { sourceSessionId: 'old', worktreeId: 'tree', cleanup, continuationSessionId: null, originalFolder: '/repo/project', repository: { root: '/repo', commonDir: '/repo/.git', head: A, branch: 'main' }, branches: [{ name: 'feature/retained', oid: B }], nextCursor: 'page-2', observedAt: 10, revision: 1 };

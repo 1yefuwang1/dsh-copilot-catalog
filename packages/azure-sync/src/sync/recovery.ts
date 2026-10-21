@@ -44,7 +44,7 @@ export class ImportRecovery {
   private readonly local: LocalStore;
   private readonly claims?: EarlyImportClaims;
 
-  constructor(importer: Importer, local: LocalStore, claims?: EarlyImportClaims) {
+  constructor(importer: Importer, local: LocalStore, claims?: EarlyImportClaims, private readonly destinationReserved?: (sessionId: string) => Promise<boolean>) {
     this.importer = importer;
     this.local = local;
     this.claims = claims;
@@ -53,6 +53,7 @@ export class ImportRecovery {
   async repairAll(): Promise<{ readonly repaired: readonly string[]; readonly failed: readonly string[] }> {
     const candidates: ImportCandidate[] = [];
     for (const [sessionId, record] of this.local.listSessions()) {
+      if (record.destination || await this.destinationReserved?.(sessionId)) continue;
       // Cold catch-ups own a separate retry lifecycle and always re-prove a fresh
       // committed prefix; first-import recovery must not pin or resume their writer.
       if (record.catchUpPending || record.importState === undefined || record.importState === 'complete') continue;

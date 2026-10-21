@@ -144,7 +144,88 @@ fields and the five-minute poll cache are not execution authority. Offline cloud
 explicitly detach to choose local continuation instead. A takeover cannot undo tools already running
 on the old device: ensure it is idle first. Epoch fencing protects publication, not external side effects.
 
-## 5. Second device: map, import, then continue
+## 5. Second device: choose Local or New worktree
+
+### 5.1 Enable the independent import-safety profile first
+
+The destination wizard is a separate versioned flow. It is unavailable until its persistent **USER
+profile** setup is verified; it does not silently fall back to another directory or the legacy importer.
+Installing/upgrading a package bundle alone is not this safety proof. Stop the Host before changing
+its profile, back up its configuration/data, then deliberately merge the following into that profile's
+own `cordis.patch.yml` (not a file inside a versioned plugin package):
+
+```yaml
+- id: session-persistence-jsonl
+  disabled: true
+- id: session
+  inject: [sessionPersistence, cloudImportReadinessV1]
+- id: agent-loop
+  inject: [sessionPersistence, cloudImportReadinessV1]
+- insert:
+  - id: mandatory-cloud-import-guard
+    name: '@1yefuwang1/dsh-azure-sync/import-guard'
+    config:
+      root: !!js dshHomePath('cloud-import')
+  - id: mandatory-cloud-import-persistence
+    name: '@1yefuwang1/dsh-azure-sync/import-persistence'
+    config:
+      root: !!js dshHomePath('sessions')
+      compression: zstd
+```
+
+Use the **existing** session root and encoding. If that root uses uncompressed JSONL, keep
+`compression: none`; do not convert or mix formats by changing this example. The independent guard
+and public composite provider must remain configured even when another plugin is downgraded/removed.
+Both `session` and `agent-loop` dependency gates matter: absent persistence alone permits the native
+in-memory fallback. A missing/incompatible guard/provider must instead leave native execution
+unavailable. The wizard checks the actual loaded tree and literal persistent profile overrides.
+Do not remove these gates from a profile with pending destination operations to bypass a refusal.
+
+This initial path requires trusted **local POSIX** storage and the public native flock helper. Windows
+provisioning and unproven durability backends refuse before effects; network filesystems are not a
+supported claim domain. Seeded initial imports remain disabled unless the production backend/capacity
+path is explicitly proven/enabled; the native crash experiments are not a generic append guarantee.
+No profile change, process restart, installation or deployment is performed by the wizard or tests.
+
+### 5.2 Destination wizard
+
+1. Prepare/clone/fetch the receiving code repository separately; conversation sync does not transfer
+   project files or unpublished commits. Configure the same Azure account and test authentication.
+2. **List cloud conversations** and select one exact thread/generation. Listing creates no Agent.
+3. Choose **Local** (default, existing folder) or **New worktree** (fresh managed checkout). Local never
+   changes the folder's branch/files. New worktree requires a compatible Worktrees import capability,
+   an existing ordinary permission-context thread with current native Full access, a registered source
+   folder, and an exact locally available commit. That actor is not copied/bound; no message is sent.
+4. Review the original SID, pinned history watermark, exact folder mapping, commit and new branch/path.
+   All historical cwd directories must be present inside the selected snapshot/mapping. A selected
+   logical Local folder must exactly equal the localized immutable header cwd, not merely its parent.
+   Remote/base/upstream refs are location hints; default resume is the observed HEAD, not an older base.
+   Missing code/ref requires manual preparation and refresh; different/unverified code needs explicit ack.
+5. Confirm **Import here**. The original SID is reserved before Git/history effects, then readable native
+   history is proven before legacy session metadata is published. Native/project/worktree binding must
+   succeed before Ready; a failed worktree import never becomes a silently successful Local import.
+6. **Open history** is read-only before explicit **Continue**. Native write promotion and the composer
+   stay blocked. Continue separately confirms any restored pending input and checks current local
+   readiness, catch-up and fresh cloud ownership. It does not force takeover. A saved receipt cannot
+   reactivate a fresh Host's native writer without a new process-local Continue grant.
+
+Closing/reconnecting inspects the same operation ID; it does not allocate a replacement thread or
+checkout. Cancel preserves committed files/history and fences late completion. Known exact retained
+history can be repaired under an explicit disabled/cancelled authority, never silently re-enabled.
+Unknown/dead/uncertain claims and absent checkouts after possible shared-ref effects remain
+**recovery-required**: do not delete lock/claim files, recreate refs, or assume a timeout grants ownership.
+Stop competing processes and use explicit offline inspection/reconciliation; no automatic stale stealing
+or generic Git cleanup is offered. Ordinary imported code files are not a backup of source-machine dirt.
+
+The native `/cloud-import` literal-JSON command uses this same coordinator; it does not prompt a model.
+Its protocol is separate from legacy `/cloud` and old catalog items remain strict v1/absent Git DTOs.
+
+### 5.3 Legacy explicitly mapped Local import
+
+The existing `/cloud pull <session-id>` mapping flow remains available for non-destination-owned SIDs.
+It never creates Git state. A destination-owned SID is routed/refused through its recorded operation,
+not re-created with a global mapping. Existing global mapping edits do not retarget pinned per-thread
+destination bindings. The following describes the legacy Local mapping behavior:
 
 1. Install the same compatible plugin/Host version, configure the same account and test authentication.
 2. Recreate the code/folders **yourself**. Add an explicit mapping from the source absolute prefix and
@@ -181,6 +262,11 @@ acknowledgement of missing attachments/projection limitations; acknowledgement a
 | Resurrect in cloud | Explicit re-upload from a verified local snapshot. | Deleted→new generation/genesis; not restoration of the deleted generation. Retained disabled history uses On without resetting its generation. |
 
 A newer Off/detach preempts older long operations. It never grants partial-import continuation.
+Destination-imported copies also keep their independent destination/Continue gate: local Off cannot
+bypass incomplete binding or silently activate a fresh Host's writer. Legacy resurrection remains
+unchanged for ordinary legacy records; a destination-bound record cannot adopt a new cloud generation
+through the legacy resurrect action until a proof-bound generation-adoption contract exists. It refuses
+before Azure effects rather than retaining a stale Ready receipt for another generation.
 Divergence preserves both suffixes and input; choose keep-local/export/remove explicitly, not merge.
 Tombstones remain until explicit new-generation re-upload, including after an offline device reconnects.
 Child publication touches the root conditionally in the same Table transaction, so old children cannot
@@ -200,15 +286,34 @@ They show branch/commit, detached/unborn/linked-worktree state, sanitized remote
 raw-content comparison. Unknown is preferred for filters, attributes, CRLF, partial/sparse repositories,
 unsafe paths or bounded-read limits. Ignored/untracked files may conservatively mark dirty.
 
-The plugin never fetches, pushes, checks out, renames branches or creates/rebinds worktrees. Generated
-POSIX/PowerShell commands inspect local refs only and quote arguments literally. Confirm your actual
-code/commit before tools run; writer ownership is not proof that code matches the source device.
+Read-only fact probes and generated POSIX/PowerShell advice never fetch, push, switch/rename branches
+or allocate a checkout; their commands inspect local refs only and quote arguments literally. Only an
+explicitly confirmed **New worktree** destination delegates fresh checkout/branch creation to the
+Worktrees-owned guarded port. It never moves an existing SID, steals another checkout, changes the
+source checkout, or automatically fetches/pushes/resets code. Confirm actual code/commit before tools
+run; writer ownership is not proof that files match the source device.
+
+The versioned Git context records original creation branch/base OID separately from current local
+branch/HEAD and actual upstream, including a local base's upstream captured at creation. Full remote
+refs and sanitized repository URLs are synced as advisory facts, not remote-publication proofs.
+Import defaults to the observed current HEAD, not the older creation base. It validates a locally
+available object (including one with no local branch), matches configured local remotes explicitly,
+and never renders a branch/OID as a verified association merely from a matching name. Legacy readers
+omit v2 storage context; old pull/catalog DTOs are unchanged. New clients obtain v2 only through the
+separate negotiated import channel. Ordinary no-event Sync/drain refreshes are owner/epoch/ETag/
+child-root fenced and do not invent conversation events or continuous Git polling.
 
 Git defaults to a trusted absolute system binary, not an executable in the project/PATH. A custom
 `gitExecutable` must be an administrator-trusted absolute path. Probes use fixed argv, lockless reads,
 scrubbed Git/config/helper/trace environment, no fsmonitor, filters/textconv, external diff, pager,
 hooks, lazy-fetch object reads in partial repos or auto maintenance. Native reads are bounded.
 Only the canonical local header/mapping root is considered; cloud cwd is never a probe target.
+Known original managed-creation context is looked up by the immutable native header cwd even after a
+working-directory change into its descendant; current observation must still belong to that same
+verified checkout/common directory. An immutable header narrower than its Git root remains explicitly
+unavailable under this privacy bound: the probe does not climb to read ancestor project contents just
+to recover metadata. Local import treats that unavailable comparison as unverified and requires the
+separate code acknowledgment, rather than claiming a matching or restored snapshot.
 Final-root aliases fail closed on fresh inspection; ancestor aliases remain allowed after realpath
 containment. Cached facts can be stale for 30 seconds and filesystem changes by independent writers
 are not globally atomic. Git metadata never grants model execution or cloud writer permission.
@@ -280,9 +385,16 @@ thread lifetimes, 3,000 model steps and 60 active writer hours; 1 GiB average re
 attachments/inactive copies, with 0.1 GB Table allowance. Retire/turn Off old threads before they exceed
 the active-history bound. The detailed model includes an operation contingency and excludes egress,
 taxes and separately enabled features. Including 405 first proofs, 750 retire-Off actions, 30 cold
-inspections and 730 repeated immutable attachment attempts, the observed vectors model **580,978 HTTP
-requests and about $0.279/month**. That workload assumes no forced takeovers or enabled descendant
+inspections and 730 repeated immutable attachment attempts, the current legacy-workload vectors model
+**584,038 HTTP requests and about $0.279/month**, excluding the separate optional Git-v2/destination profiles. That workload assumes no forced takeovers or enabled descendant
 records; count their extra operations if used. These are modeled inputs, not a guaranteed spending cap.
+
+The separately measured one-batch explicit Git-v2 no-event refresh used **18 HTTP attempts**, including
+one expected lease-object PUT and one guarded Table EGT, with **zero history batch writes**. It is not
+18 extra operations for every normal turn, and these optional profiles are not folded into the legacy
+monthly model. One verified-reader call is not a whole destination wizard; repeated source verification,
+repair and varying history sizes add requests. See the [destination/Git-v2 cost supplement](<../../docs/acceptance/cloud-import-destination-cost.md>)
+for vectors, assumptions and the deliberately excluded full deployed/two-device billing evidence.
 
 **Unchanged Host polling currently verifies/re-downloads the whole selected history for every enabled
 session.** Imported per-step proofs can read it again. More sessions/batches, shorter intervals, failed

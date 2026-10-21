@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
 import { createServer, request as httpRequest } from 'node:http';
 import { Readable } from 'node:stream';
-import vm from 'node:vm';
+import { clientProtocol as actualClientProtocol } from '../client-artifact.js';
 import test, { type TestContext } from 'node:test';
 import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection';
 import type { Invocation } from '../../dist/service.js';
@@ -64,12 +63,8 @@ async function wire(response: Response, rpcId: string): Promise<RpcReply> {
   return value.result;
 }
 async function clientProtocol(): Promise<ClientProtocol> {
-  const javascript = await readFile(new URL('../../dist/client.js', import.meta.url), 'utf8');
-  const from = javascript.indexOf('    class WorktreeError extends Error');
-  const to = javascript.indexOf('    function Icon(', from);
-  assert.ok(from >= 0 && to > from);
-  // Actual pure Client declarations only; no browser DOM, renderer or plugin mount.
-  return vm.runInNewContext(`(() => { const NS='worktrees.ui', PANEL='dsh-worktrees'; ${javascript.slice(from, to)}; return {decodeReply, projectData, validateData}; })()`, { AbortController });
+  // Actual minified ModuleLoader factory.protocol, not extracted source text.
+  return actualClientProtocol();
 }
 
 test('real SDK singleton /api gateway remains available beside exact streaming POST feature routes and after disposal', async t => {

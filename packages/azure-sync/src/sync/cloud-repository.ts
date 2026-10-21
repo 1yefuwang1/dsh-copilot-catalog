@@ -13,6 +13,7 @@ import {
   encodeKeyPart, sessionRowKey, type BatchBlobMetadata, type BatchRow, type CloudSessionEntity,
 } from '../schema.js';
 import { batchBlobMetadata } from './blob-metadata.js';
+import { canonicalJson } from './canonical.js';
 import { assertGenerationBlob, assertGenerationRow, generationBlobPrefix } from './cleanup.js';
 
 export interface StoredBatch {
@@ -163,6 +164,28 @@ export class CloudRepository {
       return;
     }
     await this.table.update(encodeCloudRecord(entity) as TableEntity<Record<string, unknown>>, etag);
+  }
+
+  /** Metadata-only publication uses the SAME child/root conditional fence as history.
+   * It cannot advance history, change immutable identity, revive a generation, or
+   * write behind a deleted/disabled root. Caller freshly captures this exact tip. */
+  async commitMetadata(proof: StoredManifest, next: CloudSessionEntity, root?: StoredManifest): Promise<StoredManifest> {
+    parseRecord(cloudSessionEntitySchema, proof.entity, 'cloud metadata proof');
+    parseRecord(cloudSessionEntitySchema, next, 'cloud metadata candidate');
+    if (proof.entity.state !== 'active' || !proof.entity.enabled || next.state !== 'active' || !next.enabled || proof.entity.writerEpoch !== next.writerEpoch || proof.entity.leaseOwner !== next.leaseOwner) throw new AzureSyncError('PRECONDITION', 'Metadata publication requires the current active writer.');
+    const immutable = ['partitionKey', 'rowKey', 'sessionId', 'schemaVersion', 'headerJson', 'headerHash', 'inheritedEventCount', 'formatVersion', 'rootSessionId', 'rootGeneration', 'generation', 'eventCount', 'headSeq', 'headHash', 'chainHash', 'batchCount', 'lastBatchRowKey', 'lastBatchGeneration', 'lastBatchBlobName'] as const;
+    if (immutable.some(key => proof.entity[key] !== next[key]) || canonicalJson({ ...proof.entity, gitJson: undefined, updatedAt: undefined }) !== canonicalJson({ ...next, gitJson: undefined, updatedAt: undefined })) throw new AzureSyncError('PRECONDITION', 'Metadata publication cannot change the committed history identity.');
+    if (next.rootSessionId !== next.sessionId) this.assertActiveRoot(next, root);
+    else if (root || next.rootGeneration !== next.generation) throw new AzureSyncError('GENERATION_CHANGED', 'Metadata publication has an inconsistent root fence.');
+    const actions: TransactionAction[] = [
+      ['update', encodeCloudRecord(next) as TableEntity<Record<string, unknown>>, 'Replace', { etag: proof.etag }],
+      ...(root ? [['update', encodeCloudRecord(root.entity) as TableEntity<Record<string, unknown>>, 'Replace', { etag: root.etag }] as TransactionAction] : []),
+    ];
+    await this.table.submitTransaction(actions);
+    const current = await this.getManifest(next.sessionId);
+    this.assertPublicationResult(current, proof, next);
+    if (current.entity.gitJson !== next.gitJson) throw new AzureSyncError('PRECONDITION', 'The accepted Git observation changed before its receipt read.');
+    return current;
   }
 
   /** Every destructive operation revalidates the exact pending tombstone. */

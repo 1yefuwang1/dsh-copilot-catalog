@@ -37,12 +37,23 @@ test('actual tarball imports root/protocol/browser factory and exposes public co
   await writeFile(join(consumer, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
   await writeFile(join(consumer, 'consumer.ts'), `import { Config, GitProbe, parseGitFacts, type GitFacts, type CloudRequest } from '@1yefuwang1/dsh-azure-sync';
 import { parseCloudRequest } from '@1yefuwang1/dsh-azure-sync/protocol';
+import { parseCloudImportRequest, type CloudImportRequest } from '@1yefuwang1/dsh-azure-sync/import-protocol';
+import { parseGitContext, type GitContext } from '@1yefuwang1/dsh-azure-sync/git-context';
+import { ImportGuardV1, type VerifiedDestinationImport } from '@1yefuwang1/dsh-azure-sync/import-guard';
+import { GuardedSessionPersistence } from '@1yefuwang1/dsh-azure-sync/import-persistence';
+const destination: CloudImportRequest = { action: 'import-admission', sessionId: 'original-thread' };
+const captured: GitContext | undefined = parseGitContext(null);
+const opaque: VerifiedDestinationImport | undefined = undefined;
+void [parseCloudImportRequest(destination), captured, opaque, ImportGuardV1, GuardedSessionPersistence];
 const request: CloudRequest = { action: 'git-info', sessionId: 'thread' };
 const config = Config({}); const probe: Promise<GitFacts | null> = new GitProbe().inspect('/local', '/local');
 void [config, probe, parseGitFacts(null), parseCloudRequest(request)];
 // @ts-expect-error Removal requires confirmation and attachment-retention acknowledgement.
 const unsafe: CloudRequest = { action: 'remove', sessionId: 'thread' };
 void unsafe;
+// @ts-expect-error New destination confirmation cannot be omitted.
+const unconfirmed: CloudImportRequest = { action: 'commit-import', sessionId: 'thread', operationId: 'id', revision: 1 };
+void unconfirmed;
 `);
   await writeFile(join(consumer, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: false, noEmit: true, types: ['node'] }, files: ['consumer.ts'] }));
   const ts = packageManager(['--config.ignore-scripts=true', 'exec', 'tsc', '-p', join(consumer, 'tsconfig.json')]); run(ts.command, ts.args, workspace, ts.shell);
@@ -50,6 +61,12 @@ void unsafe;
 let calls = 0; globalThis.fetch = async () => { calls++; throw new Error('import must not fetch'); };
 const root = await import('@1yefuwang1/dsh-azure-sync'); const protocol = await import('@1yefuwang1/dsh-azure-sync/protocol');
 assert.equal(typeof root.apply, 'function'); assert.equal(typeof root.GitProbe, 'function'); assert.equal(typeof protocol.parseCloudRequest, 'function');
+const imports = await import('@1yefuwang1/dsh-azure-sync/import-protocol');
+const git = await import('@1yefuwang1/dsh-azure-sync/git-context');
+const guard = await import('@1yefuwang1/dsh-azure-sync/import-guard');
+const persistence = await import('@1yefuwang1/dsh-azure-sync/import-persistence');
+assert.equal(imports.CLOUD_IMPORT_PROTOCOL_VERSION, 2); assert.deepEqual(imports.parseCloudImportRequest({action:'import-admission',sessionId:'thread'}), {action:'import-admission',sessionId:'thread'});
+assert.equal(git.parseGitContext({v:99}), undefined); assert.equal(typeof guard.ImportGuardV1.open, 'function'); assert.equal(typeof persistence.GuardedSessionPersistence, 'function');
 assert.equal(calls, 0); let loaded;
 globalThis.window = { __ModuleLoader__: { load(value) { loaded = value; } } };
 await import('@1yefuwang1/dsh-azure-sync/client'); assert.equal(loaded.id, '@1yefuwang1/dsh-azure-sync'); assert.equal(typeof loaded.factory, 'function');

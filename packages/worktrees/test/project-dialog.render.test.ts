@@ -5,6 +5,7 @@ import { after, test } from 'node:test';
 import vm from 'node:vm';
 import React, { act } from 'react';
 import { JSDOM } from 'jsdom';
+import { exposeClient } from './client-artifact.js';
 
 interface Folder { id: string; path: string; title?: string; }
 interface Project { id: string; title?: string; folders: Folder[]; mainFolderId?: string; createdAt?: number; updatedAt?: number; }
@@ -49,12 +50,9 @@ after(() => {
 
 function loadEditor(bridge: { pick: () => unknown } | undefined) {
   let module!: VmModule;
-  const marker = /^[ \t]*inject:/gm;
-  assert.equal([...source.matchAll(marker)].length, 1, 'the real factory must have one export seam');
-  // Expose existing declarations in memory only; never replace the component,
-  // picker implementation, hooks, dispatch or handlers with a test double.
-  const exposed = source.replace(marker,
-    'renderTest: { ProjectEditor, nativeFolderPicker },\n$&');
+  // Probe the existing actual minified declarations, never replace the
+  // component, picker, hooks, dispatch or handlers with a test double.
+  const exposed = exposeClient(source, ['ProjectEditor', 'nativeFolderPicker']);
   vm.runInNewContext(exposed, {
     window: { __ModuleLoader__: { load(value: VmModule) { module = value; } } },
     AbortController, crypto: webcrypto, __DSH_DIRECTORY_PICKER__: bridge,

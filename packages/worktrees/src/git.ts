@@ -4,6 +4,8 @@ import { lstat, mkdir, mkdtemp, open, opendir, readFile, realpath, rm, stat, wri
 import path from 'node:path';
 import type { CheckoutState, CreateCheckoutInput, CreatedCheckout, GitExecutor, GitRunResult, PatchFile, LocalBranches, RemoteBranches, RemoteInfo, RepositoryInfo, SnapshotInput, WorktreeConfig, WorktreePreview, WorktreeRecord } from './types.js';
 import { abortIfRequested, WorktreeError } from './errors.js';
+import type { ImportBaseSelection, PortableCreationBase } from './import-contract.js';
+import { portableRemote, sameCreationBase } from './portable-source.js';
 
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 const oidPattern = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u;
@@ -328,7 +330,79 @@ export class GitOperations {
     }
   }
 
-  private async localBase(repository: RepositoryInfo, input: Extract<CreateCheckoutInput, { branchSource: 'local' }>): Promise<string> {
+  async objectFormat(root: string, signal?: AbortSignal): Promise<'sha1' | 'sha256'> {
+    const format = line((await this.run(root, ['rev-parse', '--show-object-format'], signal)).stdout);
+    if (format !== 'sha1' && format !== 'sha256') fail('UNSUPPORTED_REPOSITORY', 'The repository object format is unsupported.');
+    return format;
+  }
+  /** Read/verify only; the selected name is never an executable cloud ref/URL. */
+  async resolveImportBase(repository: RepositoryInfo, selection: ImportBaseSelection, signal?: AbortSignal): Promise<string> {
+    const format = await this.objectFormat(repository.root, signal);
+    if (!oidPattern.test(selection.oid) || selection.oid.length !== (format === 'sha1' ? 40 : 64)) fail('INVALID_REF', 'Select an exact commit matching the repository object format.');
+    const kind = await this.run(repository.root, ['cat-file', '-t', selection.oid], signal, { allowed: [0, 128] });
+    if (kind.exitCode !== 0 || line(kind.stdout) !== 'commit') fail('LOCAL_COMMIT_NOT_FOUND', 'The exact selected commit is not available locally. Prepare the repository separately; no fetch was attempted.');
+    if (selection.kind !== 'commit') {
+      const ref = selection.kind === 'head' ? 'HEAD' : selection.name;
+      if (ref !== 'HEAD') {
+        if (!ref.startsWith('refs/heads/')) fail('INVALID_REF', 'A full local refs/heads branch is required.');
+        await this.ref(repository.root, ref, signal);
+        if ((await this.run(repository.root, ['symbolic-ref', '--quiet', ref], signal, { allowed: [0, 1] })).exitCode === 0) fail('UNSUPPORTED_REF', 'A selected local branch cannot be symbolic.');
+      }
+      const resolved = await this.run(repository.root, ['rev-parse', '--verify', '--end-of-options', ref], signal, { allowed: [0, 128] });
+      if (resolved.exitCode !== 0 || line(resolved.stdout) !== selection.oid) fail('BRANCH_CHANGED', 'The reviewed local ref or HEAD moved. Refresh the import plan.');
+    }
+    return selection.oid;
+  }
+  /** Literal bounded tree reads only, before the first managed ref/path effect.
+   * Even internal symlink cwd paths are explicitly unsupported for this protocol.
+   */
+  async validateImportDirectories(repository: RepositoryInfo, commit: string, directories: readonly string[] = [], signal?: AbortSignal): Promise<void> {
+    const values = [...new Set([repository.projectSubdir, ...directories])];
+    if (directories.length > 256 || values.length > 257 || values.some(value => typeof value !== 'string' || value.length > 4096 || /[\\\\\u0000-\u001f\u007f]/u.test(value) || value !== '' && (path.posix.isAbsolute(value) || value.split('/').some(part => !part || part === '.' || part === '..' || part.toLowerCase() === '.git')))) fail('INVALID_IMPORT_DIRECTORY', 'Select at most 256 literal relative cwd directories, without traversal, .git, separators or controls.');
+    if (!oidPattern.test(commit)) fail('INVALID_REF', 'An exact commit is required for cwd tree validation.');
+    const rows = nul((await this.run(repository.root, ['ls-tree', '-r', '-t', '-z', '--full-tree', commit], signal)).stdout);
+    if (rows.length > this.config.maxFiles * 2 + 1024) fail('FILE_LIMIT', 'The selected tree directory inventory exceeds its bound.');
+    const entries = new Map<string, { mode: string; type: string }>();
+    for (const row of rows) {
+      const tab = row.indexOf('\t'), fields = row.slice(0, tab).split(' '), name = row.slice(tab + 1);
+      if (tab < 0 || fields.length !== 3 || entries.has(name)) fail('INVALID_GIT_OUTPUT', 'Git returned an ambiguous literal tree directory.');
+      entries.set(name, { mode: fields[0]!, type: fields[1]! });
+    }
+    for (const directory of values) {
+      if (directory === '') continue;
+      const parts = directory.split('/');
+      for (let depth = 1; depth <= parts.length; depth++) {
+        const entry = entries.get(parts.slice(0, depth).join('/'));
+        if (entry?.mode === '120000') fail('IMPORT_SYMLINK_CWD_UNSUPPORTED', 'Historical cwd paths through symlinks are unsupported; choose a literal directory snapshot before import.');
+        if (!entry || entry.mode !== '040000' || entry.type !== 'tree') fail('IMPORT_DIRECTORY_MISSING', 'A required historical cwd directory is missing or is not a directory in the selected commit.');
+      }
+    }
+  }
+
+  private async creationBase(root: string, kind: 'local' | 'remote', name: string, baseOid: string, remote?: string, signal?: AbortSignal): Promise<PortableCreationBase | undefined> {
+    if (kind === 'remote') {
+      const descriptor = remote === undefined ? undefined : portableRemote(remote, await this.configValues(root, `remote.${remote}.url`, signal));
+      return descriptor === undefined ? undefined : { kind: 'remote', ref: `refs/heads/${name}`, remote: descriptor, oid: baseOid };
+    }
+    if (name === 'HEAD') return { kind: 'detached', oid: baseOid };
+    const base: PortableCreationBase = { kind: 'local', ref: `refs/heads/${name}`, oid: baseOid };
+    const remotes = await this.configValues(root, `branch.${name}.remote`, signal), merge = await this.configValues(root, `branch.${name}.merge`, signal);
+    if (remotes.length !== 1 || merge.length !== 1 || remotes[0] === '.' || !merge[0]?.startsWith('refs/heads/')) return base;
+    try { await this.ref(root, merge[0], signal); }
+    catch (error) { if (error instanceof WorktreeError && error.code === 'INVALID_REF') return base; throw error; }
+    const descriptor = portableRemote(remotes[0]!, await this.configValues(root, `remote.${remotes[0]}.url`, signal));
+    if (descriptor === undefined) return base;
+    const upstream = line((await this.run(root, ['for-each-ref', '--format=%(upstream:remotename)%00%(upstream:remoteref)', `refs/heads/${name}`], signal)).stdout).split('\0');
+    if (upstream.length !== 2 || upstream[0] !== remotes[0] || upstream[1] !== merge[0]) return base;
+    return { ...base, upstreamAtCreation: { ref: merge[0], remote: descriptor } };
+  }
+
+  private async captureCreationBase(root: string, kind: 'local' | 'remote', name: string, baseOid: string, remote?: string, signal?: AbortSignal): Promise<PortableCreationBase | undefined> {
+    try { return await this.creationBase(root, kind, name, baseOid, remote, signal); }
+    catch { abortIfRequested(signal); this.authorize(); return undefined; } // Optional advisory metadata never weakens live authority or blocks an otherwise supported checkout.
+  }
+
+  private async localBase(repository: RepositoryInfo, input: Extract<CreateCheckoutInput, { branchSource: 'local' }>): Promise<{ oid: string; creationBase?: PortableCreationBase }> {
     const { signal, localBranch, localOid } = input;
     if (!localBranch || localBranch.startsWith('-')) fail('INVALID_REF', 'The selected local branch name is invalid.');
     if (localOid !== undefined && !oidPattern.test(localOid)) fail('INVALID_REF', 'The selected local commit identity is invalid.');
@@ -345,6 +419,7 @@ export class GitOperations {
     const direct = oid(line((await this.run(repository.root, ['rev-parse', '--verify', '--end-of-options', ref], signal)).stdout));
     if (direct !== baseOid) fail('UNSUPPORTED_REF', 'The selected local branch must directly identify a commit.');
     if (localOid !== undefined && localOid !== baseOid) fail('BRANCH_CHANGED', 'The selected local branch moved. Reload its branch list.');
+    const captured = await this.captureCreationBase(repository.root, 'local', localBranch, baseOid, undefined, signal);
     // Compare the source under its ref lock and create (never overwrite/dereference)
     // the managed base in the same transaction. No source ref/index/file is changed.
     const pin = await this.run(repository.root, ['update-ref', '--no-deref', '--stdin'], signal, {
@@ -356,7 +431,9 @@ export class GitOperations {
     // as a recovery receipt rather than ever writing through the source reference.
     const after = await this.run(repository.root, ['symbolic-ref', '--quiet', ref], signal, { allowed: [0, 1] });
     if (after.exitCode === 0) fail('BRANCH_CHANGED', 'The selected local branch became symbolic during pinning; the exact base may remain but no checkout was created.', { refsMayHaveChanged: true });
-    return baseOid;
+    const afterCapture = await this.captureCreationBase(repository.root, 'local', localBranch, baseOid, undefined, signal);
+    const creationBase = captured !== undefined && sameCreationBase(captured, afterCapture) ? captured : localBranch === 'HEAD' ? { kind: 'detached' as const, oid: baseOid } : { kind: 'local' as const, ref: `refs/heads/${localBranch}`, oid: baseOid };
+    return { oid: baseOid, ...(creationBase === undefined ? {} : { creationBase }) };
   }
 
   private async destination(root: string, requested: string): Promise<string> {
@@ -417,9 +494,18 @@ export class GitOperations {
     const prior = await this.run(repository.root, ['show-ref', '--verify', '--quiet', input.baseRef], signal, { allowed: [0, 1] });
     if (prior.exitCode === 0) fail('BASE_REF_EXISTS', 'The persistent base reference is already in use.');
     let baseOid: string;
-    if (input.branchSource === 'local') {
+    let creationBase: PortableCreationBase | undefined;
+    if (input.branchSource === 'commit') {
+      const selection: ImportBaseSelection = input.verifyRef === 'HEAD' ? { kind: 'head', oid: input.commitOid } : input.verifyRef === undefined ? { kind: 'commit', oid: input.commitOid } : { kind: 'local-branch', name: input.verifyRef, oid: input.commitOid };
+      baseOid = await this.resolveImportBase(repository, selection, signal);
+      await this.validateImportDirectories(repository, baseOid, input.requiredDirectories, signal);
+      const pin = await this.run(repository.root, ['update-ref', '--no-deref', '--stdin'], signal, { stdin: `start\n${input.verifyRef === undefined ? '' : `verify ${input.verifyRef} ${baseOid}\n`}create ${input.baseRef} ${baseOid}\nprepare\ncommit\n`, allowed: [0, 128] });
+      if (pin.exitCode !== 0) fail('BRANCH_CHANGED', 'The reviewed ref or import base changed before pinning.');
+      await this.resolveImportBase(repository, selection, signal);
+    } else if (input.branchSource === 'local') {
       if (input.remote !== undefined || input.remoteIdentity !== undefined || input.remoteBranch !== undefined) fail('INVALID_REQUEST', 'Local source does not accept remote fields.');
-      baseOid = await this.localBase(repository, input);
+      const selected = await this.localBase(repository, input);
+      baseOid = selected.oid; creationBase = selected.creationBase;
     } else {
       if (input.branchSource !== undefined && input.branchSource !== 'remote') fail('INVALID_REQUEST', 'The branch source is invalid.');
       if (input.localBranch !== undefined || input.localOid !== undefined) fail('INVALID_REQUEST', 'Remote source does not accept local fields.');
@@ -432,6 +518,8 @@ export class GitOperations {
       await this.run(repository.root, ['fetch', '--atomic', '--refmap=', '--no-tags', '--no-write-fetch-head', '--no-recurse-submodules', '--no-auto-maintenance', '--no-write-commit-graph', '--no-prune', '--upload-pack=git-upload-pack', '--', input.remote, `+refs/heads/${input.remoteBranch}:refs/remotes/${input.remote}/${input.remoteBranch}`, `refs/heads/${input.remoteBranch}:${input.baseRef}`], signal, { fetch: true });
       if ((await this.remote(repository.root, input.remote, signal)).identity !== remote.identity) fail('REMOTE_CHANGED', 'The remote changed during fetch; fetched refs may remain.', { refsMayHaveChanged: true });
       baseOid = oid(line((await this.run(repository.root, ['rev-parse', '--verify', `${input.baseRef}^{commit}`], signal)).stdout));
+      creationBase = await this.captureCreationBase(repository.root, 'remote', input.remoteBranch, baseOid, input.remote, signal);
+      if ((await this.remote(repository.root, input.remote, signal)).identity !== remote.identity) fail('REMOTE_CHANGED', 'The selected remote changed during source-context capture; no checkout was created.', { refsMayHaveChanged: true });
     }
     const entries = await this.tree(repository.root, baseOid, signal);
     if (repository.projectSubdir && !entries.some(entry => entry.path.startsWith(`${repository.projectSubdir}/`))) fail('PROJECT_SUBDIR_MISSING', 'The project subdirectory is absent from the selected base tree.');
@@ -451,7 +539,7 @@ export class GitOperations {
       const checkoutRoot = await realpath(destination);
       const effectiveCwd = await realpath(path.join(checkoutRoot, repository.projectSubdir)).catch(() => fail('PROJECT_SUBDIR_MISSING', 'The selected base project directory is unavailable.'));
       if (checkoutRoot !== destination || !inside(checkoutRoot, effectiveCwd)) fail('UNSAFE_PATH', 'The created checkout has an unsafe project mapping.');
-      return { checkoutRoot, effectiveCwd, baseOid, baseRef: input.baseRef, fetchedAt: Date.now() };
+      return { checkoutRoot, effectiveCwd, baseOid, baseRef: input.baseRef, fetchedAt: Date.now(), ...(creationBase === undefined ? {} : { creationBase }) };
     } catch (error) {
       throw new WorktreeError(error instanceof WorktreeError ? error.code : 'CREATE_FAILED', 'Checkout creation failed; inspect the managed path before recovery. No checkout was deleted.', { checkoutMayExist: true, refsMayHaveChanged: true });
     }

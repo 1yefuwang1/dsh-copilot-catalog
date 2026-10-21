@@ -11,6 +11,7 @@ import * as Zod from 'zod';
 import { JSDOM } from 'jsdom';
 import { createComposerBlockOwner } from '../client-blocks.js';
 import type { CloudClient, CloudLocalView, CloudRequest } from '../client-model.js';
+import type { CloudImportRequest } from '../src/import/protocol.js';
 import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client';
 import type { ComposerBlocks } from '@deepseek-ai/dsh-client-ui-conversation/client';
 import type { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client';
@@ -80,7 +81,13 @@ async function bench({ blank = false, hangStatus = false, nativeVisibility = fal
   ctx.provide('configForms', { get: () => undefined, developerTools: { enabled: Store.createSnapshotStore(false) } });
   ctx.provide('uiSession', { provide: () => () => undefined });
   ctx.provide('connection', { generation, rpc: { call: async (route: string, endpoint: string, payload: { v: number; request: CloudRequest }, signal?: AbortSignal) => {
-    assert.equal(route, '/api'); assert.equal(payload.v, 1); assert.equal(endpoint, payload.request.action === 'status' || payload.request.action === 'mappings' ? 'azure-sync/status' : 'azure-sync/action');
+    assert.equal(route, '/api'); assert.equal(payload.v, 1);
+    if (endpoint === 'azure-sync/import') {
+      const request = payload.request as unknown as CloudImportRequest;
+      assert.equal(request.action, 'import-admission');
+      return success({ version: 2, kind: 'import-admission', sessionId: 'sessionId' in request ? request.sessionId : SID, reserved: false, ready: true, continued: true });
+    }
+    assert.equal(endpoint, payload.request.action === 'status' || payload.request.action === 'mappings' ? 'azure-sync/status' : 'azure-sync/action');
     calls.push({ request: payload.request, signal });
     if (payload.request.action === 'status') {
       if (statusWaiting) return pending.promise;

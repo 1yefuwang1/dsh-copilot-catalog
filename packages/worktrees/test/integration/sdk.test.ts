@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdir, realpath, readFile, rm } from 'node:fs/promises';
-import vm from 'node:vm';
+import { clientProtocol as actualClientProtocol } from '../client-artifact.js';
 import { basename, dirname, resolve, relative } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import type { Agent } from '@deepseek-ai/dsh-agent';
@@ -43,7 +43,7 @@ interface FixtureWorkspace { id: string; path: string; title: string; sessionIds
 function toolCallId(id: string) { return id as Parameters<ToolRuntime['execute']>[0]['callId']; }
 
 function domainTables(worktree: WorktreeRecord) {
-  const tables = { dsh_worktrees: { worktrees: memoryTable<WorktreeRecord>(), operations: memoryTable<OperationRecord>() }, dsh_worktree_projects: { projects: memoryTable<ProjectRecord>(), bindings: memoryTable<ProjectThreadBinding>(), starts: memoryTable<ProjectStartRecord>(), removals: memoryTable<ProjectRemovalRecord>() }, dsh_worktree_cleanup: { cleanup: memoryTable<CleanupReceipt>(), reopens: memoryTable<ReopenReceipt>() } };
+  const tables = { dsh_worktrees: { worktrees: memoryTable<WorktreeRecord>(), operations: memoryTable<OperationRecord>() }, dsh_worktree_projects: { projects: memoryTable<ProjectRecord>(), bindings: memoryTable<ProjectThreadBinding>(), starts: memoryTable<ProjectStartRecord>(), removals: memoryTable<ProjectRemovalRecord>() }, dsh_worktree_cleanup: { cleanup: memoryTable<CleanupReceipt>(), reopens: memoryTable<ReopenReceipt>() }, dsh_worktree_import_placement: { placements: memoryTable<unknown>(), sources: memoryTable<unknown>() } };
   tables.dsh_worktrees.worktrees.map.set(worktree.id, worktree); return tables;
 }
 async function hostFixture(t: TestContext) {
@@ -145,12 +145,12 @@ test('public plain-string apply config retains compatibility and invalid getters
   f.host.provide('sessionPersistence', {}); f.host.provide('workspaceRegistry', f.registry);
   const config = { ...plugin.Config({ cleanupEnabled: false }), root: relative(process.cwd(), resolve(f.root, 'legacy-managed')) };
   const owner = f.host.plugin({ name: 'plain-root-config-compat', apply: ctx => plugin.apply(ctx, config) }); f.scopes.push(owner); await owner;
-  assert.equal(opened, 3); assert.equal(required(f.host.commands.find(source, 'worktree')).name, 'worktree');
+  assert.equal(opened, 4); assert.equal(required(f.host.commands.find(source, 'worktree')).name, 'worktree');
   await owner.dispose();
   for (const root of [{ get() { throw Error('private getter failure'); } }, { get: () => 'relative-live-root' }, { get: () => '' }, { get: () => resolve('/') }]) {
     await assert.rejects(plugin.apply(owner.ctx, { ...config, root }), error => hasCode('INVALID_ROOT')(error) || hasCode('UNSAFE_ROOT')(error));
   }
-  assert.equal(opened, 3, 'invalid initial roots fail before storage is opened');
+  assert.equal(opened, 4, 'invalid initial roots fail before storage is opened');
 });
 
 test('optional native settings presentation belongs to plugin fiber and is disposed with it', async t => {
@@ -172,7 +172,7 @@ test('published plugin Config and real SDK register command/tool and dispose exa
   assert.equal(config.defaultRemote, 'origin'); assert.equal(config.gitExecutable, 'git'); assert.equal(config.maxFiles, 1000);
   const pluginScope = f.host.plugin(plugin, { root: resolve(f.root, 'managed'), cleanupEnabled: false }); f.scopes.push(pluginScope);
   await pluginScope;
-  assert.equal(opened, 3); assert.equal(required(f.host.commands.find(source, 'worktree')).name, 'worktree');
+  assert.equal(opened, 4); assert.equal(required(f.host.commands.find(source, 'worktree')).name, 'worktree');
   assert.equal(required(f.host.commands.find(source, 'project')).name, 'project');
   assert.ok(f.host.tools.schemas(source).some(tool => tool.name === 'workspace_project'));
   const schema = f.host.tools.schemas(source).find(tool => tool.name === 'git_worktree'); assert.ok(schema); assert.equal(schema.parameters.additionalProperties, false); assert.ok(!('fullAccess' in (schema.parameters.properties as Record<string, unknown>)));
@@ -184,7 +184,7 @@ test('published plugin Config and real SDK register command/tool and dispose exa
   assert.equal(tool.isError, false); assert.equal((tool.value as DynamicMock).v, 1); assert.equal((tool.value as DynamicMock).data.worktree.protected, false);
   const missingActor = await f.host.tools.execute({ name: 'git_worktree', callId: toolCallId('worktree-sdk-no-caller'), arguments: { action: 'protect', id: worktree.id, protected: false }, signal }); assert.equal(missingActor.isError, true); assert.match(JSON.stringify(missingActor), /NO_CALLER|receiving agent/u);
   const invalid = await f.host.commands.execute(source, '/worktree create {"fullAccess":true}', [], signal); assert.equal(required(invalid).result.kind, 'error'); assert.equal(JSON.parse(required(required(invalid).result.text)).error.code, 'INVALID_REQUEST');
-  await pluginScope.dispose(); assert.equal(f.host.commands.find(source, 'worktree'), undefined); assert.ok(!f.host.tools.schemas(source).some(tool => tool.name === 'git_worktree')); assert.equal(closed, 3); assert.equal(f.host.commands.find(source, 'project'), undefined); assert.ok(!f.host.tools.schemas(source).some(tool => tool.name === 'workspace_project'));
+  await pluginScope.dispose(); assert.equal(f.host.commands.find(source, 'worktree'), undefined); assert.ok(!f.host.tools.schemas(source).some(tool => tool.name === 'git_worktree')); assert.equal(closed, 4); assert.equal(f.host.commands.find(source, 'project'), undefined); assert.ok(!f.host.tools.schemas(source).some(tool => tool.name === 'workspace_project'));
 });
 
 test('actual plugin exact UI routes coexist with the real SDK gateway and await admission disposal', async t => {
@@ -246,7 +246,7 @@ test('actual plugin exact UI routes coexist with the real SDK gateway and await 
   assert.equal((await transport.response('dsh-worktrees/progress', {})).response.status, 404);
   assert.equal(disposed, false); assert.equal(closed, 0);
   release(); const pendingResult = await pending; assert.equal(pendingResult.error.code, 'CANCELLED'); await disposal;
-  assert.equal(closed, 3); assert.equal(f.events.length, before);
+  assert.equal(closed, 4); assert.equal(f.events.length, before);
   assert.deepEqual(await transport.rpc('session/foo', {}), { ok: true, value: true });
   assert.ok(transport.gatewayCalls.every(call => call.peer.id === transport.connection.browserPeer.id && call.peer.ctx === transport.connection.browserPeer.ctx));
   assert.equal(f.host.commands.find(source, 'worktree'), undefined); assert.ok(!f.host.tools.schemas(source).some(value => value.name === 'git_worktree'));
@@ -301,10 +301,8 @@ test('actual Host project DTOs decode in actual Client protocol and share quiet 
   let resolutions = 0;
   f.host.provide('sessionController', { async resolveAgent(id: string) { resolutions++; return { agent: f.agents.get(id) }; } });
   const pluginScope = f.host.plugin(plugin, { root: resolve(f.root, 'managed'), cleanupEnabled: false }); f.scopes.push(pluginScope); await pluginScope;
-  const javascript = await readFile(new URL('../../dist/client.js', import.meta.url), 'utf8');
-  const from = javascript.indexOf('    class WorktreeError extends Error'), to = javascript.indexOf('    function Icon(', from);
-  // Only execute actual pure protocol declarations; no React/DOM renderer is made.
-  const client: ClientProtocol = vm.runInNewContext(`(() => { const NS='worktrees.ui', PANEL='dsh-worktrees'; ${javascript.slice(from, to)}; return {decodeReply, projectData}; })()`, { AbortController });
+  // Execute actual minified factory.protocol; no source-slice substitute.
+  const client: ClientProtocol = actualClientProtocol();
   const signal = new AbortController().signal;
   const rpc = async (request: unknown, actorId?: string) => {
     const reply = await transport.rpc('dsh-worktrees/projects', { v: 1, request, ...(actorId === undefined ? {} : { actorId }) }, { signal });

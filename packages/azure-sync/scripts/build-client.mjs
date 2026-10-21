@@ -12,8 +12,11 @@ await build({
   platform: 'browser',
   target: ['es2022'],
   legalComments: 'none',
-  // Keep diagnostic/component names while bounding the browser-only asset.
+  // Preserve observable diagnostic/component names while bounding the growing public UI.
+  keepNames: true,
   minifyWhitespace: true,
+  minifyIdentifiers: true,
+  minifySyntax: true,
   charset: 'utf8',
   logLevel: 'warning',
 });

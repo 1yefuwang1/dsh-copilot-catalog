@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { webcrypto } from 'node:crypto';
 import test from 'node:test';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { SlotCore } from '@deepseek-ai/dsh-client-ui-slots';
+import { clientProbe, staticClientSource } from './client-artifact.js';
 
 // React stub hook inputs cross the VM contract.
 
@@ -49,22 +49,19 @@ const nativeWorkspace = await readFile(resolve(dirname(peerRequire.resolve('@dee
 const nativePrimitives = await readFile(resolve(dirname(peerRequire.resolve('@deepseek-ai/dsh-client-ui-primitives/package.json')), 'lib/index.js'), 'utf8');
 const nativeStateCss = await readFile(resolve(dirname(peerRequire.resolve('@deepseek-ai/dsh-client-ui-primitives/package.json')), 'lib/StateDot.module.css'), 'utf8');
 
-// Static assertions ignore emitted line wrapping; VM execution keeps the original text.
+// Readable static-only invariants are separate from behavior. Probe only actual
+// emitted keepNames bindings; no source-slice execution/recompilation substitute.
 function staticSource(text: string): string { return text.replace(/\s+/g, ' '); }
-const source = await readFile(new URL('../dist/client.js', import.meta.url), 'utf8');
-// Execute real protocol/coordinator helpers, plus one guarded render of the real
-// ProjectEditor against a minimal hook stub. No DOM, app double or screenshot
-// substitute is used; the render test exists to catch state/wiring defects.
-const start = source.indexOf('class WorktreeError extends Error');
-const end = source.indexOf('function Icon(', start);
-const helpers: VmValue = vm.runInNewContext(`(() => { const NS = 'worktrees.ui', PANEL = 'dsh-worktrees', VIEW_SWITCH = PANEL + '-projects-view'; ${source.slice(start, end)}; return {
-  absolutePath, projectRequest, projectData, requestProjects, workspaceStructure,
-  projectContext, projectBacking, captureProject, sameProject, projectPath, projectActor, projectRows,
-  visibleProjectRows, projectRowState, projectSessionTime, createProjectStore, projectSlotName, projectChildren,
-  projectSlots, mirrorProjectSlot, createSidebarMode, sidebarViewLabel, registerSidebarViewSwitch,
-  appendProjectFolders, toggleProjectFolder, projectFolderName, createFolderScanner, createProjectSubmitter,
-  projectMainFolder, draftMainFolder, chooseConversationFolder, nativeFolderPicker, addModesFor, matchingAddMode, preferredAddMode, browseSupported, settleFirst,
-}; })()`, { AbortController, crypto: webcrypto });
+const source = staticClientSource;
+const helperNames = [
+  'absolutePath', 'projectRequest', 'projectData', 'requestProjects', 'workspaceStructure',
+  'projectContext', 'projectBacking', 'captureProject', 'sameProject', 'projectPath', 'projectActor', 'projectRows',
+  'visibleProjectRows', 'projectRowState', 'projectSessionTime', 'createProjectStore', 'projectSlotName', 'projectChildren',
+  'projectSlots', 'mirrorProjectSlot', 'createSidebarMode', 'sidebarViewLabel', 'registerSidebarViewSwitch',
+  'appendProjectFolders', 'toggleProjectFolder', 'projectFolderName', 'createFolderScanner', 'createProjectSubmitter',
+  'projectMainFolder', 'draftMainFolder', 'chooseConversationFolder', 'nativeFolderPicker', 'addModesFor', 'matchingAddMode', 'preferredAddMode', 'browseSupported', 'settleFirst', 'en', 'zh',
+];
+const helpers: VmValue = clientProbe(helperNames);
 const success = <T>(data: T) => ({ ok: true, value: { v: 1, ok: true, data } });
 const projectId = '12345678-1234-4234-8234-123456789abc';
 const operationId = 'abcdefab-1234-4234-8234-123456789abc';
@@ -398,7 +395,7 @@ test('view switch uses the native navigation row and exact destination labels', 
   assert.match(staticSource(source), /registerSidebarViewSwitch\(ctx, sidebarMode, SidebarToggle\)/);
   assert.match(staticSource(source), /id: VIEW_SWITCH, order: 400/);
   assert.match(staticSource(source), /id: PANEL, order: 450/);
-  const dictionaries = vm.runInNewContext(`(() => { ${source.slice(source.indexOf('const en ='), source.indexOf('const css ='))}; return { en, zh }; })()`);
+  const dictionaries = { en: helpers.en, zh: helpers.zh };
   const mode = helpers.createSidebarMode(() => () => {});
   assert.equal(helpers.sidebarViewLabel(mode, (key: string) => dictionaries.en[key]), 'Switch to Workspace View');
   mode.toggle(); assert.equal(helpers.sidebarViewLabel(mode, (key: string) => dictionaries.en[key]), 'Switch to Projects View');
@@ -462,7 +459,7 @@ test('sidebar title, date, row and counted-expansion metrics match native Folder
 test('session last-active labels match native relative-time buckets and dictionaries without a timer', () => {
   const start = nativePrimitives.indexOf('function relativeTime(at, now)');
   const relative = vm.runInNewContext(`(() => { ${nativePrimitives.slice(start, nativePrimitives.indexOf('//#endregion', start))}; return relativeTime; })()`);
-  const dictionaries = vm.runInNewContext(`(() => { ${source.slice(source.indexOf('const en ='), source.indexOf('const css ='))}; return { en, zh }; })()`);
+  const dictionaries = { en: helpers.en, zh: helpers.zh };
   const translate = (dict: Record<string, string>) => (key: string, args: Record<string, unknown> = {}) => dict[key]!.replace!(/\{([^}]+)\}/g, (_match: string, field: string) => String(args[field]));
   const now = Date.UTC(2026, 9, 10, 9, 41), day = 86400000;
   for (const dict of [dictionaries.en, dictionaries.zh]) {
@@ -801,21 +798,13 @@ test('project dialog declares the compact reference layout and a separately stag
 test('each add entry follows the picker capability the session actually composes', async () => {
   // Each session is a separate global realm. Only a desktop bridge advertises
   // native picking; the Host's listing capability independently enables browsing.
-  const classError = (() => {
-    const from = source.indexOf('class WorktreeError extends Error');
-    const to = source.indexOf('function object(', from);
-    assert.ok(from >= 0 && to > from, 'the complete emitted error class is extracted');
-    return source.slice(from, to);
-  })();
-  const helpersSource = ['addModesFor', 'matchingAddMode', 'nativeFolderPicker', 'browseSupported', 'settleFirst'].map((name: string) => `const ${name} = ${helpers[name].toString()};`).join('\n') + `\n${classError}`;
-  const session = (sandbox: Record<string, unknown>) => vm.runInNewContext(`(() => { ${helpersSource}
-    return (async () => {
-      const ctx = globalThis.__ctx;
-      const picker = nativeFolderPicker(ctx);
-      const browse = await browseSupported(ctx.uiWorkspace);
-      const modes = addModesFor({ picker, browse });
-      return { modes: modes.join(','), pick: picker ? await picker() : null };
-    })(); })()`, { AbortController, ...sandbox });
+  const session = async (sandbox: Record<string, unknown>) => {
+    const actual = clientProbe(['addModesFor', 'nativeFolderPicker', 'browseSupported'], sandbox);
+    const ctx = sandbox.__ctx as { uiWorkspace: unknown };
+    const picker = actual.nativeFolderPicker(ctx), browse = await actual.browseSupported(ctx.uiWorkspace);
+    const modes = actual.addModesFor({ picker, browse });
+    return { modes: modes.join(','), pick: picker ? await picker() : null };
+  };
   const unbrowseable = async () => { throw new Error('directory picker unavailable'); };
 
   // Desktop: the bridge answers, so the Host verb must not be asked at all — asking

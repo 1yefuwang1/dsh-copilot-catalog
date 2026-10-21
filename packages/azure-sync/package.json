@@ -15,6 +15,22 @@
       "types": "./dist/protocol.d.ts",
       "import": "./dist/protocol.js"
     },
+    "./git-context": {
+      "types": "./dist/git/context.d.ts",
+      "import": "./dist/git/context.js"
+    },
+    "./import-protocol": {
+      "types": "./dist/import/protocol.d.ts",
+      "import": "./dist/import/protocol.js"
+    },
+    "./import-guard": {
+      "types": "./dist/import/guard.d.ts",
+      "import": "./dist/import/guard.js"
+    },
+    "./import-persistence": {
+      "types": "./dist/import/persistence.d.ts",
+      "import": "./dist/import/persistence.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -27,14 +43,14 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && node scripts/build-client.mjs",
-    "typecheck": "tsc -p tsconfig.json && tsc -p test/tsconfig.json && tsc -p tsconfig.client.json",
-    "test": "pnpm run build && node --import tsx --test test/config.test.ts test/auth.test.ts test/azure.test.ts test/schema.test.ts test/canonical.test.ts test/chain.test.ts test/committed-index.test.ts test/effective-cwd.test.ts test/import-state.test.ts test/guards.test.ts test/local-store.test.ts test/uploader.test.ts test/admission.test.ts test/drain.test.ts test/drain-coordinator.test.ts test/lease.test.ts test/scheduler.test.ts test/lifecycle.test.ts test/session-source.test.ts test/cloud-repository.test.ts test/remote-session.test.ts test/attachments.test.ts test/projection-warmer.test.ts test/importer.test.ts test/early-claims.test.ts test/workspace.test.ts test/recovery.test.ts test/import-jsonl.test.ts test/live-guard.test.ts test/conflict.test.ts test/reconciler.test.ts test/tombstone.test.ts test/poller.test.ts test/cleanup.test.ts test/tombstone-manager.test.ts test/two-store.test.ts test/service.test.ts test/resurrection.test.ts test/startup.test.ts test/settings.test.ts test/protocol.test.ts test/rpc.test.ts test/commands.test.ts test/controller.test.ts test/takeover-control.test.ts test/catalog-page.test.ts test/control-cancel.test.ts test/publication-races.test.ts test/client-model.test.ts test/client-blocks.test.ts test/client-ui.test.ts test/client-source.test.ts test/client-sdk.test.ts test/repair-flow.test.ts test/git.test.ts",
+    "build": "tsc -p tsconfig.json && node scripts/build-client.mjs && node scripts/compact-dist.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p test/tsconfig.json && tsc -p tsconfig.client.json",
+    "test": "pnpm run build && node --import tsx --test test/config.test.ts test/auth.test.ts test/azure.test.ts test/schema.test.ts test/canonical.test.ts test/chain.test.ts test/committed-index.test.ts test/effective-cwd.test.ts test/import-state.test.ts test/guards.test.ts test/local-store.test.ts test/uploader.test.ts test/admission.test.ts test/drain.test.ts test/drain-coordinator.test.ts test/lease.test.ts test/scheduler.test.ts test/lifecycle.test.ts test/session-source.test.ts test/cloud-repository.test.ts test/remote-session.test.ts test/attachments.test.ts test/projection-warmer.test.ts test/importer.test.ts test/early-claims.test.ts test/workspace.test.ts test/recovery.test.ts test/import-jsonl.test.ts test/live-guard.test.ts test/conflict.test.ts test/reconciler.test.ts test/tombstone.test.ts test/poller.test.ts test/cleanup.test.ts test/tombstone-manager.test.ts test/two-store.test.ts test/service.test.ts test/resurrection.test.ts test/startup.test.ts test/settings.test.ts test/protocol.test.ts test/rpc.test.ts test/commands.test.ts test/controller.test.ts test/takeover-control.test.ts test/catalog-page.test.ts test/control-cancel.test.ts test/publication-races.test.ts test/client-model.test.ts test/client-blocks.test.ts test/client-ui.test.ts test/client-source.test.ts test/client-sdk.test.ts test/repair-flow.test.ts test/git.test.ts test/git-context.test.ts test/import-protocol.test.ts test/import-native-feasibility.test.ts test/import-compatibility-feasibility.test.ts test/import-foundation.test.ts test/client-import-model.test.ts test/client-import-ui.test.ts test/import-admission-client.test.ts test/import-cwd-admission.test.ts test/import-coordinator.test.ts test/import-sqlite.test.ts test/import-packaged-profile.test.ts test/git-context-probe.test.ts test/git-context-publication.test.ts test/import-worktree-coordinator.test.ts test/import-rpc.test.ts test/import-native-command.test.ts test/import-local-code.test.ts test/git-context-cwd-scope.test.ts",
     "check": "pnpm run typecheck && tsx ../../scripts/check.ts",
     "verify": "pnpm run check:secrets && pnpm run check && pnpm run test && pnpm run test:azurite && pnpm run test:pack",
     "check:secrets": "tsx ../../scripts/check-secrets.ts",
     "test:pack": "pnpm run build && tsx ../../scripts/check-pack.ts . && node --import tsx --test test/package-smoke.test.ts",
-    "test:azurite": "pnpm run build && node --import tsx --test test/azurite.test.ts test/control-runtime.test.ts test/cost-profile.test.ts",
+    "test:azurite": "pnpm run build && node --import tsx --test test/azurite.test.ts test/control-runtime.test.ts test/cost-profile.test.ts test/git-context-first-on.test.ts",
     "test:integration": "pnpm run test:azurite",
     "test:types": "pnpm run build && tsc -p test/tsconfig.json",
     "measure:cost": "pnpm run build && node --import tsx --test test/cost-profile.test.ts"
@@ -54,6 +70,8 @@
     "registry": "https://registry.npmjs.org/"
   },
   "devDependencies": {
+    "@1yefuwang1/dsh-worktrees": "link:../worktrees",
+    "@deepseek-ai/node-addon-system": "0.1.2",
     "@deepseek-ai/dsh-agent-loop": "0.2.1-rc.2",
     "@deepseek-ai/dsh-client-locale": "0.2.1-rc.2",
     "@deepseek-ai/dsh-client-store": "0.2.1-rc.2",
@@ -68,6 +86,7 @@
     "@deepseek-ai/dsh-llm": "0.2.1-rc.2",
     "@deepseek-ai/dsh-session-persistence-jsonl": "0.2.1-rc.2",
     "@deepseek-ai/dsh-session-projection": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-session-query-sqlite": "0.2.1-rc.2",
     "@deepseek-ai/dsh-storage": "0.2.1-rc.2",
     "@deepseek-ai/dsh-storage-domain": "0.2.1-rc.2",
     "@deepseek-ai/dsh-storage-json": "0.2.1-rc.2",
@@ -93,10 +112,12 @@
     "zod": "4.4.3"
   },
   "peerDependencies": {
+    "@1yefuwang1/dsh-worktrees": ">=0.2.23",
     "@deepseek-ai/cordis": "~4.0.5",
     "@deepseek-ai/dsh-agent": "0.2.1-rc.2",
     "@deepseek-ai/dsh-agent-preset-registry": "0.2.1-rc.2",
     "@deepseek-ai/dsh-api-session-controller": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-app-boot": "0.2.1-rc.2",
     "@deepseek-ai/dsh-attachment": "0.2.1-rc.2",
     "@deepseek-ai/dsh-client-connection": "0.2.1-rc.2",
     "@deepseek-ai/dsh-commands": "0.2.1-rc.2",
@@ -104,11 +125,27 @@
     "@deepseek-ai/dsh-home-paths": "0.2.1-rc.2",
     "@deepseek-ai/dsh-session": "0.2.1-rc.2",
     "@deepseek-ai/dsh-session-persistence": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-session-persistence-jsonl": "0.2.1-rc.2",
     "@deepseek-ai/dsh-session-query": "0.2.1-rc.2",
     "@deepseek-ai/dsh-storage-domain": "0.2.1-rc.2",
     "@deepseek-ai/dsh-subprocess": "0.2.1-rc.2",
     "@deepseek-ai/dsh-workspace": "0.2.1-rc.2",
+    "@deepseek-ai/node-addon-system": "0.1.2",
     "@deepseek-ai/schemastery": "~3.18.5"
+  },
+  "peerDependenciesMeta": {
+    "@1yefuwang1/dsh-worktrees": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-session-persistence-jsonl": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-app-boot": {
+      "optional": true
+    },
+    "@deepseek-ai/node-addon-system": {
+      "optional": true
+    }
   },
   "dsh": {
     "manifestVersion": 1,

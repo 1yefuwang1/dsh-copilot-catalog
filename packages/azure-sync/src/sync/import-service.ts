@@ -7,12 +7,18 @@ import { AzureSyncError } from '../azure/errors.js';
 import type { RemoteSession } from './remote-session.js';
 import type { ImportRecovery } from './recovery.js';
 
+export interface DestinationImportRouting {
+  reserved(sessionId: string): Promise<boolean>;
+  legacy(sessionId: string): Promise<never>;
+  catchUp(sessionId: string, remote: RemoteSession, options: CatchUpOptions): Promise<ImportResult>;
+}
+
 export class ImportService {
   private readonly importer: Importer;
   private readonly claims?: EarlyImportClaims;
   private readonly recovery?: ImportRecovery;
 
-  constructor(importer: Importer, claims?: EarlyImportClaims, recovery?: ImportRecovery) {
+  constructor(importer: Importer, claims?: EarlyImportClaims, recovery?: ImportRecovery, private readonly destinations?: DestinationImportRouting) {
     this.importer = importer;
     this.claims = claims;
     this.recovery = recovery;
@@ -20,6 +26,7 @@ export class ImportService {
 
   async importSession(sessionId: string, signal?: AbortSignal): Promise<ImportResult> {
     signal?.throwIfAborted();
+    if (await this.destinations?.reserved(sessionId)) return this.destinations!.legacy(sessionId);
     const handle = this.claims?.take(sessionId);
     if (handle === undefined) return this.importer.import(sessionId, undefined, signal);
     try { return await this.importer.resume(sessionId, handle, { signal }); }
@@ -32,6 +39,7 @@ export class ImportService {
 
   async resume(sessionId: string, options: ResumeImportOptions = {}): Promise<ImportResult> {
     options.signal?.throwIfAborted();
+    if (await this.destinations?.reserved(sessionId)) return this.destinations!.legacy(sessionId);
     const handle = this.claims?.take(sessionId);
     try { return await this.importer.resume(sessionId, handle, options); }
     catch (error) {
@@ -46,6 +54,7 @@ export class ImportService {
   }
 
   async catchUp(sessionId: string, remote: RemoteSession, options: CatchUpOptions): Promise<ImportResult> {
+    if (await this.destinations?.reserved(sessionId)) return this.destinations!.catchUp(sessionId, remote, options);
     return this.importer.catchUp(sessionId, remote, options);
   }
 
