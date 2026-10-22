@@ -126,6 +126,19 @@ test('get enumerates safe metadata and never opts new threads in, including admi
   assert.equal(Object.hasOwn(view, 'connectionString'), false);
 });
 
+test('new preferences default to30 seconds while explicit durable300-second preference is preserved', async () => {
+  const fresh = new SettingsService({ local: fakeLocal().local, config: config() });
+  assert.equal(fresh.effectiveConfig().pollSeconds, 30);
+  assert.equal((await fresh.get()).pollSeconds, 30);
+  const local = fakeLocal({ defaultEnabled: false, pullOnStartup: true, pollSeconds: 300 });
+  const existing = new SettingsService({ local: local.local, config: config() });
+  assert.equal(existing.effectiveConfig().pollSeconds, 300);
+  assert.equal((await existing.get()).pollSeconds, 300);
+  assert.equal((await existing.setDefaults({ pullOnStartup: false })).pollSeconds, 300);
+  assert.equal(local.state.record?.pollSeconds, 300);
+  assert.equal((await existing.setDefaults({ pollSeconds: 30 })).pollSeconds, 30);
+});
+
 test('legacy durable defaultEnabled true loads as off and every next settings write persists false', async () => {
   for (const nextWrite of ['auth', 'defaults']) {
     const local = fakeLocal({ defaultEnabled: true, pullOnStartup: false, pollSeconds: 45 });
@@ -178,7 +191,7 @@ test('auth writes only through the public fixed-reference credential API and ord
   assert.deepEqual(events, ['before', 'put', 'set', 'put', 'change']);
   assert.equal(credentials.state.value, SECRET);
   assert.match(local.state.record?.authGeneration ?? '', /^[0-9a-f-]{36}$/u);
-  assert.deepEqual(local.state.record, { defaultEnabled: false, pullOnStartup: true, pollSeconds: 300,
+  assert.deepEqual(local.state.record, { defaultEnabled: false, pullOnStartup: true, pollSeconds: 30,
     auth: 'connection-string', accountName: 'account456', managedIdentityClientId: '', updatedAt: 123,
     authGeneration: local.state.record?.authGeneration });
   assert.equal(view.authPending, false);

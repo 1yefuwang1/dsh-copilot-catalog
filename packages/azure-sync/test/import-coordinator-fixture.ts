@@ -106,15 +106,15 @@ export async function coordinatorFixture(root: string, cloud: AcceptanceCloud, o
     coldSnapshot(header: SessionHeader, inherited: number, events: readonly SessionEvent[]) { snapshots.set(header.id, ctx.sessionProjections.restore({}, events, 0 as never, header, inherited as never).snapshot); },
     cachedSnapshot(header: SessionHeader) { return snapshots.get(header.id); },
   } as never });
-  const importer = new Importer({ config, local, persistence: ctx.sessionPersistence, repository: cloud.asRepository(),
+  const reader = new RemoteSessionReader(cloud.asRepository(), { scope: cloud.historyScope, maxCompressedBytes: 1_048_576, maxExpandedBytes: config.maxBatchBytes, maxEvents: config.maxEventsPerSession });
+  const importer = new Importer({ config, local, persistence: ctx.sessionPersistence, repository: cloud.asRepository(), reader,
     cwdBinding: (sid) => bindings.binding(sid), projection, now: Date.now });
   const localProbe = new GitProbe({ executable: config.gitExecutable, timeoutMs: config.gitTimeoutMs, defaultRemote: config.defaultRemote });
   const coordinator = await DestinationImportCoordinator.create({ ctx, guard, local, settingsKey: () => sha256Hex('fixture-settings'), current: () => runtime,
     observeLocalGit: (cwd, scopeRoot, anchor, signal) => localProbe.capture(cwd, scopeRoot, 'receiver', anchor, undefined, AbortSignal.any([signal, AbortSignal.timeout(config.gitTimeoutMs)])),
     runtime: async signal => { runtimeCalls++; signal.throwIfAborted(); if (!runtime) throw new Error('No runtime'); return runtime; } });
   const imports = new ImportService(importer, undefined, undefined, coordinator);
-  const uploader = new Uploader({ config, source, repository: cloud.asRepository(), local, leases: cloud.leases('receiver'), deviceId: 'receiver', platform: 'linux', cwdBinding: (sid, record) => bindings.binding(sid, record), destinationReady: sid => bindings.ready(sid), now: Date.now });
-  const reader = new RemoteSessionReader(cloud.asRepository(), { maxCompressedBytes: 1_048_576, maxExpandedBytes: config.maxBatchBytes, maxEvents: config.maxEventsPerSession });
+  const uploader = new Uploader({ config, source, repository: cloud.asRepository(), reader, local, leases: cloud.leases('receiver'), deviceId: 'receiver', platform: 'linux', cwdBinding: (sid, record) => bindings.binding(sid, record), destinationReady: sid => bindings.ready(sid), now: Date.now });
   const service = new SyncService({ uploader, local, imports, reader, source, repository: cloud.asRepository(), agents: ctx.agents, destinationReady: sid => bindings.ready(sid), now: Date.now });
   const coreAbort = new AbortController();
   runtime = { scope: sha256Hex('fixture-account'), signal: coreAbort.signal, config, importer, reader, service, repository: cloud.asRepository() };

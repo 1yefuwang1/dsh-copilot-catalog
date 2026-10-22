@@ -1,3 +1,4 @@
+import { withHistory, fixturePublicationScope } from './runtime-history-fixture.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mkdtemp, mkdir, realpath, rm } from 'node:fs/promises';
@@ -23,7 +24,12 @@ import type { CwdBinding } from '../src/sync/effective-cwd.js';
 import { nodeCwdFs } from '../src/sync/effective-cwd.js';
 import { chainEvents, genesisHash, headerHash } from '../src/sync/chain.js';
 import { payloadBytes } from '../src/sync/canonical.js';
-import { batchRow, cloudSession, event, localSession, pathMapping, sessionHeader } from './helpers.js';
+import { batchRow, cloudSession, event, localSession as unscopedLocalSession, pathMapping, sessionHeader } from './helpers.js';
+
+// These explicit fixture records represent existing consent for this fixture account.
+function localSession(overrides: Parameters<typeof unscopedLocalSession>[0] = {}) {
+  return unscopedLocalSession({ publicationScope: fixturePublicationScope, ...overrides });
+}
 import { AzureSyncError } from '../src/azure/errors.js';
 
 const storageRequire = createRequire(import.meta.resolve('@deepseek-ai/dsh-storage-domain'));
@@ -81,7 +87,7 @@ function remoteFixture(withAttachment = false) {
   const c1 = chainEvents(c0.chainHash, [e1]);
   const row0 = batchRow(sessionId, 1, 0, { endSeq: 0, eventCount: 1, prevChainHash: genesis, chainHash: c0.chainHash, headHash: c0.headHash, payloadHash: c0.payloadHash });
   const row1 = batchRow(sessionId, 1, 1, { endSeq: 1, eventCount: 1, prevChainHash: c0.chainHash, chainHash: c1.chainHash, headHash: c1.headHash, payloadHash: c1.payloadHash, prevBatchRowKey: row0.rowKey });
-  const entity = cloudSession({ sessionId, headerHash: binding, eventCount: 2, chainHash: c1.chainHash, lastBatchRowKey: row1.rowKey, lastBatchGeneration: 1, batchCount: 2 });
+  const entity = cloudSession({ sessionId, headerHash: binding, eventCount: 2, headSeq: 1, headHash: c1.headHash, chainHash: c1.chainHash, lastBatchRowKey: row1.rowKey, lastBatchGeneration: 1, lastBatchBlobName: row1.blobName, batchCount: 2 });
   const manifest: StoredManifest = { entity, etag: 'etag-1' };
   const blobs = new Map([[row0.blobName, gzipSync(payloadBytes([e0]))], [row1.blobName, gzipSync(payloadBytes([e1]))]]);
   const repository = {
@@ -121,10 +127,10 @@ async function fixture(remote = remoteFixture()) {
   const binding: CwdBinding = { mapping: pathMapping({ remotePrefix: '/remote/project', localPrefix: real, remotePlatform: 'linux' }), fs: nodeCwdFs };
   const persistence = new FakePersistence();
   const projection = { warm: async () => 'complete' } as unknown as ProjectionWarmer;
-  const importer = new Importer({
+  const importer = new Importer(withHistory({
     config: Config({}), persistence: persistence as unknown as SessionPersistence, repository: remote.repository,
     local, cwdBinding: async () => binding, projection, now: () => 1,
-  });
+  }));
   const onWrite = (hook: (record: ReturnType<typeof localSession>) => void | Promise<void>) => { afterWrite = hook; };
   return { root, real, remote, records, local, persistence, importer, binding, onWrite };
 }
@@ -168,23 +174,23 @@ test('preflight refuses schedule events and a missing binding before create', as
   const scheduleEvent = event(0, 'schedule/change');
   const scheduleChain = chainEvents(scheduleGenesis, [scheduleEvent]);
   const scheduleRow = batchRow('session-test', 1, 0, { endSeq: 0, eventCount: 1, prevChainHash: scheduleGenesis, chainHash: scheduleChain.chainHash, headHash: scheduleChain.headHash, payloadHash: scheduleChain.payloadHash });
-  const scheduleImporter = new Importer({
+  const scheduleImporter = new Importer(withHistory({
     config: Config({}), persistence: f.persistence as unknown as SessionPersistence, repository: {
       getManifest: async () => ({
-        entity: cloudSession({ sessionId: 'session-test', headerJson: JSON.stringify(scheduleHeader), headerHash: scheduleBinding, eventCount: 1, chainHash: scheduleChain.chainHash, lastBatchRowKey: scheduleRow.rowKey, lastBatchGeneration: 1 }),
+        entity: cloudSession({ sessionId: 'session-test', headerJson: JSON.stringify(scheduleHeader), headerHash: scheduleBinding, eventCount: 1, headHash: scheduleChain.headHash, chainHash: scheduleChain.chainHash, lastBatchRowKey: scheduleRow.rowKey, lastBatchGeneration: 1, lastBatchBlobName: scheduleRow.blobName }),
         etag: 'e',
       }),
       listBatchRows: async () => [scheduleRow],
       readCandidate: async () => gzipSync(payloadBytes([scheduleEvent])),
     } as unknown as CloudRepository,
     local: f.local, cwdBinding: async () => f.binding, projection: {} as ProjectionWarmer, now: () => 1,
-  });
+  }));
   await assert.rejects(scheduleImporter.import('session-test'), (error: unknown) => error instanceof AzureSyncError && error.code === 'SCHEDULE_UNSAFE');
 
-  const noBinding = new Importer({
+  const noBinding = new Importer(withHistory({
     config: Config({}), persistence: f.persistence as unknown as SessionPersistence, repository: f.remote.repository,
     local: f.local, cwdBinding: async () => undefined, projection: {} as ProjectionWarmer, now: () => 1,
-  });
+  }));
   await assert.rejects(noBinding.import('session-test'), (error: unknown) => error instanceof AzureSyncError && error.code === 'NEEDS_FOLDER');
 });
 
@@ -239,8 +245,8 @@ test('a missing preset blocks import before create', async (t) => {
   const e0 = event(0);
   const chain = chainEvents(genesis, [e0]);
   const row = batchRow('session-test', 1, 0, { endSeq: 0, eventCount: 1, prevChainHash: genesis, chainHash: chain.chainHash, headHash: chain.headHash, payloadHash: chain.payloadHash });
-  const manifest = { entity: cloudSession({ sessionId: 'session-test', headerJson: JSON.stringify(header), headerHash: binding, eventCount: 1, chainHash: chain.chainHash, lastBatchRowKey: row.rowKey, lastBatchGeneration: 1 }), etag: 'e' };
-  const presetImporter = new Importer({
+  const manifest = { entity: cloudSession({ sessionId: 'session-test', headerJson: JSON.stringify(header), headerHash: binding, eventCount: 1, headHash: chain.headHash, chainHash: chain.chainHash, lastBatchRowKey: row.rowKey, lastBatchGeneration: 1, lastBatchBlobName: row.blobName }), etag: 'e' };
+  const presetImporter = new Importer(withHistory({
     config: Config({}), persistence: f.persistence as unknown as SessionPersistence, repository: {
       getManifest: async () => manifest,
       listBatchRows: async () => [row],
@@ -248,7 +254,7 @@ test('a missing preset blocks import before create', async (t) => {
     } as unknown as CloudRepository,
     local: f.local, cwdBinding: async () => f.binding, presetAvailable: () => false,
     projection: { warm: async () => 'complete' } as unknown as ProjectionWarmer, now: () => 1,
-  });
+  }));
   await assert.rejects(presetImporter.import('session-test'), (error: unknown) => error instanceof AzureSyncError && error.code === 'PRESET_MISSING');
 });
 
@@ -298,12 +304,12 @@ async function catchUpFixture(withAttachment = false) {
   }));
   const controller = new AbortController();
   const options = { signal: controller.signal, isLive: () => false };
-  const makeImporter = (overrides: Partial<ImportDependencies> = {}) => new Importer({
+  const makeImporter = (overrides: Partial<ImportDependencies> = {}) => new Importer(withHistory({
     config: Config({ maxBatchEvents: 1 }), persistence: f.persistence as unknown as SessionPersistence,
     repository, local: f.local, cwdBinding: async () => f.binding,
     projection: { warm: async () => 'complete' } as unknown as ProjectionWarmer,
     now: () => 1, ...overrides,
-  });
+  }));
   const changeManifest = (patch: Partial<StoredManifest['entity']>) => {
     currentManifest = { ...currentManifest, entity: { ...currentManifest.entity, ...patch }, etag: 'changed' };
   };
@@ -685,13 +691,62 @@ test('early import claims skip pending catch-ups but still claim failed initial 
 });
 
 function requestImporter(f: Awaited<ReturnType<typeof fixture>>, overrides: Partial<ImportDependencies> = {}) {
-  return new Importer({
+  return new Importer(withHistory({
     config: Config({ maxBatchEvents: 1 }), persistence: f.persistence as unknown as SessionPersistence,
     repository: f.remote.repository, local: f.local, cwdBinding: async () => f.binding,
     projection: { warm: async () => 'complete' } as unknown as ProjectionWarmer,
     now: () => 2, ...overrides,
-  });
+  }));
 }
+
+test('explicit legacy unscoped repair verifies local effects without silently authorizing automatic publication', async t => {
+  const f = await fixture(); t.after(() => rm(f.root, { recursive: true, force: true }));
+  const handle = await f.persistence.create({ ...f.remote.header, cwd: f.real } as SessionHeader);
+  await handle.append([f.remote.e0] as never);
+  const manifest = await f.remote.repository.getManifest('session-test'); assert.ok(manifest);
+  await f.local.putSession(localSession({ sessionId: 'session-test', imported: true, importState: 'appending', publicationScope: undefined,
+    importExpectedCount: 2, importExpectedChainHash: manifest.entity.chainHash }));
+  assert.equal((await requestImporter(f).resume('session-test', undefined, { explicit: true })).status, 'complete');
+  assert.equal(handle.events.length, 2); assert.equal(f.local.getSession('session-test')?.publicationScope, undefined);
+});
+
+test('automatic import recovery refuses unknown, foreign, or Off namespace intent before cloud or Native IO', async t => {
+  const { ImportRecovery } = await import('../src/sync/recovery.js');
+  for (const kind of ['unknown', 'foreign', 'off'] as const) {
+    const f = await fixture(); t.after(() => rm(f.root, { recursive: true, force: true }));
+    const record = localSession({ sessionId: 'session-test', imported: true, importState: 'failed',
+      publicationScope: kind === 'unknown' ? undefined : kind === 'foreign' ? 'f'.repeat(64) : fixturePublicationScope,
+      ...(kind === 'off' ? { enabled: false, detached: true, state: 'disabled' as const } : {}) });
+    await f.local.putSession(record);
+    f.remote.repository.getManifest = async () => { assert.fail('unconsented startup recovery must not read the current account'); };
+    f.persistence.open = async () => { assert.fail('unconsented startup recovery must not open Native'); };
+    f.persistence.create = async () => { assert.fail('unconsented startup recovery must not create Native'); };
+    const result = await new ImportRecovery(requestImporter(f), f.local).repairAll();
+    assert.deepEqual(result, { repaired: [], failed: ['session-test'] });
+    assert.deepEqual(f.local.getSession('session-test'), record); assert.equal(f.persistence.handles.size, 0);
+  }
+});
+
+test('runtime retirement fences signal-less startup repair after materialization and promptly closes its Native handle', async t => {
+  const f = await fixture(); t.after(() => rm(f.root, { recursive: true, force: true }));
+  const handle = await f.persistence.create({ ...f.remote.header, cwd: f.real } as SessionHeader);
+  await handle.append([f.remote.e0] as never);
+  await f.local.putSession(localSession({ sessionId: 'session-test', imported: true, importState: 'appending',
+    importMappingId: f.binding.mapping.id, importMappingRevision: f.binding.mapping.revision }));
+  const runtime = new AbortController(), entered = gate(), release = gate();
+  const importer = requestImporter(f, { signal: runtime.signal, projection: { warm: async () => { entered.resolve(); await release.promise; return 'complete'; } } as unknown as ProjectionWarmer });
+  const pending = importer.resume('session-test'); // Startup recovery has no request signal.
+  void pending.catch(() => undefined);
+  try {
+    await entered.promise;
+    const reason = new AzureSyncError('CANCELLED', 'Synthetic runtime/account retirement.'); runtime.abort(reason);
+    await rejectsPromptly(pending, reason);
+    assert.equal(handle.closed, true); assert.equal(f.records.get('session-test')?.lastSyncedAt, undefined);
+    const stopped = structuredClone(f.records.get('session-test'));
+    release.resolve(); for (let n = 0; n < 16; n++) await Promise.resolve();
+    assert.deepEqual(f.records.get('session-test'), stopped, 'late old-runtime projection cannot publish L or completion');
+  } finally { release.resolve(); await pending.catch(() => undefined); }
+});
 
 async function rejectsPromptly(pending: Promise<unknown>, reason: unknown) {
   let timer!: ReturnType<typeof setTimeout>;
@@ -769,9 +824,9 @@ test('initial and resumed requests gate every IO boundary and preserve newer loc
           const events = [f.remote.e0, f.remote.e1];
           const genesis = genesisHash('session-test', 1, hash);
           const chain = chainEvents(genesis, events);
-          const row = batchRow('session-test', 1, 0, { ...chain });
+          const row = batchRow('session-test', 1, 0, { ...chain, endSeq: events.length - 1 });
           overrides = { ...overrides, repository: {
-            getManifest: async () => ({ ...manifest, entity: { ...manifest.entity, headerJson: JSON.stringify(presetHeader), headerHash: hash, chainHash: chain.chainHash, lastBatchRowKey: row.rowKey, batchCount: 1 } }),
+            getManifest: async () => ({ ...manifest, entity: { ...manifest.entity, headerJson: JSON.stringify(presetHeader), headerHash: hash, headHash: chain.headHash, chainHash: chain.chainHash, lastBatchRowKey: row.rowKey, lastBatchBlobName: row.blobName, batchCount: 1 } }),
             listBatchRows: async () => [row], readCandidate: async () => gzipSync(payloadBytes(events)),
           } as unknown as CloudRepository,
           presetResolver: async () => { await delay('preset'); return true; } };
@@ -838,9 +893,9 @@ function remoteHistory(header: SessionHeader, events: readonly SessionEvent[], g
   const hash = headerHash(header, 0);
   const genesis = genesisHash(header.id, generation, hash);
   const chain = chainEvents(genesis, events);
-  const row = batchRow(header.id, generation, 0, { ...chain });
+  const row = batchRow(header.id, generation, 0, { ...chain, endSeq: events.length - 1 });
   const manifest = {
-    entity: cloudSession({ sessionId: header.id, generation, headerJson: JSON.stringify(header), headerHash: hash, eventCount: events.length, chainHash: chain.chainHash, headHash: chain.headHash, lastBatchRowKey: row.rowKey, lastBatchGeneration: generation }),
+    entity: cloudSession({ sessionId: header.id, generation, headerJson: JSON.stringify(header), headerHash: hash, eventCount: events.length, headSeq: events.length - 1, chainHash: chain.chainHash, headHash: chain.headHash, lastBatchRowKey: row.rowKey, lastBatchGeneration: generation, lastBatchBlobName: row.blobName }),
     etag: 'synthetic-history',
   };
   return { getManifest: async () => manifest, listBatchRows: async () => [row], readCandidate: async () => gzipSync(payloadBytes(events)) } as unknown as CloudRepository;

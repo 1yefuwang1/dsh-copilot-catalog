@@ -1,3 +1,4 @@
+import { withHistory, fixturePublicationScope } from './runtime-history-fixture.js';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { fork } from 'node:child_process';
@@ -69,11 +70,11 @@ async function legacyImporter(t: TestContext, f: Awaited<ReturnType<typeof fixtu
   const events = [event(0, 'working-directory/change', { cwd: '/remote/project' })];
   const chain = chainEvents(genesis, events);
   const row = batchRow(f.sid, 1, 0, { ...chain });
-  const manifest = { entity: cloudSession({ sessionId: f.sid, headerHash: binding, ...chain, eventCount: 1, lastBatchRowKey: row.rowKey, lastBatchGeneration: 1 }), etag: 'fixture' };
+  const manifest = { entity: cloudSession({ sessionId: f.sid, headerHash: binding, headHash: chain.headHash, chainHash: chain.chainHash, eventCount: 1, lastBatchRowKey: row.rowKey, lastBatchGeneration: 1, lastBatchBlobName: row.blobName }), etag: 'fixture' };
   // Only Azure transport is a fixture. Admission, persistence, LocalStore and recovery are real.
   const repository = { getManifest: async () => manifest, listBatchRows: async () => [row], readCandidate: async () => gzipSync(payloadBytes(events)) };
-  const importer = new Importer({ config: Config({}), persistence: ctx.sessionPersistence, repository: repository as never,
-    local: domain.local, cwdBinding: async () => ({ mapping: pathMapping({ localPrefix: f.globalCwd }), fs: nodeCwdFs }), now: Date.now });
+  const importer = new Importer(withHistory({ config: Config({}), persistence: ctx.sessionPersistence, repository: repository as never,
+    local: domain.local, cwdBinding: async () => ({ mapping: pathMapping({ localPrefix: f.globalCwd }), fs: nodeCwdFs }), now: Date.now }));
   return { importer, local: domain.local, expectedChainHash: chain.chainHash };
 }
 
@@ -86,7 +87,7 @@ for (const ingress of ['pull', 'repairAll'] as const) {
     const legacy = await legacyImporter(t, f, ctx);
     if (ingress === 'pull') await legacy.importer.import(f.sid);
     else {
-      await legacy.local.putSession(localSession({ sessionId: f.sid, imported: true, importState: 'planned', status: 'importing', writerEpoch: 0, importExpectedCount: 1, importExpectedChainHash: legacy.expectedChainHash }));
+      await legacy.local.putSession(localSession({ sessionId: f.sid, publicationScope: fixturePublicationScope, imported: true, importState: 'planned', status: 'importing', writerEpoch: 0, importExpectedCount: 1, importExpectedChainHash: legacy.expectedChainHash }));
       assert.deepEqual(await new ImportRecovery(legacy.importer, legacy.local).repairAll(), { repaired: [f.sid], failed: [] });
     }
     const cold = await ctx.sessionPersistence.open(SessionId(f.sid), 'read');
@@ -120,7 +121,7 @@ for (const ingress of ['pull', 'repairAll'] as const) {
     const legacy = await legacyImporter(t, f, ctx);
     if (ingress === 'pull') await assert.rejects(legacy.importer.import(f.sid), /DESTINATION_RESERVED/);
     else {
-      await legacy.local.putSession(localSession({ sessionId: f.sid, imported: true, importState: 'planned', status: 'importing', writerEpoch: 0, importExpectedCount: 1, importExpectedChainHash: legacy.expectedChainHash }));
+      await legacy.local.putSession(localSession({ sessionId: f.sid, publicationScope: fixturePublicationScope, imported: true, importState: 'planned', status: 'importing', writerEpoch: 0, importExpectedCount: 1, importExpectedChainHash: legacy.expectedChainHash }));
       assert.deepEqual(await new ImportRecovery(legacy.importer, legacy.local).repairAll(), { repaired: [], failed: [f.sid] });
     }
     assert.equal(await ctx.sessionPersistence.stat(SessionId(f.sid)), undefined);

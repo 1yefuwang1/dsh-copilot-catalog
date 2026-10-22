@@ -11,6 +11,7 @@ import type { WorktreeImportPlacementV1, WorktreeSourceContext } from '@1yefuwan
 import { hostname } from 'node:os';
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths';
 import { RemoteSessionReader } from './sync/remote-session.js';
+import { HistoryPinStore } from './sync/history-state.js';
 import type { Context } from '@deepseek-ai/cordis';
 import type { CredentialProvider } from '@deepseek-ai/dsh-credentials';
 import { CloudController, type CloudCore } from './controller.js';
@@ -76,6 +77,10 @@ export async function apply(ctx: Context, config: AzureSyncConfig): Promise<void
   const local = new LocalStore(ctx.storageDomain);
   await local.open();
   ctx.effect(() => async () => { await local.close(); }, 'azure-sync: local domain');
+  const historyPins = new HistoryPinStore(ctx.storageDomain);
+  let historyPinsOpened = false;
+  ctx.effect(() => async () => { if (historyPinsOpened) await historyPins.close(); }, 'azure-sync: accepted history pins');
+  let closeActiveHistory: (() => Promise<void>) | undefined;
   let activeService: SyncService | undefined;
   let activeCore: CloudCore | undefined;
   let activeImportRuntime: DestinationImportRuntime | undefined;
@@ -147,6 +152,10 @@ export async function apply(ctx: Context, config: AzureSyncConfig): Promise<void
   const stopRuntime = async () => {
     setupEpoch++;
     booting = undefined;
+    activeService?.suspend();
+    // close() revokes the component synchronously, including future calls made
+    // through retained old references; dispose awaits the same tracked promise.
+    void closeActiveHistory?.().catch(() => undefined); closeActiveHistory = undefined;
     coreAbort?.abort(); coreAbort = undefined;
     activeCore = undefined; activeService = undefined; activeImportRuntime = undefined;
     if (retryTimer !== undefined) clearTimeout(retryTimer);
@@ -193,6 +202,10 @@ export async function apply(ctx: Context, config: AzureSyncConfig): Promise<void
 
   const bootImpl = async (epoch: number): Promise<void> => {
     try {
+      // Pin-domain failure must not prevent installing persisted opt-in admission.
+      await historyPins.open();
+      historyPinsOpened = true;
+      if (disposed || epoch !== setupEpoch) return;
       const resolved = settings.effectiveConfig();
       const auth = await resolveAuth(resolved, { readCredential: (reference) => settings.readCredential(reference) });
       if (disposed || epoch !== setupEpoch) return;
@@ -203,6 +216,17 @@ export async function apply(ctx: Context, config: AzureSyncConfig): Promise<void
       const blob = new BlobStore(blobClient);
       const table = new TableStore(tableClient);
       const repository = new CloudRepository(blob, table);
+      // Exactly one canonical component per credential/runtime epoch. Its scope
+      // comes from the actual SDK clients (not configured account aliases).
+      const reader = new RemoteSessionReader(repository, {
+        maxCompressedBytes: Math.max(resolved.maxBatchBytes * 4, 1_048_576), maxExpandedBytes: resolved.maxBatchBytes,
+        maxEvents: resolved.maxEventsPerSession, pins: historyPins,
+        cache: { directory: dshHomePath('azure-sync', 'history-cache'), memoryBytes: resolved.historyMemoryBytes,
+          diskBytes: resolved.historyDiskBytes, maxMaterializations: 2, maxFetches: 4 },
+      });
+      let historyClosing: Promise<void> | undefined;
+      const closeHistory = () => historyClosing ??= reader.close();
+      const running = new AbortController();
       const leases = new SessionLeaseManager({ repository, leases: new LeaseManager(blob), deviceId: device.deviceId, now: Date.now });
       const attachmentStore = ctx.get('attachments') as import('@deepseek-ai/dsh-attachment').AttachmentStore | undefined;
       const attachments = attachmentStore === undefined ? undefined : new AttachmentSync({ store: attachmentStore, blob, maxBytes: resolved.maxAttachmentBytes, now: Date.now });
@@ -234,18 +258,18 @@ export async function apply(ctx: Context, config: AzureSyncConfig): Promise<void
       const presets = ctx.get('agentPresets') as { resolve?: (id?: string) => Promise<unknown> } | undefined;
       const presetResolver = presets?.resolve === undefined ? undefined : async (id: string) => { try { await presets.resolve?.(id); return true; } catch { return false; } };
       const importer = new Importer({
-        config: resolved, persistence: ctx.sessionPersistence, repository, local, cwdBinding: headerCwdBinding, attachments, workspace,
+        config: resolved, signal: running.signal, persistence: ctx.sessionPersistence, repository, reader, local, cwdBinding: headerCwdBinding, attachments, workspace,
         isOptingOut: (sessionId) => controller.isOptingOut(sessionId),
         guard: importGuard, projection: new ProjectionWarmer({ query: ctx.get('sessionQuery') as never, cache: ctx.get('sessionProjectionCache') as never }), sessionController: ctx.get('sessionController') as never, ...(presetResolver === undefined ? {} : { presetResolver }), now: Date.now,
       });
       const imports = new ImportService(importer, earlyClaims, new ImportRecovery(importer, local, earlyClaims, sessionId => destinationBindings.reserved(sessionId)), destinations);
-      const reader = new RemoteSessionReader(repository, { maxCompressedBytes: Math.max(resolved.maxBatchBytes * 4, 1_048_576), maxExpandedBytes: resolved.maxBatchBytes, maxEvents: resolved.maxEventsPerSession });
-      const tombstones = new TombstoneManager(repository, local, Date.now, device.deviceId);
+      const tombstones = new TombstoneManager(repository, local, Date.now, device.deviceId,
+        (intent, receipt, context) => reader.confirmGenerationActivation(intent, receipt, context), reader.scopeId);
       let service: SyncService;
       const scheduler = new UploadScheduler(async (sessionId) => { await service.sync(sessionId); });
       service = new SyncService({
         uploader: new Uploader({
-          config: resolved, source, repository, leases, local,
+          config: resolved, source, repository, reader, leases, local,
           deviceId: device.deviceId, platform: device.platform, now: Date.now,
           isOptingOut: (sessionId) => controller.isOptingOut(sessionId),
           ...(attachments === undefined ? {} : { attachments }),
@@ -254,6 +278,7 @@ export async function apply(ctx: Context, config: AzureSyncConfig): Promise<void
         local,
         agents: ctx.get('agents') as import('@deepseek-ai/dsh-agent').AgentRegistry | undefined,
         ownershipProofMs: resolved.ownershipProofMs,
+        historyJobTimeoutMs: resolved.historyJobTimeoutMs,
         isOptingOut: (sessionId) => controller.isOptingOut(sessionId),
         imports,
         tombstones,
@@ -268,8 +293,8 @@ export async function apply(ctx: Context, config: AzureSyncConfig): Promise<void
           await table.ensureTable();
         },
       });
-      const running = new AbortController();
       coreAbort = running;
+      closeActiveHistory = closeHistory;
       activeService = service;
       activeImportRuntime = { scope: importScope, signal: running.signal, config: resolved, repository, reader, importer, service };
       activeCore = { service, repository, signal: running.signal, testAuth: async (signal) => {
@@ -281,11 +306,16 @@ export async function apply(ctx: Context, config: AzureSyncConfig): Promise<void
       let disposal: Promise<void> | undefined;
       const dispose = () => disposal ??= (async () => {
         running.abort();
+        service.suspend(); const history = closeHistory(); void history.catch(() => undefined);
         if (activeService === service) { activeService = undefined; activeCore = undefined; activeImportRuntime = undefined; }
+        if (closeActiveHistory === closeHistory) closeActiveHistory = undefined;
         const deadline = Date.now() + 5_000;
         await scheduler.stop(Math.max(1, deadline - Date.now()));
         lifecycle();
         await service.close(Math.max(1, deadline - Date.now()));
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try { await Promise.race([history, new Promise<void>(resolve => { timer = setTimeout(resolve, Math.max(1, deadline - Date.now())); timer.unref?.(); })]); }
+        finally { if (timer !== undefined) clearTimeout(timer); }
       })();
       const stopEffect = ctx.effect(() => dispose, 'azure-sync: lifecycle');
       stopCore = async () => { await stopEffect(); await dispose(); };

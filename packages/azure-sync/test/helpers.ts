@@ -66,7 +66,7 @@ export function batchRow(sessionId: string, generation: number, startSeq: number
     startSeq,
     endSeq: startSeq,
     eventCount: 1,
-    blobName: `v1/sessions/${encodeKeyPart(sessionId)}/gen-${generation}/batches/${startSeq}-1-${HEX_A.slice(0, 16)}.jsonl.gz`,
+    blobName: `v1/sessions/${encodeKeyPart(sessionId)}/gen-${generation}/batches/${startSeq}-${overrides.createdEpoch ?? 1}-${(overrides.payloadHash ?? HEX_A).slice(0, 16)}.jsonl.gz`,
     payloadHash: HEX_A,
     prevChainHash: HEX_A,
     chainHash: HEX_B,

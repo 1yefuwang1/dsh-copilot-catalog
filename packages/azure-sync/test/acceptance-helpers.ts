@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { mkdir, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { Context } from '@deepseek-ai/cordis';
@@ -36,6 +37,9 @@ export const route = { provider: 'fixture', model: 'no-network' };
 
 /** Conditional immutable cloud transport; the sync/import/reconcile runtimes are real. */
 export class AcceptanceCloud {
+  private readonly namespace = randomUUID();
+  readonly historyScope = { blobEndpoint: `https://fixture.blob.invalid/${this.namespace}`, tableEndpoint: `https://fixture.table.invalid/${this.namespace}`,
+    container: 'fixture', table: 'Fixture', partitionKey: 'account' };
   readonly partitionKey = 'account';
   readonly manifests = new Map<string, StoredManifest>();
   readonly rows = new Map<string, StoredBatch>();
@@ -75,6 +79,7 @@ export class AcceptanceCloud {
     assert.ok(value, `candidate ${name} exists`);
     return Buffer.from(value.bytes);
   }
+  async getBatch(key: string): Promise<BatchRow | undefined> { return clone(this.rows.get(key)?.entity); }
   async listBatchRows(id: string, generation: number): Promise<BatchRow[]> {
     return [...this.rows.values()].filter(row => row.entity.sessionId === id && row.entity.generation === generation).map(row => clone(row.entity));
   }
@@ -177,11 +182,11 @@ export async function acceptanceDevice(root: string, deviceId: string, cloud: Ac
     cachedSnapshot(header: SessionHeader) { return checkpoints.get(header.id); },
   };
   const projection = new ProjectionWarmer({ cache: cache as never, pollMs: 1 });
-  const importer = new Importer({ config, persistence: ctx.sessionPersistence, repository: cloud.asRepository(), local, cwdBinding: async () => binding, projection, now: Date.now });
+  const reader = new RemoteSessionReader(cloud.asRepository(), { scope: cloud.historyScope, maxCompressedBytes: 1_048_576, maxExpandedBytes: config.maxBatchBytes });
+  const importer = new Importer({ config, persistence: ctx.sessionPersistence, repository: cloud.asRepository(), reader, local, cwdBinding: async () => binding, projection, now: Date.now });
   const imports = new ImportService(importer);
-  const uploader = new Uploader({ config, source, repository: cloud.asRepository(), leases: cloud.leases(deviceId), local, deviceId, platform: 'linux', cwdBinding: async () => binding, now: Date.now });
-  const reader = new RemoteSessionReader(cloud.asRepository(), { maxCompressedBytes: 1_048_576, maxExpandedBytes: config.maxBatchBytes });
-  const service = new SyncService({ uploader, local, imports, reader, source, agents: ctx.agents, repository: cloud.asRepository(), conflictDirectory: join(root, 'exports'), tombstones: new TombstoneManager(cloud.asRepository(), local, Date.now, deviceId), now: Date.now });
+  const uploader = new Uploader({ config, source, repository: cloud.asRepository(), reader, leases: cloud.leases(deviceId), local, deviceId, platform: 'linux', cwdBinding: async () => binding, now: Date.now });
+  const service = new SyncService({ uploader, local, imports, reader, source, agents: ctx.agents, repository: cloud.asRepository(), conflictDirectory: join(root, 'exports'), tombstones: new TombstoneManager(cloud.asRepository(), local, Date.now, deviceId, (intent, receipt, context) => reader.confirmGenerationActivation(intent, receipt, context)), now: Date.now });
   let writeOpens = 0;
   const persistence = ctx.sessionPersistence;
   const originalOpen = persistence.open.bind(persistence);
@@ -199,7 +204,7 @@ export async function acceptanceDevice(root: string, deviceId: string, cloud: Ac
     prompt(text: string) { return createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } }); },
     async close() {
       if (closed) return; closed = true;
-      await service.close();
+      await service.close(); await reader.close();
       for (const handle of handles.reverse()) await handle.dispose();
       for (const scope of scopes.reverse()) await scope.dispose();
       await local.close(); await facility.closeAll(); await backend.close();

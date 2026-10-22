@@ -15,6 +15,12 @@ export interface BlobMetadata {
   readonly [key: string]: string;
 }
 
+/** Check the current reader's authority between distinct SDK requests, not just around this helper. */
+export interface BlobReadContext {
+  readonly signal?: AbortSignal;
+  readonly check?: () => void | Promise<void>;
+}
+
 export class BlobStore {
   readonly container: ContainerClient;
 
@@ -49,10 +55,18 @@ export class BlobStore {
   }
 
   /** Read a whole blob after checking its actual size, refusing anything above `maxBytes`. */
-  async read(name: string, maxBytes: number): Promise<Buffer> {
+  async read(name: string, maxBytes: number, context?: BlobReadContext): Promise<Buffer> {
+    const check = async (): Promise<void> => {
+      if (context?.signal?.aborted) throw new AzureSyncError('CANCELLED', 'Azure blob read was cancelled.');
+      await context?.check?.();
+      if (context?.signal?.aborted) throw new AzureSyncError('CANCELLED', 'Azure blob read was cancelled.');
+    };
     try {
+      await check();
       const blob = this.container.getBlobClient(name);
-      const properties = await blob.getProperties();
+      const options = context?.signal === undefined ? {} : { abortSignal: context.signal };
+      const properties = await blob.getProperties(options);
+      await check();
       const length = properties.contentLength;
       if (typeof length !== 'number' || !Number.isSafeInteger(length) || length < 0) {
         throw new AzureSyncError('AZURE_OPERATION_FAILED', 'Azure Blob metadata did not report a valid content length.');
@@ -63,7 +77,10 @@ export class BlobStore {
       if (length === 0) return Buffer.alloc(0);
       // The SDK allocates the requested count, not the blob's actual size, so
       // pass the exact content length instead of maxBytes + 1.
-      const data = await blob.downloadToBuffer(0, length);
+      await check();
+      const data = await blob.downloadToBuffer(0, length, { ...options, concurrency: 1,
+        ...(properties.etag === undefined ? {} : { conditions: { ifMatch: properties.etag } }) });
+      await check();
       if (data.byteLength !== length) {
         throw new AzureSyncError('AZURE_OPERATION_FAILED', 'Azure Blob read returned an unexpected byte count.');
       }

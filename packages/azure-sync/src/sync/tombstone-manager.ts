@@ -17,12 +17,16 @@ import { genesisHash, headerHash } from './chain.js';
 import { assertGenerationRow } from './cleanup.js';
 import { selectCommittedChain } from './committed-index.js';
 import { resurrect, tombstone } from './tombstone.js';
+import { assertRecoveryScope } from './runtime-history-floor.js';
 
 /** Explicit re-upload may bind fresh canonical bytes only in a NEW generation. */
 export interface ReuploadHeader {
   readonly header: SessionHeader;
   readonly inheritedEventCount: number;
 }
+
+export type ConfirmHistoryActivation = (intent: ResurrectionIntent, receipt: StoredManifest,
+  context: { readonly signal?: AbortSignal; readonly check: () => void }) => Promise<void>;
 
 export interface ResurrectionRepairReport {
   readonly repaired: readonly string[];
@@ -34,6 +38,7 @@ interface LocalMutationFence {
   readonly generation: number;
   readonly cancellationId?: string;
   readonly resurrectionId?: string;
+  readonly publicationScope?: string;
 }
 
 export class TombstoneManager {
@@ -43,7 +48,8 @@ export class TombstoneManager {
   private readonly deviceId?: string;
   private readonly operations = new Map<string, Promise<unknown>>();
 
-  constructor(repository: CloudRepository, local: TombstoneLocalStore, now: () => number, deviceId?: string) {
+  constructor(repository: CloudRepository, local: TombstoneLocalStore, now: () => number, deviceId?: string,
+    private readonly confirmHistoryActivation?: ConfirmHistoryActivation, private readonly scope?: string) {
     this.repository = repository;
     this.local = local;
     this.now = now;
@@ -59,6 +65,7 @@ export class TombstoneManager {
   }
 
   private async requireRoot(sessionId: string, generation?: number): Promise<StoredManifest> {
+    assertRecoveryScope(this.local.getSession(sessionId), this.scope);
     const manifest = await this.repository.getManifest(sessionId);
     if (manifest === undefined) throw new AzureSyncError('NOT_FOUND', 'The cloud session does not exist.');
     if (manifest.entity.rootSessionId !== sessionId) throw new AzureSyncError('CONFLICT', 'This action requires the root session.');
@@ -71,12 +78,13 @@ export class TombstoneManager {
 
   private localFence(record: LocalSessionRecord): LocalMutationFence {
     return { generation: record.generation, cancellationId: record.resurrectionCancellationId,
-      resurrectionId: record.resurrectionIntent?.operationId };
+      resurrectionId: record.resurrectionIntent?.operationId, publicationScope: record.publicationScope };
   }
 
   private matchesFence(record: LocalSessionRecord | undefined, fence: LocalMutationFence | undefined): record is LocalSessionRecord {
     return record !== undefined && fence !== undefined && record.generation === fence.generation &&
-      record.resurrectionCancellationId === fence.cancellationId && record.resurrectionIntent?.operationId === fence.resurrectionId;
+      record.resurrectionCancellationId === fence.cancellationId && record.resurrectionIntent?.operationId === fence.resurrectionId &&
+      record.publicationScope === fence.publicationScope && (this.scope === undefined || record.publicationScope === undefined || record.publicationScope === this.scope);
   }
 
   private removalFences(): ReadonlyMap<string, LocalMutationFence> {
@@ -162,7 +170,7 @@ export class TombstoneManager {
   }
 
   /** Startup finishes ONLY recorded explicit intents; one bad record cannot starve other threads. */
-  async repairPending(signalForSession?: (sessionId: string) => AbortSignal): Promise<ResurrectionRepairReport> {
+  async repairPending(signalForSession?: (sessionId: string) => AbortSignal, eligible?: (sessionId: string) => boolean): Promise<ResurrectionRepairReport> {
     const repaired: string[] = [];
     const failed: string[] = [];
     // Capture the complete repair cohort's signals before the first queued IO.
@@ -171,6 +179,8 @@ export class TombstoneManager {
     for (const { sessionId, signal } of pending) {
       try {
         await this.exclusive(sessionId, async () => {
+          assertRecoveryScope(this.local.getSession(sessionId), this.scope, true);
+          if (eligible?.(sessionId) === false) throw new AzureSyncError('OWNERSHIP_UNVERIFIED', 'Automatic recovery has no matching namespace consent.');
           const intent = this.local.getSession(sessionId)?.resurrectionIntent;
           if (intent !== undefined) { await this.recoverResurrection(sessionId, intent, signal); repaired.push(sessionId); }
         });
@@ -180,6 +190,7 @@ export class TombstoneManager {
   }
 
   private async compensateCancellation(sessionId: string, intent: ResurrectionIntent): Promise<void> {
+    try { assertRecoveryScope(this.local.getSession(sessionId), this.scope); } catch { return; }
     const current = await this.repository.getManifest(sessionId);
     if (current === undefined) return;
     const entity = current.entity;
@@ -256,6 +267,7 @@ export class TombstoneManager {
   }
 
   private pendingRecord(sessionId: string, intent: ResurrectionIntent, signal?: AbortSignal, fence?: LocalMutationFence): LocalSessionRecord {
+    assertRecoveryScope(this.local.getSession(sessionId), this.scope);
     this.checkCancelled(signal);
     const record = this.local.getSession(sessionId);
     if (record?.resurrectionIntent?.operationId !== intent.operationId || (fence !== undefined && !this.matchesFence(record, fence))) {
@@ -365,6 +377,15 @@ export class TombstoneManager {
     // A newer explicit off/detach may clear the intent during any cloud await.
     // Never re-enable from a stale saved copy after that cancellation.
     this.pendingRecord(sessionId, intent, signal, fence);
+    if (intent.priorState === 'deleted' && this.confirmHistoryActivation !== undefined) {
+      // A proof-bound explicit generation activation is the only way to move H
+      // across generations. Keep the intent durable if pin/checkpoint IO fails.
+      await this.confirmHistoryActivation(intent, manifest, {
+        ...(signal === undefined ? {} : { signal }),
+        check: () => { this.pendingRecord(sessionId, intent, signal, fence); },
+      });
+      this.pendingRecord(sessionId, intent, signal, fence);
+    }
     const revived = manifest.entity;
     const completed = await this.local.transactSession(sessionId, record => {
       this.checkCancelled(signal);
@@ -402,6 +423,7 @@ export class TombstoneManager {
     const entryFence = entry === undefined ? undefined : this.localFence(entry);
     const fences = this.removalFences();
     return this.exclusive(sessionId, async () => {
+      assertRecoveryScope(this.local.getSession(sessionId), this.scope);
       this.checkCancelled(signal);
       if (this.local.getSession(sessionId)?.resurrectionCancellationId !== cancellationId) {
         throw new AzureSyncError('CANCELLED', 'A newer explicit off or detach cancelled this queued resurrection.');

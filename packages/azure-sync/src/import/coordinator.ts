@@ -38,7 +38,7 @@ import { parseCloudImportRequest, type CloudImportControllerPort, type CloudImpo
 
 export interface DestinationImportRuntime {
   readonly scope: string; readonly signal: AbortSignal; readonly config: AzureSyncConfig;
-  readonly repository: CloudRepository; readonly reader: RemoteSessionReader; readonly importer: Importer; readonly service: SyncService;
+  readonly repository: CloudRepository; readonly reader: Pick<RemoteSessionReader, 'read'>; readonly importer: Importer; readonly service: SyncService;
 }
 export interface DestinationImportDependencies {
   readonly ctx: Context; readonly guard?: ImportGuardV1; readonly local: LocalStore;
@@ -168,8 +168,16 @@ export class DestinationImportCoordinator implements CloudImportControllerPort {
     if (!actor || actor.session.header.origin === 'subagent') throw new CloudControlError('FORBIDDEN');
     return { actor, origin: origin === 'command' ? 'command' : 'ui', signal };
   }
-  private async remote(sessionId: string, generation: number | undefined, runtime: DestinationImportRuntime, retained = false) {
-    const remote = await runtime.reader.read(sessionId, { allowDisabled: retained });
+  private async remote(sessionId: string, generation: number | undefined, runtime: DestinationImportRuntime, signal: AbortSignal, retained = false) {
+    const current = AbortSignal.any([signal, runtime.signal, this.shutdown.signal]);
+    const check = () => {
+      this.check(current);
+      if (this.deps.current()?.scope !== runtime.scope) throw new CloudControlError('CANCELLED');
+    };
+    check();
+    const remote = await runtime.reader.read(sessionId, { signal: current, check, allowDisabled: retained,
+      ...(generation === undefined ? {} : { expectedGeneration: generation }) });
+    check();
     if (!remote || generation !== undefined && remote.manifest.entity.generation !== generation) fail();
     return remote;
   }
@@ -256,7 +264,7 @@ export class DestinationImportCoordinator implements CloudImportControllerPort {
     }
     if (request.action === 'inspect-import') {
       const runtime = await this.deps.runtime(signal); this.check(signal);
-      const remote = await this.remote(request.sessionId, request.generation, runtime); this.check(signal);
+      const remote = await this.remote(request.sessionId, request.generation, runtime, signal); this.check(signal);
       const operation = await this.deps.guard?.journal.read(request.sessionId);
       const reason = operation && operation.target.generation !== remote.manifest.entity.generation ? 'source-generation-unavailable' : remote.header.origin === 'subagent' ? 'independent-subagent-placement-unsupported' : remote.header.isSeeded ? 'seeded-initial-materialization-unsupported' : !remote.header.cwd ? 'source-cwd-required' : !await this.profile() ? 'profile-required' : undefined;
       return this.inspectView(remote, !reason, reason, operation?.operationId);
@@ -325,7 +333,7 @@ export class DestinationImportCoordinator implements CloudImportControllerPort {
     const old = await this.plans!.read(request.operationId); if (old) { if (old.requestJson !== canonicalJson(request) || old.cancelledAt !== undefined) fail(); return this.planView(old); }
     if (this.reviewed.size >= 128) throw new CloudControlError('CAPACITY');
     const runtime = await this.deps.runtime(signal); this.check(signal);
-    const remote = await this.remote(request.sessionId, request.generation, runtime);
+    const remote = await this.remote(request.sessionId, request.generation, runtime, signal);
     if (remote.header.origin === 'subagent' || remote.header.isSeeded || !remote.header.cwd || !checkGuards({ header: remote.header, events: remote.events }).ok) fail();
     const platform = request.mapping.remotePlatform;
     if (platform !== remote.manifest.entity.sourcePlatform) throw new CloudControlError('INVALID_REQUEST');
@@ -400,7 +408,7 @@ export class DestinationImportCoordinator implements CloudImportControllerPort {
     }
     const runtime = await this.deps.runtime(userSignal); const signal = AbortSignal.any([userSignal, runtime.signal, this.shutdown.signal]); this.check(signal);
     if (runtime.scope !== plan.target.scope || this.deps.settingsKey() !== plan.settingsKey && !await this.deps.guard!.journal.read(plan.sessionId)) fail();
-    const remote = await this.remote(plan.sessionId, plan.target.generation, runtime, retained); this.check(signal);
+    const remote = await this.remote(plan.sessionId, plan.target.generation, runtime, signal, retained); this.check(signal);
     const reviewed = reviewedRemote(remote, plan.reservation);
     const header = JSON.parse(plan.localizedHeaderJson) as SessionHeader;
     let record = await this.deps.guard!.journal.read(plan.sessionId);
@@ -469,7 +477,7 @@ export class DestinationImportCoordinator implements CloudImportControllerPort {
     const historyArtifact = { headerHash: record.localHeaderHash, inheritedEventCount: record.target.inheritedEventCount, prefixCount: reviewed.events.length, prefixHash: payloadHash(localized.events) };
     const proof = await this.registration!.proveReadable(claim, importFence(record), historyArtifact);
     record = await this.deps.guard!.journal.update(claim, importFence(record), current => ({ ...current, phase: 'history-verified', historyArtifact, effects: current.effects.some(effect => effect.kind === 'history') ? current.effects : [...current.effects, { kind: 'history', receiptHash: record!.target.chainHash, at: this.now() }], revision: current.revision + 1, updatedAt: this.now() }));
-    const currentRemote = await this.remote(plan.sessionId, record.target.generation, runtime); reviewedRemote(currentRemote, record); this.check(signal);
+    const currentRemote = await this.remote(plan.sessionId, record.target.generation, runtime, signal); reviewedRemote(currentRemote, record); this.check(signal);
     if (record.mode === 'worktree') {
       const port = this.port(); if (!port || !record.placement) fail();
       // The placement owner creates/exposes the real native Workspace only now,
@@ -492,7 +500,7 @@ export class DestinationImportCoordinator implements CloudImportControllerPort {
       });
       record = await this.deps.guard!.journal.update(claim, importFence(record), current => ({ ...current, phase: 'destination-bound', binding: { workspaceId: workspace.id, ...(record!.sourceFolder ? { projectId: record!.sourceFolder.projectId, folderId: record!.sourceFolder.folderId } : {}) }, revision: current.revision + 1, updatedAt: this.now() }));
     }
-    reviewedRemote(await this.remote(plan.sessionId, record.target.generation, runtime), record); this.check(signal);
+    reviewedRemote(await this.remote(plan.sessionId, record.target.generation, runtime, signal), record); this.check(signal);
     record = await this.deps.guard!.journal.update(claim, importFence(record), current => ({ ...current, phase: 'ready', effects: current.effects.some(effect => effect.kind === 'binding') ? current.effects : [...current.effects, { kind: 'binding', receiptHash: sha256Hex(canonicalJson(current.binding)), at: this.now() }], revision: current.revision + 1, updatedAt: this.now() }));
     await this.deps.local.transactSession(plan.sessionId, current => {
       this.check(signal); if (!current || current.destination?.operationId !== record!.operationId || !current.enabled || current.detached) fail();

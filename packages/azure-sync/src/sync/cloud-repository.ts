@@ -58,8 +58,8 @@ export class CloudRepository {
     this.partitionKey = partitionKey;
   }
 
-  async getManifest(sessionId: string): Promise<StoredManifest | undefined> {
-    const stored = await this.table.get<Record<string, unknown>>(this.partitionKey, sessionRowKey(sessionId));
+  async getManifest(sessionId: string, context?: { readonly signal?: AbortSignal; readonly check?: () => void | Promise<void> }): Promise<StoredManifest | undefined> {
+    const stored = await this.table.get<Record<string, unknown>>(this.partitionKey, sessionRowKey(sessionId), context);
     if (stored === undefined) return undefined;
     const decoded = decodeCloudRecord(cloudSessionEntitySchema, stored.value, 'cloud session manifest');
     if (decoded.etag === undefined) throw new AzureSyncError('INVALID_RECORD', 'A cloud session manifest has no ETag.');
@@ -235,10 +235,14 @@ export class CloudRepository {
     await this.blob.deleteIfExists(name, identity.etag);
   }
 
-  async getBatch(rowKey: string): Promise<BatchRow | undefined> {
-    const stored = await this.table.get<Record<string, unknown>>(this.partitionKey, rowKey);
+  async getBatch(rowKey: string, context?: { readonly signal?: AbortSignal; readonly check?: () => void | Promise<void> }): Promise<BatchRow | undefined> {
+    const stored = await this.table.get<Record<string, unknown>>(this.partitionKey, rowKey, context);
     if (stored === undefined) return undefined;
-    return decodeCloudRecord(batchRowSchema, stored.value, 'committed batch row').record;
+    const row = decodeCloudRecord(batchRowSchema, stored.value, 'committed batch row').record;
+    if (row.partitionKey !== this.partitionKey || row.rowKey !== rowKey || row.rowKey !== batchRowKey(row.sessionId, row.generation, row.startSeq)) {
+      throw new AzureSyncError('COMMITTED_INDEX_CORRUPT', 'The committed batch response does not match the requested identity.');
+    }
+    return row;
   }
 
   async *iterateBatchRows(sessionId: string, generation: number): AsyncGenerator<StoredBatch> {
@@ -318,8 +322,8 @@ export class CloudRepository {
     return { status };
   }
 
-  async readCandidate(name: string, maxBytes: number): Promise<Buffer> {
-    return this.blob.read(name, maxBytes);
+  async readCandidate(name: string, maxBytes: number, context?: { readonly signal?: AbortSignal; readonly check?: () => void | Promise<void> }): Promise<Buffer> {
+    return this.blob.read(name, maxBytes, context);
   }
 
   async candidateExists(name: string): Promise<boolean> {

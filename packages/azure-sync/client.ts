@@ -2,7 +2,7 @@
 import { createCloudClient, type CloudLocalView } from './client-model.js';
 import { createImportWizard } from './client-import.js';
 import { createImportClient } from './client-import-model.js';
-import type { CloudRequest, CloudMapping, CloudAuth } from './src/protocol.js';
+import type { CloudRequest, CloudMapping, CloudAuth, CloudAuditResult } from './src/protocol.js';
 import locale from './locale/en.json';
 import { gitGuidance } from './src/git/guidance.js';
 import type { GitFacts } from './src/git/sanitize.js';
@@ -122,8 +122,19 @@ window.__ModuleLoader__.load({
     function Thread({ runtime, cloud, t, sessionId }: AzureUI.HeaderProps) {
       const thread = useThread(cloud, sessionId), status = thread?.status, action = useAction(cloud, t, sessionId);
       const [confirmation, setConfirmation] = React.useState<Confirmation | null>(null), [exportPath, setExportPath] = React.useState(''), [destinationOpen, setDestinationOpen] = React.useState(false);
+      const [audit, setAudit] = React.useState<CloudAuditResult | undefined>();
       React.useEffect(() => { setConfirmation(null); setExportPath(''); setDestinationOpen(false); }, [sessionId]);
-      const request = (value: CloudRequest, preempt = false) => { void action.run(value, reply => { if (reply.kind === 'action' && reply.detail && typeof reply.detail === 'object' && !Array.isArray(reply.detail) && typeof reply.detail.exportPath === 'string') setExportPath(reply.detail.exportPath); }, preempt); };
+      React.useEffect(() => { setAudit(undefined); }, [sessionId, status?.generation]);
+      const request = (value: CloudRequest, preempt = false) => {
+        setAudit(undefined);
+        void action.run(value, reply => {
+          if (reply.kind !== 'action' || !reply.detail) return;
+          if (typeof reply.detail.exportPath === 'string') setExportPath(reply.detail.exportPath);
+          if (reply.action === 'verify' && reply.detail.status === 'verified' && typeof reply.detail.current === 'boolean' && typeof reply.detail.auditedAt === 'number' && reply.detail.watermark) {
+            setAudit({ status: 'verified', current: reply.detail.current, auditedAt: reply.detail.auditedAt, watermark: reply.detail.watermark });
+          }
+        }, preempt);
+      };
       const confirm = (name: string, warning: string, value: CloudRequest, acknowledge?: string) => setConfirmation({ title: t(name), warning: t(warning), request: value, ...(acknowledge ? { acknowledge: t(acknowledge) } : {}) });
       const busy = action.busy || !!thread?.pending, enabled = status?.enabled === true && !status.detached;
       const state = status?.status ?? 'local', incomplete = incompleteImport(status);
@@ -154,6 +165,7 @@ window.__ModuleLoader__.load({
           h(Button, { onClick: () => confirm('detach', incomplete ? 'detachIncompleteWarning' : 'detachWarning', { action: 'detach', sessionId }) }, t('detach')),
           h(Button, { disabled: busy, onClick: () => request({ action: 'sync', sessionId }) }, t('sync')),
           h(Button, { disabled: busy, onClick: () => request({ action: 'pull', sessionId }) }, t('pull')),
+          h(Button, { disabled: busy, onClick: () => confirm('verify', 'verifyWarning', { action: 'verify', sessionId }) }, t('verify')),
           h(Button, { disabled: busy, onClick: () => request({ action: 'check-ownership', sessionId }) }, t('ownership')),
           h(Button, { disabled: busy, onClick: () => confirm('takeover', 'takeoverWarning', { action: 'takeover', sessionId, confirm: true }) }, t('takeover')),
           h(Button, { disabled: busy, onClick: () => request({ action: 'export', sessionId }) }, t('export')),
@@ -164,6 +176,10 @@ window.__ModuleLoader__.load({
           h(Button, { onClick: () => runtime.layout.selectPanel(PANEL) }, t('settings')),
           action.busy && h(Button, { onClick: action.cancel }, t('stopAction'))),
         h(GitAdvice, { runtime, cloud, t, sessionId }),
+        audit && h('section', { role: 'status', 'aria-label': t('verifyResult'), className: 'dsh-az-card' }, h('h3', null, t('verifyResult')),
+          h('p', null, t(audit.current ? 'verifyCurrent' : 'verifyOlderCutoff')),
+          h(Details, { entries: [[t('generation'), audit.watermark.generation], [t('events'), audit.watermark.eventCount], [t('verifyBatches'), audit.watermark.batchCount], [t('verifyAt'), new Date(audit.auditedAt).toLocaleString()], [t('verifyChain'), h('code', null, audit.watermark.chainHash)]] }),
+          h('p', { className: 'dsh-az-notice' }, t('verifyNoAuthority'))),
         exportPath && h('p', { role: 'status' }, t('exportPath') + ': ', h('code', null, exportPath)), h(Feedback, { action, t }),
         confirmation && h(Confirm, { key: confirmation.request.action, value: confirmation, t, close: () => setConfirmation(null), accept: () => { const value = confirmation.request; setConfirmation(null); request(value, value.action === 'detach'); } }),
         destinationOpen && h(DestinationImport, { runtime, t, sessionId, generation: status?.generation ?? 1, close: () => setDestinationOpen(false), completed() { void cloud.refresh(sessionId); } }));
@@ -200,7 +216,7 @@ window.__ModuleLoader__.load({
         settings && h('details', null, h('summary', null, t('admin')), h(Details, { entries: [[t('connectionRef'), settings.connectionRef], [t('container'), settings.container], [t('table'), settings.table], [t('suffix'), settings.endpointSuffix]] })), h(Feedback, { action, t }));
     }
     function Preferences({ cloud, t }: Props) {
-      const { settings } = useCloud(cloud), [startup, setStartup] = React.useState(false), [poll, setPoll] = React.useState('60'), [dirty, setDirty] = React.useState(false), action = useAction(cloud, t, 'preferences');
+      const { settings } = useCloud(cloud), [startup, setStartup] = React.useState(false), [poll, setPoll] = React.useState('30'), [dirty, setDirty] = React.useState(false), action = useAction(cloud, t, 'preferences');
       React.useEffect(() => { if (settings && !dirty) { setStartup(settings.pullOnStartup); setPoll(String(settings.pollSeconds)); } }, [settings, dirty]);
       return h('section', { className: 'dsh-az-card', 'aria-label': t('defaults') }, h('h2', null, t('defaults')),
         h(Check, { label: t('defaultOff'), checked: false, disabled: true }), h('form', { onSubmit: event => { event.preventDefault(); const seconds = Number(poll); if (!Number.isInteger(seconds) || seconds < 30 || seconds > 86400) { action.setError(t('invalid')); return; } void action.run({ action: 'set-defaults', defaultEnabled: false, pullOnStartup: startup, pollSeconds: seconds }, () => setDirty(false)); } },

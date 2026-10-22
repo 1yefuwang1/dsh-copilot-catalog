@@ -1,5 +1,5 @@
 /** Browser-only control model. No Host, provider, storage, or Agent imports. */
-import { boundedJson, parseCloudRequest, type CloudAuth, type CloudErrorCode, type CloudMapping, type CloudPlatform, type CloudRequest, type JsonValue } from './src/protocol.js';
+import { boundedJson, parseCloudAuditResult, parseCloudRequest, type CloudAuditWatermark, type CloudAuth, type CloudErrorCode, type CloudMapping, type CloudPlatform, type CloudRequest, type JsonValue } from './src/protocol.js';
 import { createComposerBlockOwner, type CloudBlocks, type CloudStore } from './client-blocks.js';
 import { parseGitFacts, type GitFacts } from './src/git/sanitize.js';
 export type { CloudAuth, CloudMapping, CloudPlatform, CloudRequest } from './src/protocol.js';
@@ -35,7 +35,7 @@ export interface CloudRemoteView {
   readonly git?: GitFacts;
 }
 export interface CloudStatusReply { readonly kind: 'status'; readonly revision: number; readonly projectionRevision: string; readonly settings: CloudSettingsView; readonly items: readonly CloudLocalView[]; readonly nextCursor?: string; readonly untracked?: { readonly sessionId: string; readonly enabled: false; readonly admissionRequired: false } }
-export interface CloudActionReply { readonly kind: 'action'; readonly action: CloudRequest['action']; readonly sessionId: string; readonly state: CloudStatus; readonly detail?: { readonly owned?: boolean; readonly reason?: CloudStatus; readonly exportPath?: string; readonly cloudConfirmed?: boolean; readonly status?: string; readonly eventCount?: number; readonly uploadedBatches?: number } }
+export interface CloudActionReply { readonly kind: 'action'; readonly action: CloudRequest['action']; readonly sessionId: string; readonly state: CloudStatus; readonly detail?: { readonly owned?: boolean; readonly reason?: CloudStatus; readonly exportPath?: string; readonly cloudConfirmed?: boolean; readonly status?: string; readonly eventCount?: number; readonly uploadedBatches?: number; readonly current?: boolean; readonly auditedAt?: number; readonly watermark?: CloudAuditWatermark } }
 export interface CloudRemoteReply { readonly kind: 'remote'; readonly items: readonly CloudRemoteView[]; readonly nextCursor?: string }
 export type CloudReply<R extends CloudRequest = CloudRequest> = R extends { action: 'status' } ? CloudStatusReply
   : R extends { action: 'git-info' } ? { readonly kind: 'git'; readonly sessionId: string; readonly local: GitFacts | null }
@@ -89,6 +89,9 @@ const ownershipDetail = shape({ owned: bool }, { reason: one('paused-other-devic
 const uploadDetail = shape({ status: one('synced', 'disabled', 'pending-materialization'), eventCount: num, uploadedBatches: num });
 function actionShape(request: CloudRequest): Check {
   const base = { kind: one('action'), action: one(request.action), sessionId: one('sessionId' in request ? request.sessionId! : ''), state: status };
+  if (request.action === 'verify') return shape({ ...base, detail: value => {
+    try { parseCloudAuditResult(value, 'sessionId' in request ? request.sessionId! : ''); return true; } catch { return false; }
+  } });
   if (request.action === 'check-ownership' || request.action === 'takeover') return shape({ ...base, detail: ownershipDetail });
   if (request.action === 'sync' || (request.action === 'toggle' && request.enabled)) return shape({ ...base, detail: uploadDetail });
   if (request.action === 'export') return shape({ ...base, detail: shape({ exportPath: str() }) });
@@ -352,7 +355,7 @@ export function createCloudClient(runtime: CloudClientRuntime, options: CloudCli
       const threadAction = !['status', 'mappings', 'map', 'unmap', 'set-auth', 'set-defaults', 'test-auth'].includes(action) && !(action === 'pull' && sessionId === undefined);
       if (threadAction && sessionId === undefined) return Promise.reject(new CloudClientError('INVALID_REQUEST'));
       const scope = sessionId === undefined ? undefined : scopes.get(sessionId);
-      const mutation = action !== 'status' && action !== 'mappings' && action !== 'test-auth' && action !== 'git-info' && !(action === 'pull' && sessionId === undefined);
+      const mutation = action !== 'status' && action !== 'mappings' && action !== 'test-auth' && action !== 'git-info' && action !== 'verify' && !(action === 'pull' && sessionId === undefined);
       const safety = action === 'detach' || (action === 'toggle' && !request.enabled);
       if (sessionId !== undefined && actions.has(sessionId) && !safety) return Promise.reject(new CloudClientError('BUSY'));
       if (disposed) return Promise.reject(new CloudClientError('DISPOSED'));
@@ -386,7 +389,16 @@ export function createCloudClient(runtime: CloudClientRuntime, options: CloudCli
         if ((action === 'check-ownership' || action === 'takeover') && data.kind === 'action' && capturedSettings === settingsEpoch) inspection = data;
         return reply;
       }, error => {
-        if (current()) { globalError = cloudClientErrorCode(error); if (scope) scope.error = globalError; }
+        if (current()) {
+          globalError = cloudClientErrorCode(error);
+          if (scope) {
+            scope.error = globalError;
+            if (action === 'verify') {
+              // Audit failure cannot grant/retain a provisional proof or implicitly launch a new lease probe.
+              scope.proof = false; scope.attempted = scope.fingerprint;
+            }
+          }
+        }
         throw error;
       }).finally(() => {
         signal?.removeEventListener('abort', abort); count(key, -1);

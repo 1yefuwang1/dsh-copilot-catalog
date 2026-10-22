@@ -112,6 +112,37 @@ async function confirmDestination(run: ReturnType<typeof fixture>) {
   await click(button(root, text('close')));
 }
 
+test('explicit history audit confirms bandwidth, renders its exact cutoff, and never grants Continue or ownership', async () => {
+  const run = fixture({ status: local('selected', { status: 'remote-ahead-live', restartRequired: true }), reply(call) {
+    if (call.request.action !== 'verify') return undefined;
+    return envelope({ kind: 'action', action: 'verify', sessionId: 'selected', state: 'remote-ahead-live', detail: {
+      status: 'verified', current: true, auditedAt: 1000, watermark: { sessionId: 'selected', schemaVersion: 4, formatVersion: 4,
+        generation: 1, rootSessionId: 'selected', rootGeneration: 1, inheritedEventCount: 0, eventCount: 3, headSeq: 2,
+        batchCount: 1, headerHash: 'a'.repeat(64), headHash: 'b'.repeat(64), chainHash: 'c'.repeat(64),
+        lastBatchGeneration: 1, lastBatchRowKey: 'synthetic-row', lastBatchBlobName: 'v1/synthetic-history' },
+    } });
+  } });
+  try {
+    await run.render(); const root = await dialog(run);
+    const ownershipBefore = run.calls.filter(call => call.request.action === 'check-ownership').length;
+    await click(button(root, text('verify')));
+    assert.equal(run.calls.filter(call => call.request.action === 'verify').length, 0);
+    const confirmations = run.container.querySelectorAll('[role=dialog]'), confirm = confirmations[confirmations.length - 1]!;
+    assert.match(confirm.textContent!, /internet-egress charges/u);
+    assert.match(confirm.textContent!, /Attachment objects are not included/u);
+    await click(button(confirm, text('confirm'))); await settle();
+    assert.equal(run.calls.filter(call => call.request.action === 'verify').length, 1);
+    const result = [...run.container.querySelectorAll('section')].find(node => node.getAttribute('aria-label') === text('verifyResult'));
+    assert.ok(result); assert.ok(result.textContent!.includes('c'.repeat(64)));
+    assert.ok(result.textContent!.includes(text('verifyNoAuthority')));
+    assert.equal(run.cloud.getThread('selected').blocked, true);
+    assert.equal(run.calls.filter(call => call.request.action === 'check-ownership').length, ownershipBefore);
+    assert.equal(run.calls.some(call => ['toggle', 'takeover', 'resurrect', 'pull'].includes(call.request.action)), false);
+    assert.equal(run.importCalls.some(call => call.request.action === 'continue-import'), false);
+    assert.equal(run.opened.length, 0);
+  } finally { await run.dispose(); }
+});
+
 for (const blank of [true, false]) test(`public header exposes cloud settings and toggle for ${blank ? 'blank' : 'nonblank'} native thread`, async () => {
   const run = fixture({ blank }); try {
     await run.render(); assert.equal(run.definition.id, '@1yefuwang1/dsh-azure-sync'); assert.deepEqual(run.required, ['react']);

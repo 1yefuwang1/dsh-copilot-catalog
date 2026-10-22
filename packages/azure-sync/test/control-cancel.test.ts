@@ -187,11 +187,14 @@ async function fixture(options: { prior?: 'enabled' | 'detached' | 'untracked'; 
   } as unknown as LeaseManager;
   const config = Config({});
   const reader = new RemoteSessionReader(repository, { maxCompressedBytes: 1_048_576, maxExpandedBytes: 1_048_576 });
+  // Enabled fixtures model prior explicit consent for this exact account.
+  if (prior === 'enabled') await local.putSession({ ...local.getSession(id)!, publicationScope: reader.scopeId });
+  writes.length = 0;
   const agent = { status: options.agentStatus ?? 'idle', inbox: { nextTurn: [], nextStep: [] } };
   const runtimes: Array<{ uploader: Uploader; service: SyncService }> = [];
   const rebuild = () => {
     const leases = new SessionLeaseManager({ repository, leases: raw, deviceId: owner, now: () => now });
-    const uploader = new Uploader({ config, source, repository, leases, local, deviceId: owner, platform: 'linux', now: () => now, renewEveryMs: 60_000 });
+    const uploader = new Uploader({ config, source, repository, reader, leases, local, deviceId: owner, platform: 'linux', now: () => now, renewEveryMs: 60_000 });
     const service = new SyncService({ uploader, local, source, reader, repository, now: () => now, ownershipProofMs: 10_000,
       agents: { get: () => options.live ? agent as never : undefined } });
     runtimes.push({ uploader, service });

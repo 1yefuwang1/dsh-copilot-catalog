@@ -6,6 +6,11 @@ Consumption retail inputs retrieved by the independent pricing-research pass on 
 row effective dates are not retrieval dates. Region, currency, negotiated terms and features can change
 these inputs. Manual billing validation remains deferred.
 
+**Historical pre-incremental implementation:** whole-history idle/per-step vectors below describe that
+measured baseline, not current behavior. See [incremental verification](<azure-sync-incremental-verification.md>)
+for the new manifest-only polling, bounded cache, byte measurements and scoped workload model. Historical
+T9 assumptions/numbers are retained rather than rewritten as a bill for the optimized implementation.
+
 ## Reproduce the measured part
 
 ```sh

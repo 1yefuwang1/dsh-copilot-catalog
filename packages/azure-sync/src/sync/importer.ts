@@ -12,7 +12,7 @@ import { AzureSyncError } from '../azure/errors.js';
 import type { LocalStore } from '../local/store.js';
 import type { LocalSessionRecord, SyncStatus } from '../schema.js';
 import type { CloudRepository } from './cloud-repository.js';
-import { RemoteSessionReader, type RemoteSession } from './remote-session.js';
+import type { RemoteSessionReader, RemoteSession } from './remote-session.js';
 import {
   localizeImportedEvents, remoteToLocal, validateImportedCwds, verifyImportedProvenance,
   type CwdBinding,
@@ -21,11 +21,16 @@ import { checkGuards } from './guards.js';
 import { chainEvents, genesisHash, headerHash } from './chain.js';
 import { collectAttachmentReferences, type AttachmentSync } from './attachments.js';
 import { ProjectionWarmer, type WarmResult } from './projection-warmer.js';
+import { assertScopedAppliedFloor, publicationScopePatch } from './runtime-history-floor.js';
 
 export interface ImportDependencies {
   readonly config: AzureSyncConfig;
+  /** Runtime epoch, independent of whether startup recovery has a request waiter. */
+  readonly signal?: AbortSignal;
   readonly persistence: SessionPersistence;
   readonly repository: CloudRepository;
+  /** The one runtime-owned canonical reader, shared with upload and preview. */
+  readonly reader?: RemoteSessionReader;
   readonly local: LocalStore;
   /** Root intent remains visible while the durable opt-out write is pending. */
   readonly isOptingOut?: (sessionId: string) => boolean;
@@ -94,6 +99,8 @@ export interface CatchUpOptions {
 export interface ResumeImportOptions {
   readonly signal?: AbortSignal;
   readonly confirmMapping?: boolean;
+  /** Human-requested legacy repair may read an unscoped copy; never binds publication consent. */
+  readonly explicit?: boolean;
   /** Internal explicit repair consent to read retained bytes, never to re-enable sync. */
   readonly allowDisabledRead?: boolean;
 }
@@ -118,7 +125,7 @@ interface ImportOperation {
 function sameAuthority(expected: LocalSessionRecord | undefined, latest: LocalSessionRecord | undefined): boolean {
   if (expected === undefined || latest === undefined) return expected === latest;
   return expected.sessionId === latest.sessionId &&
-    expected.resurrectionCancellationId === latest.resurrectionCancellationId &&
+    expected.resurrectionCancellationId === latest.resurrectionCancellationId && expected.publicationScope === latest.publicationScope && expected.remoteAuditFailure === latest.remoteAuditFailure && expected.remoteAuditScope === latest.remoteAuditScope &&
     expected.generation === latest.generation && expected.writerEpoch === latest.writerEpoch &&
     expected.enabled === latest.enabled && expected.detached === latest.detached && expected.state === latest.state &&
     !!expected.admissionStopped === !!latest.admissionStopped && expected.mappingUnstable === latest.mappingUnstable &&
@@ -185,7 +192,15 @@ export class Importer {
     }
   }
 
-  private beginRequest(sessionId: string, signal = new AbortController().signal): ImportOperation {
+  private assertRemoteIntegrity(record: LocalSessionRecord | undefined): void {
+    const failure = record?.remoteAuditFailure ?? (record?.status === 'corrupt-remote' || record?.status === 'committed-index-corrupt' ? record.status : undefined);
+    if (failure !== undefined) throw new AzureSyncError(failure === 'corrupt-remote' ? 'CORRUPT_REMOTE' : 'COMMITTED_INDEX_CORRUPT', 'Explicitly verify the cloud copy before applying retained canonical history after a remote-health failure.');
+  }
+
+  private beginRequest(sessionId: string, externalSignal = new AbortController().signal): ImportOperation {
+    const signal = this.deps.signal === undefined ? externalSignal : AbortSignal.any([externalSignal, this.deps.signal]);
+    signal.throwIfAborted();
+    this.assertRemoteIntegrity(this.deps.local.getSession(sessionId));
     if (this.operation(sessionId) !== undefined) throw new AzureSyncError('IMPORT_RACE', 'An import operation is already active.');
     let authority = snapshot(this.deps.local.getSession(sessionId));
     let revoked: AzureSyncError | undefined;
@@ -204,20 +219,65 @@ export class Importer {
     return operation;
   }
 
-  /** Reader and cwd helpers may continue pure work, but cannot begin later IO. */
+  /** Captured operation guards run inside the shared reader before EVERY next IO. */
   private readRemote(sessionId: string, allowDisabled = false): Promise<RemoteSession | undefined> {
     const operation = this.operation(sessionId);
-    const repository = this.deps.repository;
-    const reader = new RemoteSessionReader({
-      getManifest: (id: string) => this.waitOperation(operation, () => repository.getManifest(id)),
-      listBatchRows: (id: string, generation: number) => this.waitOperation(operation, () => repository.listBatchRows(id, generation)),
-      readCandidate: (name: string, limit: number) => this.waitOperation(operation, () => repository.readCandidate(name, limit)),
-    } as CloudRepository, {
-      maxCompressedBytes: Math.max(this.deps.config.maxBatchBytes * 4, 1_048_576),
-      maxExpandedBytes: this.deps.config.maxBatchBytes,
-      maxEvents: this.deps.config.maxEventsPerSession,
+    const reader = this.deps.reader;
+    if (reader === undefined) throw new AzureSyncError('IMPORT_INCOMPLETE', 'The shared canonical history reader is unavailable.');
+    const generation = this.deps.local.getSession(sessionId)?.generation;
+    return this.waitOperation(operation, async () => {
+      const context = { allowDisabled, ...(operation === undefined ? {} : { signal: operation.signal, check: operation.check }),
+        ...(generation === undefined ? {} : { expectedGeneration: generation }) };
+      const observed = await reader.observe(sessionId, context);
+      operation?.check();
+      if (observed !== undefined) assertScopedAppliedFloor(this.deps.local.getSession(sessionId), observed.manifest.entity, reader.scopeId);
+      return reader.read(sessionId, context);
+    }).catch(async error => {
+      operation?.check();
+      // The shared accepted floor may reject before the importer's historical
+      // target check. Retain its existing forward-provenance recovery category
+      // when a fresh SAME-generation envelope proves the recorded target changed.
+      if (error instanceof AzureSyncError && (error.code === 'CONFLICT' || error.code === 'GENERATION_CHANGED')) {
+        const record = this.deps.local.getSession(sessionId);
+        const latest = await this.waitOperation(operation, () => this.deps.repository.getManifest(sessionId));
+        operation?.check();
+        if (record?.imported && latest?.entity.generation === record.generation &&
+          ((record.lastSyncedHeaderHash !== undefined && latest.entity.headerHash !== record.lastSyncedHeaderHash) ||
+            (record.importExpectedCount === latest.entity.eventCount && record.importExpectedChainHash !== undefined &&
+              latest.entity.chainHash !== record.importExpectedChainHash))) {
+          throw new AzureSyncError('PROVENANCE_MISMATCH', 'The original canonical header, inherited cut or initial import target changed.');
+        }
+      }
+      throw error;
     });
-    return reader.read(sessionId, { allowDisabled });
+  }
+
+  private async freshTarget(sessionId: string, remote: RemoteSession, allowDisabled = false) {
+    const operation = this.operation(sessionId);
+    const current = this.deps.reader === undefined
+      ? await this.waitOperation(operation, () => this.deps.repository.getManifest(sessionId))
+      : (await this.waitOperation(operation, () => this.deps.reader!.observe(sessionId, {
+        allowDisabled, expectedGeneration: remote.manifest.entity.generation,
+        ...(operation === undefined ? {} : { signal: operation.signal, check: operation.check }),
+      })))?.manifest;
+    operation?.check();
+    if (current !== undefined) assertScopedAppliedFloor(this.deps.local.getSession(sessionId), current.entity, this.deps.reader?.scopeId);
+    return current;
+  }
+
+  private async assertFreshTarget(sessionId: string, remote: RemoteSession, allowDisabled = false): Promise<void> {
+    const current = await this.freshTarget(sessionId, remote, allowDisabled);
+    if (current === undefined) throw new AzureSyncError('NOT_FOUND', 'The cloud import target disappeared.');
+    const entity = current.entity;
+    const expected = remote.manifest.entity;
+    if (entity.state === 'deleted') throw new AzureSyncError('REMOVED_REMOTELY', 'The cloud import target was removed.');
+    if (entity.generation !== expected.generation) throw new AzureSyncError('GENERATION_CHANGED', 'The cloud import generation changed.');
+    if (!allowDisabled && (entity.state !== 'active' || !entity.enabled)) throw new AzureSyncError('DISABLED', 'The cloud import target was disabled.');
+    const immutable = ['headerHash', 'headerJson', 'inheritedEventCount', 'formatVersion', 'rootSessionId', 'rootGeneration', 'sourcePlatform'] as const;
+    if (immutable.some(key => entity[key] !== expected[key])) throw new AzureSyncError('PROVENANCE_MISMATCH', 'The cloud import identity or mapping interpretation changed.');
+    if (entity.eventCount < expected.eventCount || (entity.eventCount === expected.eventCount && entity.chainHash !== expected.chainHash)) throw new AzureSyncError('CONFLICT', 'The cloud import target rolled back or forked.');
+    const tip = ['eventCount', 'headSeq', 'headHash', 'chainHash', 'batchCount', 'lastBatchGeneration', 'lastBatchRowKey', 'lastBatchBlobName'] as const;
+    if (tip.some(key => entity[key] !== expected[key])) throw new AzureSyncError('TRANSIENT', 'The committed cloud tip moved; retry from a fresh verified target.');
   }
 
   private async binding(sessionId: string, header: SessionHeader): Promise<CwdBinding | undefined> {
@@ -244,16 +304,19 @@ export class Importer {
       if (!record?.destination || !record.imported || record.destination.headerCwd !== localizedHeader.cwd || ((!record.enabled || record.detached) && options.allowDisabledRead !== true)) throw new AzureSyncError('IMPORT_INCOMPLETE', 'The prepared destination record is unavailable.');
       failureReady = true;
       operation.check();
+      if (this.deps.reader !== undefined) await this.update(sessionId, publicationScopePatch(record, this.deps.reader.scopeId));
       const preflight = await this.preflight(sessionId, remote, binding);
       operation.check();
+      const checkRemote = () => this.assertFreshTarget(sessionId, remote, options.allowDisabledRead === true);
+      await checkRemote();
       handle = await this.acquireHandle(sessionId, () => this.deps.persistence.open(sessionId as never, 'write'));
       await this.validateHandle(sessionId, remote, binding, localizedHeader, handle);
       const current = await this.waitActive(sessionId, () => handle!.read(0));
       if (current.events.length > preflight.events.length) throw new AzureSyncError('PROVENANCE_MISMATCH', 'The prepared artifact advanced beyond the reviewed history.');
       await verifyImportedProvenance(binding, remote.events.slice(0, current.events.length) as never, current.events as never, await this.provenanceOptions(remote, binding, current.events.length));
       await this.update(sessionId, { importState: 'appending', status: 'importing' });
-      await this.appendAll(handle, preflight.events.slice(current.events.length), sessionId, remote, binding, undefined, current.events.length);
-      const result = await this.finalize(sessionId, remote, binding, handle, undefined, localizedHeader, true);
+      await this.appendAll(handle, preflight.events.slice(current.events.length), sessionId, remote, binding, checkRemote, current.events.length);
+      const result = await this.finalize(sessionId, remote, binding, handle, checkRemote, localizedHeader, true);
       operation.check(); return result;
     } catch (error) {
       operation.check();
@@ -468,10 +531,13 @@ export class Importer {
 
   /** Append only a verified canonical suffix to a cold local copy. */
   async catchUp(sessionId: string, remote: RemoteSession, options: CatchUpOptions): Promise<ImportResult> {
+    if (this.deps.signal !== undefined) options = { ...options, signal: AbortSignal.any([options.signal, this.deps.signal]) };
     options.signal.throwIfAborted();
     this.assertNotOptingOut(sessionId);
     const existing = this.deps.local.getSession(sessionId);
+    this.assertRemoteIntegrity(existing);
     if (existing === undefined || !existing.enabled || existing.detached || existing.state !== 'active') throw new AzureSyncError('DISABLED', 'The local session is not opted in.');
+    if (this.deps.reader !== undefined && existing.publicationScope !== this.deps.reader.scopeId) throw new AzureSyncError('OWNERSHIP_UNVERIFIED', 'Explicitly Sync or import this thread for the current storage account before automatic catch-up.');
     const incomplete = existing.importState !== undefined && existing.importState !== 'complete' &&
       !(existing.importState === 'degraded' && existing.degradedAcknowledged);
     if (incomplete && existing.catchUpPending !== true) throw new AzureSyncError('IMPORT_INCOMPLETE', 'An initial import must be repaired through import recovery, not cold catch-up.');
@@ -492,8 +558,9 @@ export class Importer {
     };
     const checkRemote = async () => {
       check();
-      const current = await this.waitActive(sessionId, () => this.deps.repository.getManifest(sessionId));
+      const current = await this.freshTarget(sessionId, remote);
       check();
+      if (options.isLive()) throw new AzureSyncError('IMPORT_RACE', 'A retained live Agent requires a host restart before cloud catch-up.');
       if (current?.entity.state === 'deleted') throw new AzureSyncError('REMOVED_REMOTELY', 'The cloud session was removed during catch-up.');
       if (current?.entity.generation !== remote.manifest.entity.generation) throw new AzureSyncError('GENERATION_CHANGED', 'The cloud generation changed during catch-up.');
       if (current.entity.state !== 'active' || !current.entity.enabled) throw new AzureSyncError('DISABLED', 'The cloud session was disabled during catch-up.');
@@ -586,6 +653,7 @@ export class Importer {
         // Known tracked generations are never replaced by a fresh import request.
         await this.update(sessionId, {
           imported: true, importState: 'planned', status: 'importing',
+          ...publicationScopePatch(this.deps.local.getSession(sessionId), this.deps.reader?.scopeId),
           generation: remote.manifest.entity.generation, writerEpoch: remote.manifest.entity.writerEpoch,
           importExpectedCount: remote.events.length, importExpectedChainHash: remote.manifest.entity.chainHash,
           canonicalCwd: remote.header.cwd,
@@ -597,7 +665,10 @@ export class Importer {
         throw new AzureSyncError('NEEDS_FOLDER', 'No local folder is mapped for the remote session.');
       }
       const preflight = await this.preflight(sessionId, remote, binding);
+      const checkRemote = () => this.assertFreshTarget(sessionId, remote);
+      await checkRemote();
       const planned = await this.update(sessionId, {
+        ...publicationScopePatch(this.deps.local.getSession(sessionId), this.deps.reader?.scopeId),
         importState: 'planned', status: 'importing', importExpectedCount: remote.events.length,
         generation: remote.manifest.entity.generation, writerEpoch: remote.manifest.entity.writerEpoch,
         ...(remote.header.parentSession === undefined ? {} : { parentSession: remote.header.parentSession }),
@@ -607,6 +678,7 @@ export class Importer {
         importMappingRevision: binding.mapping.revision, canonicalCwd: remote.header.cwd,
       });
       if (handle === undefined) {
+        await checkRemote();
         try { handle = await this.acquireHandle(sessionId, () => this.deps.persistence.create(preflight.header, { inheritedEventCount: remote.inheritedEventCount as never })); }
         catch (error) {
           operation.check();
@@ -638,8 +710,8 @@ export class Importer {
       await this.validateHandle(sessionId, remote, binding, preflight.header, handle);
       await this.update(sessionId, { importState: 'creating' });
       await this.update(sessionId, { importState: 'appending' });
-      await this.appendAll(handle, preflight.events, sessionId, remote, binding);
-      const result = await this.finalize(sessionId, remote, binding, handle);
+      await this.appendAll(handle, preflight.events, sessionId, remote, binding, checkRemote);
+      const result = await this.finalize(sessionId, remote, binding, handle, checkRemote);
       operation.check();
       completed = true;
       return result;
@@ -669,6 +741,9 @@ export class Importer {
       const existing = this.deps.local.getSession(sessionId);
       if (existing === undefined) throw new AzureSyncError('NOT_FOUND', 'There is no local import to resume.');
       const retained = options.allowDisabledRead === true;
+      if (!retained && (!existing.enabled || existing.detached)) throw new AzureSyncError('DISABLED', 'An explicitly disabled import requires retained-byte repair consent.');
+      if (this.deps.reader !== undefined && existing.publicationScope !== undefined && existing.publicationScope !== this.deps.reader.scopeId) throw new AzureSyncError('OWNERSHIP_UNVERIFIED', 'The import belongs to another storage account; explicit initial import consent is required.');
+      if (!retained && !options.explicit && this.deps.reader !== undefined && existing.publicationScope === undefined) throw new AzureSyncError('OWNERSHIP_UNVERIFIED', 'Explicit initial import consent is required before automatic repair in this account.');
       if (retained && (existing.enabled || !existing.detached || existing.state !== 'disabled' || !isInitialIncompleteImport(existing, true))) throw new AzureSyncError('DISABLED', 'Retained-byte repair is limited to an explicitly disabled unfinished initial import.');
       const remote = await this.readRemote(sessionId, retained);
       operation.check();
@@ -679,8 +754,10 @@ export class Importer {
       const initial = isInitialIncompleteImport(existing, retained);
       const anchored = initial && (retained || existing.importExpectedCount !== undefined || existing.importExpectedChainHash !== undefined);
       if (anchored) this.verifyInitialTarget(existing, remote);
-      const checkRemote = !anchored ? undefined : async () => {
-        const latest = await this.waitActive(sessionId, () => this.deps.repository.getManifest(sessionId));
+      const checkRemote = async () => {
+        await this.assertFreshTarget(sessionId, remote, retained);
+        if (!anchored) return;
+        const latest = await this.freshTarget(sessionId, remote, retained);
         this.assertActive(sessionId);
         if (latest === undefined) throw new AzureSyncError('NOT_FOUND', 'The cloud import target disappeared.');
         const entity = latest.entity;

@@ -53,6 +53,18 @@ function fixture(localCount = 1, remoteCount = 1, live = false) {
   return { id, service, reader, repository, get: () => record, set: (next: Partial<LocalSessionRecord>) => { record = { ...record, ...next }; }, setManifest: (next: StoredManifest | undefined) => { manifest = next; }, manifest: () => manifest!, snapshot: () => snapshot, setSnapshot: (value: typeof snapshot) => { snapshot = value; }, counts: () => ({ pauses, uploads, proofs, catches, reads }) };
 }
 
+test('default automatic observation starts after30 seconds and repeats without startup refresh', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const f = fixture(); t.after(() => f.service.close());
+  let polls = 0; f.service.refreshAll = async () => { polls++; };
+  f.service.start(false);
+  t.mock.timers.tick(29_999); assert.equal(polls, 0);
+  t.mock.timers.tick(1); assert.equal(polls, 1);
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  t.mock.timers.tick(29_999); assert.equal(polls, 1);
+  t.mock.timers.tick(1); assert.equal(polls, 2);
+});
+
 test('runtime dispatches verified same/local-ahead/cold-ahead/live-ahead without claiming a live writer', async () => {
   const same = fixture();
   assert.equal((await same.service.reconcile(same.id))?.kind, 'same');

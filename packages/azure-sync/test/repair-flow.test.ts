@@ -89,14 +89,14 @@ async function fixture(t: TestContext, options: { generation?: number; preset?: 
       return mapping === undefined ? undefined : { mapping, fs: nodeCwdFs };
     };
     const uploader = new Uploader({
-      config, source: device.source, repository: cloud.asRepository(), leases: cloud.leases('device-b'), local: device.local,
+      config, source: device.source, repository: cloud.asRepository(), reader: device.reader, leases: cloud.leases('device-b'), local: device.local,
       deviceId: 'device-b', platform: 'linux', cwdBinding: async (_id, record) => {
         const mapping = record.canonicalCwd === undefined ? undefined : selectMapping([...device.local.listMappings()].map(([, value]) => value), record.canonicalCwd, 'linux');
         return mapping === undefined ? undefined : { mapping, fs: nodeCwdFs };
       }, now: Date.now,
     });
     const importer = new Importer({
-      config, persistence: device.ctx.sessionPersistence, repository: cloud.asRepository(), local: device.local,
+      config, persistence: device.ctx.sessionPersistence, repository: cloud.asRepository(), reader: device.reader, local: device.local,
       isOptingOut: id => controller.isOptingOut(id),
       cwdBinding,
       presetAvailable: () => state.presetAvailable,
@@ -149,21 +149,26 @@ async function replaceRemote(f: Fixture, events: readonly { readonly seq: number
   const current = await f.cloud.getManifest(f.id); assert.ok(current);
   const bindingHash = headerHash(header, inheritedEventCount);
   const genesis = genesisHash(f.id, current.entity.generation, bindingHash);
-  const chain = events.length === 0 ? undefined : chainEvents(genesis, events);
+  const extendsCurrent = bindingHash === current.entity.headerHash && inheritedEventCount === current.entity.inheritedEventCount &&
+    events.length > current.entity.eventCount && current.entity.eventCount > 0 &&
+    chainEvents(genesis, events.slice(0, current.entity.eventCount)).chainHash === current.entity.chainHash;
+  const startSeq = extendsCurrent ? current.entity.eventCount : 0;
+  const previous = extendsCurrent ? current.entity.chainHash : genesis;
+  const chain = events.length === 0 ? undefined : chainEvents(previous, events.slice(startSeq));
   let row;
   if (chain !== undefined) {
-    row = batchRow(f.id, current.entity.generation, 0, {
-      endSeq: events.length - 1, eventCount: events.length, prevChainHash: genesis,
+    row = batchRow(f.id, current.entity.generation, startSeq, {
+      endSeq: events.length - 1, eventCount: events.length - startSeq, prevChainHash: previous,
       chainHash: chain.chainHash, headHash: chain.headHash, payloadHash: chain.payloadHash,
-      blobName: `repair-fixture/${randomUUID()}.jsonl.gz`,
+      ...(extendsCurrent ? { prevBatchRowKey: current.entity.lastBatchRowKey } : {}),
     });
-    await f.cloud.putCandidate(row.blobName, gzipSync(payloadBytes(events)), {});
+    await f.cloud.putCandidate(row.blobName, gzipSync(payloadBytes(events.slice(startSeq))), {});
     f.cloud.rows.set(row.rowKey, { entity: row, etag: `fixture-${randomUUID()}` });
   }
   await f.cloud.updateManifest({
     ...current.entity, headerJson: JSON.stringify(header), headerHash: bindingHash, inheritedEventCount,
     eventCount: events.length, headSeq: events.length - 1, headHash: chain?.headHash ?? genesis,
-    chainHash: chain?.chainHash ?? genesis, batchCount: row === undefined ? 0 : 1,
+    chainHash: chain?.chainHash ?? genesis, batchCount: row === undefined ? 0 : extendsCurrent ? current.entity.batchCount + 1 : 1,
     lastBatchRowKey: row?.rowKey, lastBatchGeneration: row?.generation, lastBatchBlobName: row?.blobName,
   }, current.etag);
 }
@@ -470,7 +475,7 @@ for (const kind of ['native', 'complete', 'catch-up', 'unanchored'] as const) {
     const f = await fixture(t); await f.current.map();
     const manifest = await f.cloud.getManifest(f.id); assert.ok(manifest);
     await f.current.device.local.putSession(localSession({
-      sessionId: f.id, imported: kind !== 'native', importState: kind === 'complete' ? 'complete' : 'failed',
+      sessionId: f.id, publicationScope: f.current.device.reader.scopeId, imported: kind !== 'native', importState: kind === 'complete' ? 'complete' : 'failed',
       importExpectedCount: kind === 'unanchored' ? undefined : f.events.length,
       importExpectedChainHash: kind === 'unanchored' ? undefined : manifest.entity.chainHash,
       ...(kind === 'catch-up' ? { catchUpPending: true } : {}),
@@ -585,7 +590,7 @@ for (const kind of ['native', 'catch-up', 'terminal', 'unanchored'] as const) {
     const f = await fixture(t); await f.current.map();
     const manifest = await f.cloud.getManifest(f.id); assert.ok(manifest);
     await f.current.device.local.putSession(localSession({
-      sessionId: f.id, imported: kind !== 'native', enabled: false, detached: true, state: kind === 'terminal' ? 'deleted' : 'disabled',
+      sessionId: f.id, publicationScope: f.current.device.reader.scopeId, imported: kind !== 'native', enabled: false, detached: true, state: kind === 'terminal' ? 'deleted' : 'disabled',
       importState: 'failed', status: 'detached', resurrectionCancellationId: randomUUID(),
       importExpectedCount: kind === 'unanchored' ? undefined : f.events.length,
       importExpectedChainHash: kind === 'unanchored' ? undefined : manifest.entity.chainHash,
@@ -605,7 +610,7 @@ test('repair-flow safety: a sparse completed checkpoint cannot become creatable 
   const f = await fixture(t);
   const manifest = await f.cloud.getManifest(f.id); assert.ok(manifest);
   await f.current.device.local.putSession(localSession({
-    sessionId: f.id, imported: true, importState: 'complete', importExpectedCount: f.events.length,
+    sessionId: f.id, publicationScope: f.current.device.reader.scopeId, imported: true, importState: 'complete', importExpectedCount: f.events.length,
     importExpectedChainHash: manifest.entity.chainHash,
   }));
   await assert.rejects(f.current.run({ action: 'repair', sessionId: f.id }), errorCode('NEEDS_FOLDER'));

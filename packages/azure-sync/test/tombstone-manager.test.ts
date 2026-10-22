@@ -118,6 +118,78 @@ function boundSession(overrides: Partial<CloudSessionEntity> = {}): CloudSession
   return { ...entity, headerHash: headerHash(JSON.parse(entity.headerJson), entity.inheritedEventCount) };
 }
 
+test('copied pending intent and matching ETag never authorize automatic resurrection in an unknown or different account', async () => {
+  const scopeA = 'a'.repeat(64), scopeB = 'b'.repeat(64);
+  const root = boundSession({ sessionId: 'root', state: 'deleted', enabled: false, cleanupPending: false });
+  const f = setup([root], [], [localSession({ sessionId: 'root', publicationScope: scopeA })]);
+  const update = f.repo.updateManifest.bind(f.repo);
+  f.repo.updateManifest = async (entity, etag) => { if (entity.state === 'active') throw new AzureSyncError('TRANSIENT', 'Crash before activation.'); return update(entity, etag); };
+  const original = new TombstoneManager(f.repo as unknown as CloudRepository, f.local, () => 100, 'device', undefined, scopeA);
+  await assert.rejects(original.resurrect('root', 1));
+  const metadata = structuredClone(f.records.get('root')!); assert.ok(metadata.resurrectionIntent);
+  const source = structuredClone((await f.repo.getManifest('root'))!);
+  assert.equal(source.etag, metadata.resurrectionIntent.sourceETag);
+  for (const publicationScope of [scopeA, undefined]) {
+    const foreign = new MemoryRepo([source.entity]); foreign.manifests.set('root', structuredClone(source));
+    const record = { ...structuredClone(metadata), publicationScope };
+    const local = new MemoryLocal(new Map([['root', record]])); let cloudIO = 0, localWrites = 0;
+    foreign.getManifest = async () => { cloudIO++; assert.fail('namespace rejection must precede raw account IO'); };
+    local.putSession = async next => { localWrites++; local.records.set(next.sessionId, next); };
+    const manager = new TombstoneManager(foreign as unknown as CloudRepository, local, () => 100, 'device', undefined, scopeB);
+    if (publicationScope !== undefined) {
+      for (const work of [() => manager.remove('root', 1), () => manager.resurrect('root', 1)]) {
+        await assert.rejects(work(), error => error instanceof AzureSyncError && error.code === 'OWNERSHIP_UNVERIFIED');
+      }
+    }
+    assert.deepEqual(await manager.repairPending(), { repaired: [], failed: ['root'] });
+    assert.equal(cloudIO, 0); assert.equal(localWrites, 0); assert.deepEqual(foreign.calls, []);
+    assert.deepEqual(local.getSession('root'), record); assert.deepEqual([...foreign.manifests], [['root', source]]);
+  }
+});
+
+test('explicit manual legacy unscoped removal and resurrection remain available without authorizing automatic repair', async () => {
+  const f = setup([boundSession({ sessionId: 'root' })]);
+  const manager = new TombstoneManager(f.repo as unknown as CloudRepository, f.local, () => 100, 'device', undefined, 'b'.repeat(64));
+  await manager.remove('root', 1);
+  assert.equal(f.records.get('root')?.state, 'deleted'); assert.equal(f.records.get('root')?.publicationScope, undefined);
+  assert.equal((await manager.resurrect('root', 1)).generation, 2);
+  assert.equal(f.records.get('root')?.publicationScope, undefined, 'explicit recovery must not silently consent to automatic publication');
+});
+
+test('explicit resurrection confirms accepted-history activation before clearing its durable intent and retries a failed pin boundary', async () => {
+  const root = boundSession({ sessionId: 'root', state: 'deleted', enabled: false, cleanupPending: false });
+  const f = setup([root]); let calls = 0; let operationId: string | undefined;
+  const manager = new TombstoneManager(f.repo as unknown as CloudRepository, f.local, () => 100, 'device', async (intent, receipt, context) => {
+    context.check(); calls++;
+    assert.equal(f.records.get('root')?.resurrectionIntent?.operationId, intent.operationId);
+    assert.equal(f.records.get('root')?.generation, 1, 'native/local generation must not advance before H activation succeeds');
+    assert.equal(receipt.entity.generation, 2); assert.equal(receipt.entity.eventCount, 0);
+    if (operationId === undefined) operationId = intent.operationId; else assert.equal(intent.operationId, operationId);
+    if (calls === 1) throw new Error('Synthetic durable pin write failure.');
+  });
+  await assert.rejects(manager.resurrect('root', 1), /pin write failure/);
+  assert.equal(f.records.get('root')?.generation, 1);
+  assert.equal(f.records.get('root')?.resurrectionIntent?.operationId, operationId);
+  assert.equal((await f.repo.getManifest('root'))?.entity.generation, 2);
+  await manager.repairPending();
+  assert.equal(calls, 2); assert.equal(f.records.get('root')?.generation, 2);
+  assert.equal(f.records.get('root')?.resurrectionIntent, undefined);
+});
+
+test('an opt-out during accepted-history activation cannot publish the new local generation checkpoint', async () => {
+  const root = boundSession({ sessionId: 'root', state: 'deleted', enabled: false, cleanupPending: false });
+  const f = setup([root]);
+  const manager = new TombstoneManager(f.repo as unknown as CloudRepository, f.local, () => 100, 'device', async (_intent, _receipt, context) => {
+    context.check();
+    f.records.set('root', { ...f.records.get('root')!, enabled: false, detached: true, state: 'disabled',
+      resurrectionIntent: undefined, resurrectionCancellationId: '00000000-0000-4000-8000-000000000090' });
+    context.check();
+  });
+  await assert.rejects(manager.resurrect('root', 1), error => error instanceof AzureSyncError && error.code === 'CANCELLED');
+  assert.equal(f.records.get('root')?.generation, 1); assert.equal(f.records.get('root')?.enabled, false);
+  assert.equal(f.records.get('root')?.detached, true); assert.equal(f.records.get('root')?.resurrectionIntent, undefined);
+});
+
 test('root-first tombstones all descendants before sweeping rows/blobs/orphans/leases, retaining attachments and future generations', async () => {
   const root = cloudSession({ sessionId: 'root', generation: 2, leaseOwner: 'old-writer', leaseUntil: 500 });
   const child = cloudSession({ sessionId: 'child', rootSessionId: 'root', rootGeneration: 2 });

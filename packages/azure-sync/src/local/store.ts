@@ -4,7 +4,7 @@
  * second session store.
  * @module @1yefuwang1/dsh-azure-sync/local/store
  */
-import { defineDomain, domainTable, DomainError, type Domain, type DomainFacility, type KvTable } from '@deepseek-ai/dsh-storage-domain';
+import { defineDomain, domainTable, DomainError, type Domain, type DomainFacility, type DomainTableSpec, type KvTable } from '@deepseek-ai/dsh-storage-domain';
 import {
   LOCAL_DOMAIN_VERSION,
   localDeviceSchema,
@@ -18,9 +18,23 @@ import {
   type PathMappingRecord,
 } from '../schema.js';
 
-export const localDomain = defineDomain({
+/** Preserve exact public table keys/value types without expanding the same record schema into declarations twice. */
+interface LocalDomainSpec {
+  name: string;
+  version: number;
+  compatibleVersions: number[];
+  layout: 'per-record';
+  tables: {
+    sessions: DomainTableSpec<string, LocalSessionRecord>;
+    mappings: DomainTableSpec<string, PathMappingRecord>;
+    devices: DomainTableSpec<string, LocalDeviceRecord>;
+    settings: DomainTableSpec<string, LocalSettingsRecord>;
+  };
+}
+export const localDomain: LocalDomainSpec = defineDomain({
   name: 'dsh_azure_sync',
   version: LOCAL_DOMAIN_VERSION,
+  compatibleVersions: [4],
   layout: 'per-record',
   tables: {
     sessions: domainTable(localSessionRecordSchema),

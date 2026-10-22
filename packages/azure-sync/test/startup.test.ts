@@ -11,7 +11,8 @@ import { localSessionRecordSchema } from '../src/schema.js';
 import { AcceptanceCloud, acceptanceDevice, type AcceptanceDevice } from './acceptance-helpers.js';
 import { localSession } from './helpers.js';
 
-test('actual plugin startup with missing credentials rejects persisted opted-in direct AgentLoop input while explicit off remains executable', { timeout: 20_000 }, async t => {
+for (const failPins of [false, true]) {
+test(`actual plugin startup with ${failPins ? 'unavailable pin metadata' : 'missing credentials'} rejects persisted opted-in direct AgentLoop input while explicit off remains executable`, { timeout: 20_000 }, async t => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'azure-startup-admission-')));
   const cloud = new AcceptanceCloud();
   const devices: AcceptanceDevice[] = [];
@@ -48,6 +49,13 @@ test('actual plugin startup with missing credentials rejects persisted opted-in 
   await host.service.close();
   await host.local.close();
   host.ctx.provide('storageDomain', host.facility);
+  if (failPins) {
+    const open = host.facility.open.bind(host.facility);
+    host.facility.open = ((definition: Parameters<typeof open>[0]) => {
+      if (definition.name === 'azure_sync_history_pins') return Promise.reject(new Error('Synthetic unavailable accepted-history metadata.'));
+      return open(definition);
+    }) as typeof host.facility.open;
+  }
   const missingRef = `AZURE_TEST_MISSING_${randomUUID().replaceAll('-', '_').toUpperCase()}`;
   assert.equal(process.env[missingRef], undefined);
   scope = host.ctx.plugin(AzurePlugin, Config({ auth: 'connection-string', connectionRef: missingRef }));
@@ -82,3 +90,4 @@ test('actual plugin startup with missing credentials rejects persisted opted-in 
   assert.equal(events.filter(value => value.type === 'user/message' && value.data.id === allowed.id).length, 1);
   assert.equal(host.writeOpens, writes);
 });
+}

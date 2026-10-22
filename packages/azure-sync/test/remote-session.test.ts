@@ -19,7 +19,7 @@ function fixture(corrupt = false) {
   const c1 = chainEvents(c0.chainHash, [e1]);
   const row0 = batchRow(sessionId, 1, 0, { endSeq: 0, eventCount: 1, prevChainHash: genesis, chainHash: c0.chainHash, headHash: c0.headHash, payloadHash: c0.payloadHash });
   const row1 = batchRow(sessionId, 1, 1, { endSeq: 1, eventCount: 1, prevChainHash: c0.chainHash, chainHash: c1.chainHash, headHash: c1.headHash, payloadHash: c1.payloadHash, prevBatchRowKey: row0.rowKey });
-  const entity = cloudSession({ sessionId, headerHash: binding, eventCount: 2, chainHash: c1.chainHash, lastBatchRowKey: row1.rowKey, lastBatchGeneration: 1, batchCount: 2 });
+  const entity = cloudSession({ sessionId, headerHash: binding, eventCount: 2, headSeq: 1, headHash: c1.headHash, chainHash: c1.chainHash, lastBatchRowKey: row1.rowKey, lastBatchGeneration: 1, lastBatchBlobName: row1.blobName, batchCount: 2 });
   const manifest: StoredManifest = { entity, etag: 'etag-1' };
   const blobs = new Map<string, Buffer>([
     [row0.blobName, corrupt ? gzipSync(Buffer.from('{"broken":true}\n')) : gzipSync(payloadBytes([e0]))],
@@ -27,6 +27,7 @@ function fixture(corrupt = false) {
   ]);
   const repository = {
     getManifest: async () => manifest,
+    getBatch: async (key: string) => [row0, row1].find(row => row.rowKey === key),
     listBatchRows: async () => [row0, row1],
     readCandidate: async (name: string) => blobs.get(name) ?? Buffer.alloc(0),
   } as unknown as CloudRepository;

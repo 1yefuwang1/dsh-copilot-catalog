@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { createServer, request as forwardRequest } from 'node:http';
+import { mkdir, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { Readable } from 'node:stream';
@@ -17,7 +17,11 @@ import { SessionLeaseManager } from '../src/sync/lease-manager.js';
 import { Uploader, type UploadDependencies } from '../src/sync/uploader.js';
 import { decodeGitContextJson } from '../src/git/context.js';
 import { SyncService } from '../src/sync/service.js';
-import { RemoteSessionReader } from '../src/sync/remote-session.js';
+import { RemoteSessionReader, type HistoryCacheOptions } from '../src/sync/remote-session.js';
+import { HistoryPinStore } from '../src/sync/history-state.js';
+import { TombstoneManager } from '../src/sync/tombstone-manager.js';
+import { AzureSyncError } from '../src/azure/errors.js';
+import { CostHttpMeter, assertNoHistory, totalCostRequests as total, combineCostCounts as combine, type CostCounts as Counts } from './cost-http-meter.js';
 import { Importer } from '../src/sync/importer.js';
 import { ImportService } from '../src/sync/import-service.js';
 import { ProjectionWarmer } from '../src/sync/projection-warmer.js';
@@ -29,17 +33,7 @@ import { AcceptanceCloud, acceptanceDevice, type AcceptanceDevice } from './acce
 import { event, pathMapping } from './helpers.js';
 import { startAzurite, temporaryRoot, removeTemporaryRoot } from './azurite-helpers.js';
 
-/** Counts observed SDK HTTP attempts at a loopback reverse proxy, NOT adapter calls.
- * No URL, header, body, account key, or conversation content enters the report.
- * The proxy does not alter ordinary requests/responses or substitute cloud state.
- */
-function empty() { return { blobWrites: 0, blobReads: 0, blobLists: 0, blobOther: 0, tableReads: 0, tableQueries: 0, tableWrites: 0, tableBatches: 0, tableOther: 0, putBlocks: 0, putBlockLists: 0, leaseOperations: 0, leaseAcquisitions30: 0, leaseAcquisitions60: 0, leaseBlobWrites: 0, historyBlobWrites: 0, failedResponses: 0 }; }
-type Counts = ReturnType<typeof empty>;
-const baseKeys = ['blobWrites', 'blobReads', 'blobLists', 'blobOther', 'tableReads', 'tableQueries', 'tableWrites', 'tableBatches', 'tableOther'] as const;
-const total = (value: Counts) => baseKeys.reduce((sum, key) => sum + value[key], 0);
-function combine(parts: readonly [Counts, number][]): Counts {
-  const result = empty(); for (const [value, times] of parts) for (const key of Object.keys(result) as (keyof Counts)[]) result[key] += value[key] * times; return result;
-}
+/** Legacy retail operation inputs are retained transparently, not represented as a current rate quote. */
 function operationUSD(value: Counts): number {
   return (value.blobWrites + value.blobLists) * 0.05 / 10_000 + (value.blobReads + value.blobOther) * 0.004 / 10_000 + (value.tableReads + value.tableQueries + value.tableWrites + value.tableBatches + value.tableOther) * 0.00036 / 10_000;
 }
@@ -48,82 +42,51 @@ test('measured real-Azurite HTTP profile supports an explicit retail cost model,
   const emulator = await startAzurite(); t.after(() => emulator.close());
   const prefix = 'azure-cost-profile-', root = await temporaryRoot(prefix);
   const devices: AcceptanceDevice[] = [], services: SyncService[] = [], controllers: CloudController[] = [];
-  const proxies: ReturnType<typeof createServer>[] = [];
+  const meter = new CostHttpMeter();
+  const histories = new Map<AcceptanceDevice, { reader: RemoteSessionReader; pins: HistoryPinStore; directory: string; cache: HistoryCacheOptions }>();
   t.after(async () => {
     for (const controller of controllers) controller.close(); for (const service of services.reverse()) await service.close();
+    for (const { reader, pins } of histories.values()) { await reader.close(); await pins.close(); }
     for (const device of devices.reverse()) await device.close();
-    for (const server of proxies) { server.closeAllConnections(); await new Promise<void>(done => server.close(() => done())); }
+    await meter.close();
     await removeTemporaryRoot(root, prefix);
   });
-  let observed: Counts | undefined, inject503 = false;
-  async function proxy(target: URL, kind: 'blob' | 'table') {
-    assert.equal(target.protocol, 'http:'); assert.equal(target.hostname, '127.0.0.1', 'never meter a paid/live account');
-    const server = createServer((incoming, outgoing) => {
-      const counts = observed, url = new URL(incoming.url ?? '/', target.origin), method = incoming.method ?? 'GET', comp = url.searchParams.get('comp');
-      if (counts) {
-        if (kind === 'table') {
-          if (url.pathname.endsWith('/$batch')) counts.tableBatches++;
-          else if (method === 'GET') (url.pathname.includes('PartitionKey=') ? counts.tableReads++ : counts.tableQueries++);
-          else if (['POST', 'PUT', 'MERGE', 'PATCH', 'DELETE'].includes(method)) counts.tableWrites++;
-          else counts.tableOther++;
-        } else if (comp === 'list') counts.blobLists++;
-        else if (comp === 'lease') {
-          counts.blobOther++; counts.leaseOperations++;
-          if (incoming.headers['x-ms-lease-action'] === 'acquire') {
-            if (incoming.headers['x-ms-lease-duration'] === '30') counts.leaseAcquisitions30++;
-            if (incoming.headers['x-ms-lease-duration'] === '60') counts.leaseAcquisitions60++;
-          }
-        }
-        else if (method === 'PUT') {
-          counts.blobWrites++; if (comp === 'block') counts.putBlocks++; if (comp === 'blocklist') counts.putBlockLists++;
-          // Subsets only; never add these to billable operation totals a second time.
-          const objectPath = decodeURIComponent(url.pathname);
-          if (objectPath.includes('/v1/leases/')) counts.leaseBlobWrites++;
-          if (objectPath.includes('/v1/sessions/')) counts.historyBlobWrites++;
-        }
-        else if (method === 'GET' && !['container', 'service'].includes(url.searchParams.get('restype') ?? '')) counts.blobReads++;
-        else counts.blobOther++;
-      }
-      if (inject503 && kind === 'blob' && method === 'HEAD') {
-        inject503 = false; if (counts) counts.failedResponses++;
-        outgoing.writeHead(503, { 'x-ms-error-code': 'ServerBusy', 'content-length': '0' }); outgoing.end(); return;
-      }
-      const request = forwardRequest({ hostname: target.hostname, port: target.port, method, path: incoming.url, headers: { ...incoming.headers, host: target.host } }, response => {
-        if (counts && (response.statusCode ?? 500) >= 400) counts.failedResponses++;
-        outgoing.writeHead(response.statusCode ?? 502, response.headers); response.pipe(outgoing);
-      });
-      request.on('error', () => { if (!outgoing.headersSent) outgoing.writeHead(502); outgoing.end(); });
-      incoming.on('aborted', () => request.destroy()); incoming.pipe(request);
-    }); proxies.push(server);
-    await new Promise<void>(done => server.listen(0, '127.0.0.1', done)); const address = server.address(); assert.ok(address && typeof address !== 'string');
-    return `http://127.0.0.1:${address.port}`;
-  }
   const original = emulator.connection();
   const blobEndpoint = new URL(/BlobEndpoint=([^;]+)/u.exec(original)![1]!), tableEndpoint = new URL(/TableEndpoint=([^;]+)/u.exec(original)![1]!);
-  const blobProxy = await proxy(blobEndpoint, 'blob'), tableProxy = await proxy(tableEndpoint, 'table');
+  const blobProxy = await meter.proxy(blobEndpoint, 'blob'), tableProxy = await meter.proxy(tableEndpoint, 'table');
   const connection = original.replace(blobEndpoint.origin, blobProxy).replace(tableEndpoint.origin, tableProxy);
   const blobClient = BlobServiceClient.fromConnectionString(connection, { retryOptions: { maxTries: 2, retryDelayInMs: 1, maxRetryDelayInMs: 1 } });
   const blob = new BlobStore(blobClient.getContainerClient('dsh-state'));
   const table = new TableStore(TableClient.fromConnectionString(connection, 'dshstatesync', { allowInsecureConnection: true }));
-  const repository = new CloudRepository(blob, table), profiles: Record<string, Counts> = {};
-  async function measure<T>(name: string, action: () => Promise<T>): Promise<T> {
-    assert.equal(observed, undefined); const counts = empty(); observed = counts;
-    try { return await action(); } finally { observed = undefined; profiles[name] = { ...counts }; }
+  const repository = new CloudRepository(blob, table), profiles = meter.profiles;
+  const measure = <T>(name: string, action: () => Promise<T>) => meter.measure(name, action);
+  async function historyFor(device: AcceptanceDevice, cache: HistoryCacheOptions = {}) {
+    const previous = histories.get(device);
+    if (previous) { await previous.reader.close(); await previous.pins.close(); }
+    const directory = join(device.root, 'private-history-cache'); await mkdir(directory, { recursive: true, mode: 0o700 });
+    const pins = new HistoryPinStore(device.facility); await pins.open();
+    const reader = new RemoteSessionReader(repository, { maxCompressedBytes: 6_291_456, maxExpandedBytes: Config({}).maxBatchBytes,
+      maxEvents: Config({}).maxEventsPerSession, pins, cache: { directory, ...cache } });
+    const history = { reader, pins, directory, cache }; histories.set(device, history); return history;
   }
-  const a = await acceptanceDevice(join(root, 'a'), 'device-a', new AcceptanceCloud()); devices.push(a); await a.service.close();
-  const b = await acceptanceDevice(join(root, 'b'), 'device-b', new AcceptanceCloud(), a.cwd); devices.push(b); await b.service.close();
+  const a = await acceptanceDevice(join(root, 'a'), 'device-a', new AcceptanceCloud()); devices.push(a); await a.service.close(); await a.reader.close();
+  const b = await acceptanceDevice(join(root, 'b'), 'device-b', new AcceptanceCloud(), a.cwd); devices.push(b); await b.service.close(); await b.reader.close();
+  await historyFor(a); await historyFor(b);
   const config = Config({ maxBatchEvents: 1 });
   function makeService(device: AcceptanceDevice, maxBatchEvents: number, imported = false, gitContext?: UploadDependencies['gitContext']) {
     const binding = { mapping: pathMapping({ remotePrefix: a.cwd, localPrefix: device.cwd, revision: '1'.repeat(64) }), fs: nodeCwdFs };
-    const leases = new SessionLeaseManager({ repository, leases: new LeaseManager(blob), deviceId: imported ? 'device-b' : 'device-a', now: Date.now });
-    const uploader = new Uploader({ config: Config({ maxBatchEvents }), source: device.source, repository, leases, local: device.local, deviceId: imported ? 'device-b' : 'device-a', platform: 'linux', now: Date.now, renewEveryMs: 1_000_000, ...(imported ? { cwdBinding: async () => binding } : {}), ...(gitContext ? { gitContext } : {}) });
-    const reader = new RemoteSessionReader(repository, { maxCompressedBytes: 1_048_576, maxExpandedBytes: config.maxBatchBytes });
+    const history = histories.get(device); assert.ok(history);
+    const reader = history.reader, deviceId = device === a ? 'device-a' : device === b ? 'device-b' : 'device-pressure';
+    const localConfig = Config({ maxBatchEvents, historyMemoryBytes: history.cache.memoryBytes ?? config.historyMemoryBytes, historyDiskBytes: history.cache.diskBytes ?? config.historyDiskBytes });
+    const leases = new SessionLeaseManager({ repository, leases: new LeaseManager(blob), deviceId, now: Date.now });
+    const uploader = new Uploader({ config: localConfig, source: device.source, repository, reader, leases, local: device.local, deviceId, platform: 'linux', now: Date.now, renewEveryMs: 1_000_000, ...(imported ? { cwdBinding: async () => binding } : {}), ...(gitContext ? { gitContext } : {}) });
     const warmer = new ProjectionWarmer({ pollMs: 1, cache: {
       coldSnapshot(header: SessionHeader, inherited: number, events: readonly SessionEvent[]) { const restored = device.ctx.sessionProjections.restore({}, events, 0 as never, header, inherited as never); device.checkpoints.set(header.id, restored.snapshot); },
       cachedSnapshot: header => device.checkpoints.get(header.id),
     } });
-    const imports = new ImportService(new Importer({ config, persistence: device.ctx.sessionPersistence, repository, local: device.local, cwdBinding: async () => binding, projection: warmer, now: Date.now }));
-    const service = new SyncService({ uploader, local: device.local, repository, reader, source: device.source, imports, agents: device.ctx.agents, now: Date.now, refreshGitOnSync: !!gitContext }); services.push(service);
+    const imports = new ImportService(new Importer({ config: localConfig, persistence: device.ctx.sessionPersistence, repository, reader, local: device.local, cwdBinding: async () => binding, projection: warmer, now: Date.now }));
+    const tombstones = new TombstoneManager(repository, device.local, Date.now, deviceId, (intent, receipt, context) => reader.confirmGenerationActivation(intent, receipt, context));
+    const service = new SyncService({ uploader, local: device.local, repository, reader, source: device.source, imports, agents: device.ctx.agents, tombstones, historyJobTimeoutMs: localConfig.historyJobTimeoutMs, now: Date.now, refreshGitOnSync: !!gitContext }); services.push(service);
     return { service, uploader, leases, reader };
   }
   const one = makeService(a, 1000), eight = makeService(a, 1), steadyEight = makeService(a, 1000), imported = makeService(b, 1, true);
@@ -142,13 +105,16 @@ test('measured real-Azurite HTTP profile supports an explicit retail cost model,
   assert.equal(profiles.first_opt_in_one_batch!.leaseAcquisitions30, 1); assert.equal(profiles.cold_takeover_one_batch!.leaseAcquisitions30, 1); assert.equal(one.uploader.hasHeld(rootOne), false);
   await measure('seed_eight_batches', () => eight.service.enable(rootEight));
   assert.equal((await repository.getManifest(rootOne))!.entity.batchCount, 1); assert.equal((await repository.getManifest(rootEight))!.entity.batchCount, 8);
-  await measure('idle_one_batch', () => one.service.reconcile(rootOne));
-  await measure('idle_eight_batches', () => eight.service.reconcile(rootEight));
+  await measure('idle_one_batch', () => one.reader.observe(rootOne));
+  await measure('idle_eight_batches', () => eight.reader.observe(rootEight));
+  await measure('idle_background_all_native_records', () => one.service.refreshAll());
+  for (const name of ['idle_one_batch', 'idle_eight_batches', 'idle_background_all_native_records']) assertNoHistory(profiles[name]!);
   await measure('cold_import_eight_batches', () => imported.service.importSession(rootEight));
   assert.equal(b.local.getSession(rootEight)?.importState, 'complete'); assert.equal(b.ctx.agents.list().length, 0);
   await measure('cold_imported_inspection_eight_batches', () => imported.service.ensureOwnership(rootEight, undefined, { inspection: true }));
   assert.equal(profiles.cold_imported_inspection_eight_batches!.leaseAcquisitions30, 1); assert.equal(imported.uploader.hasHeld(rootEight), false); assert.equal(b.ctx.agents.list().length, 0);
-  await measure('idle_imported_eight_batches', () => imported.service.reconcile(rootEight));
+  await measure('idle_imported_eight_batches', () => imported.service.refreshAll());
+  assertNoHistory(profiles.idle_imported_eight_batches!);
   const controller = new CloudController({ local: a.local, settings: new SettingsService({ local: a.local, config }), core: async () => { throw new Error('local status must not boot cloud'); } }); controllers.push(controller);
   await measure('five_local_status_requests', async () => { for (let index = 0; index < 5; index++) await controller.execute({ action: 'status', sessionId: rootEight }, { origin: 'rpc', signal: new AbortController().signal }); });
   assert.equal(total(profiles.five_local_status_requests!), 0);
@@ -185,8 +151,8 @@ test('measured real-Azurite HTTP profile supports an explicit retail cost model,
   };
   const again = await a.ctx.sessionPersistence.open(SessionId(rootOne), 'write');
   try { const current = await again.read(0); await again.append([event(current.events.length)] as never); await again.flush(); } finally { await again.close(); }
-  try { await measure('incremental_with_one_cas_retry', () => one.service.sync(rootOne)); } finally { repository.commitBatch = originalCommit; }
-  assert.equal(attempts, 2); assert.ok(profiles.incremental_with_one_cas_retry!.tableBatches >= 2);
+  try { await measure('candidate_orphan_cas_retry_exception', () => one.service.sync(rootOne)); } finally { repository.commitBatch = originalCommit; }
+  assert.equal(attempts, 2); assert.ok(profiles.candidate_orphan_cas_retry_exception!.tableBatches >= 2);
   const attachmentBytes = Buffer.alloc(10 * 1024 * 1024, 65), attachmentId = `cost-${randomUUID()}`;
   const refs = [{ id: attachmentId, kind: 'file' as const, name: 'cost-fixture.bin', raw: { attachmentId, name: 'cost-fixture.bin', bytes: attachmentBytes.byteLength } }];
   const sender = new AttachmentSync({ blob, maxBytes: 20 * 1024 * 1024, now: Date.now, store: { readFileStream: async function* () { yield attachmentBytes; } } as unknown as AttachmentStore });
@@ -202,7 +168,7 @@ test('measured real-Azurite HTTP profile supports an explicit retail cost model,
   // SDK-only sensitivity: NOT the plugin upload path, excluded from monthly model.
   await measure('sdk_only_four_blocks_not_plugin', () => blob.container.getBlockBlobClient('sdk-only-blocks').uploadStream(Readable.from(Buffer.alloc(2048)), 512, 1));
   assert.equal(profiles.sdk_only_four_blocks_not_plugin!.putBlocks, 4); assert.equal(profiles.sdk_only_four_blocks_not_plugin!.putBlockLists, 1);
-  inject503 = true;
+  meter.failNextHead();
   await measure('sdk_head_retry_attempts', () => blob.container.getBlobClient('sdk-only-blocks').getProperties());
   assert.equal(profiles.sdk_head_retry_attempts!.blobOther, 2); assert.equal(profiles.sdk_head_retry_attempts!.failedResponses, 1);
   await measure('catalog_logical_pages_of_one', async () => { let cursor: string | undefined; do { const page = await repository.listManifestsPage({ limit: 1, ...(cursor ? { cursor } : {}) }); cursor = page.nextCursor; } while (cursor); });
@@ -230,14 +196,142 @@ test('measured real-Azurite HTTP profile supports an explicit retail cost model,
   await measure('git_v2_repeated_explicit_refresh', () => metadata.service.sync(metadataId));
   await measure('git_v2_verified_one_batch_read', () => metadata.reader.read(metadataId));
   assert.equal(profiles.git_v2_verified_one_batch_read!.leaseOperations, 0);
-  assert.equal(a.llmCalls + b.llmCalls, 0, 'public proof paths do not send prompts or call a model');
+  assertNoHistory(profiles.git_v2_verified_one_batch_read!);
+  assert.equal(one.reader, eight.reader); assert.equal(one.reader, steadyEight.reader); assert.equal(metadata.reader, one.reader);
+  for (const name of ['native_first_proof_eight_batches', 'native_held_proof_eight_batches', 'imported_first_proof_eight_batches', 'imported_held_proof_eight_batches']) {
+    assertNoHistory(profiles[name]!); assert.ok(profiles[name]!.leaseOperations > 0, 'each warm admission still obtains fresh server lease proof');
+  }
+
+  // Strict extension: B previews a four-batch prefix, A publishes exactly K=2,
+  // then B must fetch only those selected new rows and canonical objects.
+  const suffixId = `session-${randomUUID()}`; await log(suffixId, 4); await eight.service.enable(suffixId); await imported.reader.read(suffixId);
+  const suffixHandle = await a.ctx.sessionPersistence.open(SessionId(suffixId), 'write');
+  try { await suffixHandle.append([event(4), event(5)] as never); await suffixHandle.flush(); } finally { await suffixHandle.close(); }
+  await eight.uploader.sync(suffixId, { release: true });
+  await measure('strict_two_batch_suffix', () => imported.reader.read(suffixId));
+  assert.equal(profiles.strict_two_batch_suffix!.batchRowPointReads, 2); assert.equal(profiles.strict_two_batch_suffix!.batchIndexQueries, 0);
+  assert.equal(profiles.strict_two_batch_suffix!.historyGET, 2); assert.equal(profiles.strict_two_batch_suffix!.historyHEAD, 2); assert.ok(profiles.strict_two_batch_suffix!.historyResponseBytes > 0);
+  await measure('strict_suffix_unchanged_hit', () => imported.reader.read(suffixId)); assertNoHistory(profiles.strict_suffix_unchanged_hit!);
+
+  // Separate sessions prevent the two retained public SDK resume markers from
+  // becoming competing local branches of the same canonical history.
+  const nativeDrainId = `session-${randomUUID()}`, importedDrainId = `session-${randomUUID()}`;
+  await log(nativeDrainId, 3); await one.service.enable(nativeDrainId); await a.resume(nativeDrainId); await one.uploader.sync(nativeDrainId, { release: true });
+  await log(importedDrainId, 3); await one.service.enable(importedDrainId); await imported.service.importSession(importedDrainId); await b.resume(importedDrainId); await imported.uploader.sync(importedDrainId, { release: true });
+  await measure('warm_native_admission_for_drain', async () => { assert.equal((await one.service.ensureOwnership(nativeDrainId)).owned, true); });
+  await measure('warm_imported_admission_for_drain', async () => { assert.equal((await imported.service.ensureOwnership(importedDrainId)).owned, true); });
+  await new Promise<void>(done => setTimeout(done, 2_100)); // Existing quiet drain window, NOT a raised proof deadline.
+  await measure('warm_native_quiet_drain', () => one.service.drain(nativeDrainId));
+  await measure('warm_imported_quiet_drain', () => imported.service.drain(importedDrainId));
+  assert.equal(one.uploader.hasHeld(nativeDrainId), false); assert.equal(imported.uploader.hasHeld(importedDrainId), false);
+  for (const name of ['warm_native_admission_for_drain', 'warm_imported_admission_for_drain', 'warm_native_quiet_drain', 'warm_imported_quiet_drain']) {
+    assertNoHistory(profiles[name]!); assert.ok(profiles[name]!.leaseOperations > 0);
+  }
+
+  // Close/reopen public durable pins AND create a fresh canonical component.
+  // Native/import checkpoints are deliberately not advanced by this read.
+  await imported.reader.read(rootEight); await imported.service.close();
+  const reopened = await historyFor(b); const restarted = makeService(b, 1, true);
+  await measure('disk_and_public_pin_restart', () => restarted.reader.read(rootEight)); assertNoHistory(profiles.disk_and_public_pin_restart!);
+  assert.ok(profiles.disk_and_public_pin_restart!.manifestPointReads > 0); assert.equal(reopened.reader, restarted.reader);
+
+  const auditId = `session-${randomUUID()}`; await log(auditId, 2); await eight.service.enable(auditId);
+  const localBeforeAudit = a.local.getSession(auditId)!;
+  const checkpoint = (value: typeof localBeforeAudit) => [value.lastSyncedAt, value.lastSyncedEventCount, value.lastSyncedHeaderHash, value.lastSyncedChainHash];
+  const auditBefore = (await repository.getManifest(auditId))!;
+  const audited = await measure('explicit_audit_warm_complete', () => eight.service.verifyCloudCopy(auditId));
+  assert.equal(audited.watermark.eventCount, auditBefore.entity.eventCount); assert.equal(audited.watermark.chainHash, auditBefore.entity.chainHash);
+  assert.equal(profiles.explicit_audit_warm_complete!.historyGET, 2); assert.equal(profiles.explicit_audit_warm_complete!.historyHEAD, 2);
+  assert.equal(profiles.explicit_audit_warm_complete!.batchRowPointReads, 2); assert.equal(profiles.explicit_audit_warm_complete!.leaseOperations, 0);
+  assert.ok(profiles.explicit_audit_warm_complete!.historyResponseBytes > 0); assert.deepEqual(checkpoint(a.local.getSession(auditId)!), checkpoint(localBeforeAudit));
+  assert.equal((await repository.getManifest(auditId))!.entity.writerEpoch, auditBefore.entity.writerEpoch);
+  const auditRow = (await repository.getBatch(auditBefore.entity.lastBatchRowKey!))!;
+  const originalPayload = await repository.readCandidate(auditRow.blobName, config.maxBatchBytes * 2);
+  await measure('audit_damage_injection_exception', () => blob.container.getBlockBlobClient(auditRow.blobName).upload(Buffer.from('damaged'), 7));
+  await measure('explicit_audit_detects_remote_damage', async () => { await assert.rejects(eight.service.verifyCloudCopy(auditId), error => error instanceof AzureSyncError && error.code === 'CORRUPT_REMOTE'); });
+  assert.ok(profiles.explicit_audit_detects_remote_damage!.historyGET > 0); assert.equal(profiles.explicit_audit_detects_remote_damage!.leaseOperations, 0);
+  await measure('cached_hit_cannot_hide_audit_damage', async () => { await assert.rejects(eight.reader.read(auditId), error => error instanceof AzureSyncError && error.code === 'CORRUPT_REMOTE'); });
+  assertNoHistory(profiles.cached_hit_cannot_hide_audit_damage!); assert.deepEqual(checkpoint(a.local.getSession(auditId)!), checkpoint(localBeforeAudit));
+  await measure('audit_damage_repair_exception', () => blob.container.getBlockBlobClient(auditRow.blobName).upload(originalPayload, originalPayload.length));
+  await measure('explicit_audit_repaired_copy', () => eight.service.verifyCloudCopy(auditId));
+  assert.equal(profiles.explicit_audit_repaired_copy!.historyGET, 2); assert.equal(profiles.explicit_audit_repaired_copy!.batchRowPointReads, 2);
+  await measure('raw_cleanup_after_warm_cache', () => eight.service.removeFromCloud(auditId));
+  assert.ok(profiles.raw_cleanup_after_warm_cache!.batchIndexQueries > 0); assert.ok(profiles.raw_cleanup_after_warm_cache!.blobLists > 0);
+  await measure('raw_resurrection_verification_after_cache', () => eight.service.resurrectInCloud(auditId));
+  assert.ok(profiles.raw_resurrection_verification_after_cache!.batchIndexQueries > 0); assert.ok(profiles.raw_resurrection_verification_after_cache!.blobLists > 0);
+  assert.equal((await repository.getManifest(auditId))!.entity.eventCount, 0); assert.equal(profiles.raw_resurrection_verification_after_cache!.leaseOperations, 0);
+
+  // Three deterministic incompressible synthetic histories, each above64KiB
+  // compressed; scaled budgets exercise a working set above BOTH retention caps.
+  const c = await acceptanceDevice(join(root, 'pressure'), 'device-pressure', new AcceptanceCloud()); devices.push(c); await c.service.close(); await c.reader.close();
+  await historyFor(c, { memoryBytes: 0, diskBytes: 0 }); const zero = makeService(c, 1000);
+  let pseudoRandom = 0x12345678;
+  const synthetic = Buffer.alloc(96 * 1024);
+  for (let index = 0; index < synthetic.length; index += 1) { pseudoRandom ^= pseudoRandom << 13; pseudoRandom ^= pseudoRandom >>> 17; pseudoRandom ^= pseudoRandom << 5; synthetic[index] = pseudoRandom & 255; }
+  const largeIds: string[] = [], compressedSizes: number[] = [];
+  for (let index = 0; index < 3; index += 1) {
+    const id = `session-${randomUUID()}`; largeIds.push(id);
+    const header: SessionHeader = { id: SessionId(id), version: 4, createdAt: 1, cwd: c.cwd, isSeeded: false };
+    const handle = await c.ctx.sessionPersistence.create(header);
+    try { await handle.append([event(0, 'working-directory/change', { cwd: c.cwd }), event(1, 'model/selection', { provider: 'fixture', model: 'no-network' }), event(2, 'user/message', { content: [{ type: 'text', text: synthetic.toString('base64') + String(index) }] })] as never); await handle.flush(); } finally { await handle.close(); }
+    assert.equal((await zero.service.enable(id)).status, 'synced'); assert.equal(c.local.getSession(id)?.publicationScope, zero.reader.scopeId);
+    const manifest = (await repository.getManifest(id))!; compressedSizes.push((await blob.container.getBlobClient(manifest.entity.lastBatchBlobName!).getProperties()).contentLength!);
+  }
+  assert.ok(compressedSizes.every(bytes => bytes > 65_536));
+  const checkpointsBeforeIdle = largeIds.map(id => checkpoint(c.local.getSession(id)!));
+  await measure('zero_cache_three_large_histories_idle', async () => { for (let pass = 0; pass < 3; pass += 1) await zero.service.refreshAll(); });
+  assertNoHistory(profiles.zero_cache_three_large_histories_idle!); assert.equal(profiles.zero_cache_three_large_histories_idle!.manifestPointReads, 9);
+  assert.deepEqual(largeIds.map(id => checkpoint(c.local.getSession(id)!)), checkpointsBeforeIdle);
+  await measure('zero_cache_materialization_pressure_exception', async () => { await assert.rejects(zero.reader.read(largeIds[0]!), error => error instanceof AzureSyncError && error.code === 'LIMIT'); });
+  // Confirmed upload already established the verified size, not retained bytes or execution authority.
+  // Capacity refusal must now avoid even the first futile download.
+  assertNoHistory(profiles.zero_cache_materialization_pressure_exception!);
+  await measure('pressure_does_not_repeat_download', async () => { await assert.rejects(zero.reader.read(largeIds[0]!), error => error instanceof AzureSyncError && error.code === 'LIMIT'); });
+  assertNoHistory(profiles.pressure_does_not_repeat_download!);
+  await measure('idle_after_pressure_no_implicit_hydration', () => zero.service.refreshAll()); assertNoHistory(profiles.idle_after_pressure_no_implicit_hydration!);
+  await zero.service.close(); const memoryBudget = 65_536, diskBudget = 131_072; await historyFor(c, { memoryBytes: memoryBudget, diskBytes: diskBudget }); const pressure = makeService(c, 1000);
+  await measure('large_explicit_population_and_whole_prefix_eviction', async () => { for (const id of largeIds) await pressure.reader.read(id); });
+  assert.equal(profiles.large_explicit_population_and_whole_prefix_eviction!.historyGET, 3); assert.equal(profiles.large_explicit_population_and_whole_prefix_eviction!.historyHEAD, 3);
+  assert.equal(profiles.large_explicit_population_and_whole_prefix_eviction!.historyResponseBytes, compressedSizes.reduce((sum, bytes) => sum + bytes, 0));
+  await measure('over_both_budgets_three_large_histories_idle', async () => { for (let pass = 0; pass < 3; pass += 1) await pressure.service.refreshAll(); });
+  assertNoHistory(profiles.over_both_budgets_three_large_histories_idle!); assert.equal(profiles.over_both_budgets_three_large_histories_idle!.manifestPointReads, 9);
+  assert.deepEqual(largeIds.map(id => checkpoint(c.local.getSession(id)!)), checkpointsBeforeIdle);
+  let retainedCompressedBytes = 0, retainedPrefixes = 0;
+  for (const namespace of await readdir(histories.get(c)!.directory)) {
+    if (!/^[a-f0-9]{64}$/u.test(namespace)) continue; retainedPrefixes += 1;
+    for (const name of await readdir(join(histories.get(c)!.directory, namespace))) if (name.endsWith('.gz')) retainedCompressedBytes += (await stat(join(histories.get(c)!.directory, namespace, name))).size;
+  }
+  assert.ok(retainedCompressedBytes <= diskBudget); assert.equal(retainedPrefixes, 1);
+  const largeFixture = { histories: largeIds.length, canonicalTextBytesPerHistory: synthetic.toString('base64').length, compressedSizes, compressedWorkingSetBytes: compressedSizes.reduce((sum, bytes) => sum + bytes, 0), memoryBudget, diskBudget, retainedCompressedBytes, retainedPrefixes };
+  assert.equal(a.llmCalls + b.llmCalls + c.llmCalls, 0, 'public proof paths do not send prompts or call a model');
   assert.equal(profiles.idle_eight_batches!.blobWrites + profiles.idle_eight_batches!.blobOther - profiles.idle_eight_batches!.blobReads, 0);
   assert.equal(profiles.idle_eight_batches!.leaseOperations, 0, 'unchanged idle refresh does not churn leases');
   const assumptions = { days: 30, devices: 2, atMostEnabledSessionRecordsPerDeviceIncludingDescendants: 1, atMostCommittedBatchesPerEnabledThread: 8, pollSeconds: 300, publishedBatchesAcrossSmallThreadLifetimes: 3000, threadLifetimes: 375, modelSteps: 3000, coldImports: 30, coldInspections: 30, forcedTakeovers: 0, attachmentFilesOf10MiB: 100, attachmentRepeatAttempts: 730, catalogPasses: 30, extraCasRetryActions: 30, activeWriterHours: 60, operationContingency: 0.10, retainedBlobGiB: 1, retainedTableGB: 0.1 };
   const polls = assumptions.days * 86400 / assumptions.pollSeconds * assumptions.devices;
   const firstProofs = assumptions.threadLifetimes + assumptions.coldImports;
-  const monthly = combine([[profiles.infrastructure!, 1], [profiles.first_opt_in_one_batch!, assumptions.threadLifetimes], [profiles.incremental_sync_eight_existing_batches!, assumptions.publishedBatchesAcrossSmallThreadLifetimes - assumptions.threadLifetimes], [profiles.idle_imported_eight_batches!, polls], [profiles.imported_first_proof_eight_batches!, firstProofs], [profiles.imported_held_proof_eight_batches!, assumptions.modelSteps - firstProofs], [profiles.cold_imported_inspection_eight_batches!, assumptions.coldInspections], [profiles.retire_off!, assumptions.threadLifetimes * assumptions.devices], [profiles.cold_import_eight_batches!, assumptions.coldImports], [profiles.attachment_upload_10_mib!, assumptions.attachmentFilesOf10MiB], [profiles.attachment_repeat_10_mib!, assumptions.attachmentRepeatAttempts], [profiles.attachment_download_10_mib!, assumptions.attachmentFilesOf10MiB], [profiles.background_lease_renew!, assumptions.activeWriterHours * 3600 / 30], [profiles.catalog_logical_pages_of_one!, assumptions.catalogPasses], [profiles.incremental_with_one_cas_retry!, assumptions.extraCasRetryActions]]);
+  const monthly = combine([[profiles.infrastructure!, 1], [profiles.first_opt_in_one_batch!, assumptions.threadLifetimes], [profiles.incremental_sync_eight_existing_batches!, assumptions.publishedBatchesAcrossSmallThreadLifetimes - assumptions.threadLifetimes], [profiles.idle_imported_eight_batches!, polls], [profiles.imported_first_proof_eight_batches!, firstProofs], [profiles.imported_held_proof_eight_batches!, assumptions.modelSteps - firstProofs], [profiles.cold_imported_inspection_eight_batches!, assumptions.coldInspections], [profiles.retire_off!, assumptions.threadLifetimes * assumptions.devices], [profiles.cold_import_eight_batches!, assumptions.coldImports], [profiles.attachment_upload_10_mib!, assumptions.attachmentFilesOf10MiB], [profiles.attachment_repeat_10_mib!, assumptions.attachmentRepeatAttempts], [profiles.attachment_download_10_mib!, assumptions.attachmentFilesOf10MiB], [profiles.background_lease_renew!, assumptions.activeWriterHours * 3600 / 30], [profiles.catalog_logical_pages_of_one!, assumptions.catalogPasses], [profiles.candidate_orphan_cas_retry_exception!, assumptions.extraCasRetryActions]]);
   const operations = operationUSD(monthly), capacity = 0.0208 * assumptions.retainedBlobGiB + 0.045 * assumptions.retainedTableGB, modeledUSD = capacity + operations * (1 + assumptions.operationContingency);
-  assert.ok(modeledUSD < 1, 'only this explicit bounded workload targets <$1; not a bill or arbitrary-history guarantee');
-  console.log('COST_PROFILE\n' + JSON.stringify({ evidence: 'Azurite loopback HTTP attempts, not Azure billing; body/header/URL data omitted', profiles, assumptions, monthlyRequests: monthly, USD: { capacity, operations, contingency: operations * assumptions.operationContingency, modeledUSD }, notes: ['Optional git_v2_* profiles measure real SDK HTTP overhead separately and are NOT included in this legacy monthly model; snapshot refresh is not continuous Git polling and synthetic Git facts do not prove real remote publication.', 'Destination wizard may verify a source multiple times; git_v2_verified_one_batch_read is ONE reader call, not a complete wizard/second-device cost guarantee.', 'Valid Table EGT is one billable transaction, not one per entity.', 'Imported per-step proofs re-read history more than unchanged idle refresh.', 'The 10MiB byte source is controlled; Azure requests use actual AttachmentSync, BlobStore and the same actual lease proof guard as Uploader.', '730 attachment repeats cover 100 files times 7 later publications plus 30 extra retry-shaped sync actions; they are not assumed deduplicated free.', 'SDK-only block upload and synthetic transient HEAD are sensitivity checks, not plugin workload.', 'The enabled-record bound includes every subagent descendant; this model has no enabled descendants.', 'First proofs cover all thread lifetimes plus imports; explicit retire Off on both devices and 30 cold inspections are included.', 'Forced takeovers are measured separately but this worked workload assumes zero; add them if used.', 'Retire/turn off threads before exceeding the 8-batch active-history bound; 3000 publications are not one growing thread.', 'Default 3MiB batch cap assumed; egress/tax/features/negotiated pricing excluded.'] }, null, 2));
+  assert.ok(Number.isFinite(modeledUSD) && modeledUSD >= 0, 'arithmetic check only, never a blanket sub-dollar assertion');
+  meter.sampleMemory();
+  console.log('COST_PROFILE\n' + JSON.stringify({
+    evidence: 'Real public SDK -> loopback HTTP proxy -> Azurite; actual attempts and streamed response BODY bytes, not Azure billing. No URL/header/body/content/credential values are retained.',
+    counterSemantics: { requestTotals: 'Only nine base operation counters are summed; history/lease/batch/range counters are subsets.', byteTotals: 'historyResponseBytes + tablePointResponseBytes + tableQueryResponseBytes + leaseResponseBytes + otherResponseBytes = totalResponseBytes; batch-row/query byte counters are subsets.', rangeAttempts: 'An HTTP request is counted once even when both its Range header and206 response identify it; retries/failed attempts are counted separately.', excludedWireBytes: 'Headers, TLS/TCP framing and request bodies are not response-body bytes.' },
+    profiles, localOperationMetrics: meter.localMetrics, largeFixture,
+    memory: { sampledPeakHeapUsedBytes: meter.peakHeapUsed, sampledPeakRssBytes: meter.peakRss, processPeakRssBytes: process.resourceUsage().maxRSS * 1024, scope: 'This Node test process including SDK/native fixture state, not only cache retention; no forced GC. maxRSS uses KiB on this POSIX acceptance run.' },
+    legacyBoundedWorkload: { label: 'Historical bounded assumptions retained for comparability, with optimized measured operation vectors; NOT53 active sessions or current regional pricing.', assumptions, monthlyRequests: monthly, retailRateInputsUSD: { blobWriteOrListPer10K: 0.05, blobReadOrOtherPer10K: 0.004, tablePer10K: 0.00036, blobGiBMonth: 0.0208, tableGBMonth: 0.045 }, USD: { capacity, operations, contingency: operations * assumptions.operationContingency, modeledUSD, excludesEgressAndTax: true } },
+    exceptionProfiles: ['zero_cache_materialization_pressure_exception', 'candidate_orphan_cas_retry_exception', 'audit_damage_injection_exception', 'audit_damage_repair_exception', 'sdk_only_four_blocks_not_plugin', 'sdk_head_retry_attempts', 'raw_cleanup_after_warm_cache', 'raw_resurrection_verification_after_cache'],
+    notes: [
+      'Zero-history assertions cover GET, HEAD, canonical response bytes, chosen batch point walks and batch-index queries, including cold/zero/over-budget retention. Fresh manifest control reads remain.',
+      'Native/imported admissions and quiet drains reuse their device singleton canonical component but still obtain fresh server lease proofs. No Agent prompt/model execution occurs.',
+      'Cold import and explicit audit download real committed history; audit also rereads the actual selected index. A normal cache hit does not attest current remote blob health.',
+      'Candidate orphan/adopted PUT-exists/CAS recovery deliberately performs real listing/metadata/HEAD/GET checks and is separated from steady committed-history profiles. The legacy workload explicitly includes30 such extra actions.',
+      'Scaled pressure fixture uses three deterministic synthetic histories above64KiB compressed each, not195MiB of private data; memory/disk limits are reduced to exercise the same retention boundary. Reported process memory is not a128MiB heap guarantee.',
+      'Per-profile setup, synthetic data seeding, deliberate corruption/repair and quiet-window waiting outside a measurement are not asserted free; profiles represent named actions rather than the entire test process workload. Local wall/CPU metrics include the Node process SDK/proxy/native work and measurement overhead, not isolated verification CPU or the separate emulator process.',
+      'The historical cold inspection/takeover labels mean no retained live Agent or lease, not necessarily a cold payload cache. Actual cold canonical download, memory reuse and public-pin/disk restart have distinct vectors.',
+      'Optional git_v2 profiles are excluded from the historical model. Source code observations are synthetic and do not prove actual Git publication. Wizard fan-out may invoke additional guarded reads.',
+      'Historical model still assumes one enabled record per device including descendants, at most8 committed batches,375 retired thread lifetimes,3000 total publications/steps,30 imports/inspections,100 attachment files and730 repeated upload attempts;3000 publications are not one indefinitely growing thread.',
+      'The10MiB attachment download is metered as actual otherResponseBytes, including real range splitting. SDK-only four-block upload and synthetic transient retry are sensitivity checks, not production upload claims.',
+      'Valid Table EGT is one base HTTP transaction regardless of contained entity actions. Capacity, egress allowances, regional prices, tax and negotiated features require a separate explicit workload model; there is no live-bill or blanket sub-dollar claim.',
+    ],
+  }, null, 2));
 });

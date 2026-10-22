@@ -12,6 +12,7 @@ test('defaults are safe and side-effect free', () => {
   assert.equal(config.allowInsecure, false);
   assert.equal(config.defaultEnabled, false);
   assert.equal(config.pullOnStartup, true);
+  assert.equal(config.pollSeconds, 30);
   assert.equal(config.ownershipProofMs, 5_000);
   assert.equal(config.maxBatchEvents, 1_000);
   assert.equal(config.maxBatchBytes, 3_145_728);
@@ -48,4 +49,5 @@ test('resolveConfig reapplies defaults without changing explicit values', () => 
   assert.equal(config.container, 'custom-state');
   assert.equal(config.pollSeconds, 60);
   assert.equal(config.table, 'dshstatesync');
+  assert.equal(resolveConfig(Config({ pollSeconds: 300 })).pollSeconds, 300, 'explicit slower polling remains supported');
 });

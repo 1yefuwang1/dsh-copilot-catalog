@@ -159,6 +159,7 @@ function fixture(options: { remote?: SourceSnapshot; local?: SourceSnapshot; bin
     ...(options.binding === undefined ? {} : { cwdBinding: async () => { trace.push('canonicalize'); return options.binding; } }),
   });
   const reader = new RemoteSessionReader(repository, { maxCompressedBytes: 1_048_576, maxExpandedBytes: 1_048_576 });
+  record = { ...record, publicationScope: reader.scopeId }; // Existing explicit consent for this fixture account.
   const service = new SyncService({ uploader, local, source, reader, repository, now: () => now,
     agents: { get: () => options.live ? {} as never : undefined },
   });
