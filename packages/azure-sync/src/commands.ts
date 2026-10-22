@@ -1,7 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type { CommandDefinition, CommandRuntime } from '@deepseek-ai/dsh-commands';
 import { syncStatusSchema } from './schema.js';
-import { cloudSuccess, CloudControlError, parseCloudRequest, publicCloudError, type CloudControllerPort, type CloudRequest } from './protocol.js';
+import { cloudSuccess, CloudControlError, parseCloudAuditResult, parseCloudRequest, publicCloudError, type CloudControllerPort, type CloudRequest } from './protocol.js';
 
 /**
  * Literal token grammar, not a shell: whitespace separates tokens; single/double
@@ -10,6 +10,7 @@ import { cloudSuccess, CloudControlError, parseCloudRequest, publicCloudError, t
  * execution. Different quote styles can quote each other; segments concatenate.
  *
  * /cloud status|on|off|sync|pull|mappings|detach|export|acknowledge-degraded|check-ownership|test-auth
+ * /cloud verify [session-id]   (downloads the complete committed cloud copy; no writer permission)
  * /cloud map <linux|darwin|win32> <remotePrefix> <localPrefix> [--id <UUID>]
  * /cloud unmap <UUID>
  * /cloud repair [--confirm-mapping]
@@ -20,7 +21,7 @@ import { cloudSuccess, CloudControlError, parseCloudRequest, publicCloudError, t
  * Authentication writes are deliberately RPC-only; this command never accepts
  * credentials. All input recording is disabled, even for malformed secret args.
  */
-export const CLOUD_COMMAND_GRAMMAR = 'Literal quoted tokens; pull [session-id] or pull [--cursor token] [--limit 1..100]; map <linux|darwin|win32> <remotePrefix> <localPrefix> [--id UUID]; unmap UUID; repair [--confirm-mapping]; takeover/resurrect --confirm; remove --confirm --retain-attachments. Takeover acknowledges in-flight tools; removal retains attachments. No shell expansion or credential writes.';
+export const CLOUD_COMMAND_GRAMMAR = 'Literal quoted tokens; pull [session-id] or pull [--cursor token] [--limit 1..100]; verify [session-id] downloads and audits the full cloud history without writer permission; map <linux|darwin|win32> <remotePrefix> <localPrefix> [--id UUID]; unmap UUID; repair [--confirm-mapping]; takeover/resurrect --confirm; remove --confirm --retain-attachments. Takeover acknowledges in-flight tools; removal retains attachments. No shell expansion or credential writes.';
 
 function invalid(): never { throw new CloudControlError('INVALID_REQUEST'); }
 function tokens(rawInput: string): string[] {
@@ -67,6 +68,9 @@ export function parseCloudCommand(rawInput: string): CloudRequest {
       }
       request = page; break;
     }
+    case 'verify':
+      if (args.length > 1 || args[0]?.startsWith('--')) invalid();
+      request = { action, ...(args.length === 1 ? { sessionId: args[0] } : {}) }; break;
     case 'status': case 'sync': case 'mappings': case 'detach': case 'export': case 'acknowledge-degraded': case 'check-ownership': case 'test-auth':
       if (args.length !== 0) invalid();
       request = { action }; break;
@@ -101,6 +105,7 @@ const SUCCESS: Record<CloudRequest['action'], string> = {
   resurrect: 'Cloud thread resurrection requested.', 'acknowledge-degraded': 'Degraded cloud sync state acknowledged.',
   'check-ownership': 'Cloud ownership checked.', 'set-auth': 'Cloud authentication updated.', 'test-auth': 'Cloud authentication checked.',
   'set-defaults': 'Cloud defaults updated.', 'git-info': 'Read-only local Git facts inspected.',
+  verify: 'Cloud copy verified at the audited history cutoff; this does not grant writer permission.',
 };
 
 /** Native result events contain only finite vocabulary or generated session ids, never arbitrary DTO text. */
@@ -114,6 +119,10 @@ function commandText(request: CloudRequest, data: unknown): string {
       if (status.success && typeof first.enabled === 'boolean') return `Cloud sync: ${first.enabled ? 'on' : 'off'}; status: ${status.data}.`;
     }
     if (value.untracked !== undefined) return 'Cloud sync is off; this thread is not tracked.';
+  }
+  if (request.action === 'verify' && typeof value.sessionId === 'string') {
+    const audit = parseCloudAuditResult(value.detail, value.sessionId);
+    return `Cloud copy verified: generation ${audit.watermark.generation}, ${audit.watermark.eventCount} events, ${audit.watermark.batchCount} batches. ${audit.current ? 'Current at the final audit observation.' : 'The cloud advanced beyond this audited cutoff.'} No writer permission was granted.`;
   }
   if (request.action === 'check-ownership' && value.detail !== null && typeof value.detail === 'object') {
     const owned = (value.detail as { owned?: unknown }).owned;
@@ -139,7 +148,7 @@ export function registerCloudCommands(ctx: Context, controller: CloudControllerP
   const stop = ctx.effect(() => {
     const definition: CommandDefinition = {
       name: 'cloud', description: 'Control cloud thread sync. ' + CLOUD_COMMAND_GRAMMAR,
-      input: { hint: 'status | on | off | sync | pull | map | unmap | mappings | takeover | detach | remove | export | repair | resurrect | acknowledge-degraded' },
+      input: { hint: 'status | on | off | sync | pull | verify [session-id] | map | unmap | mappings | takeover | detach | remove | export | repair | resurrect | acknowledge-degraded' },
       recordInput: false,
       async handler(invocation) {
         try {

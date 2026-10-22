@@ -16,6 +16,11 @@ export interface StoredEntity<T extends object> {
   readonly etag?: string;
 }
 
+export interface TableReadContext {
+  readonly signal?: AbortSignal;
+  readonly check?: () => void | Promise<void>;
+}
+
 export class TableStore {
   readonly client: TableClient;
   readonly requestTimeoutMs: number;
@@ -39,11 +44,20 @@ export class TableStore {
     }
   }
 
-  async get<T extends object>(partitionKey: string, rowKey: string): Promise<StoredEntity<T> | undefined> {
+  async get<T extends object>(partitionKey: string, rowKey: string, context?: TableReadContext): Promise<StoredEntity<T> | undefined> {
+    const check = async (): Promise<void> => {
+      if (context?.signal?.aborted) throw new AzureSyncError('CANCELLED', 'Azure table read was cancelled.');
+      await context?.check?.();
+      if (context?.signal?.aborted) throw new AzureSyncError('CANCELLED', 'Azure table read was cancelled.');
+    };
     try {
-      const value = await this.client.getEntity<T>(partitionKey, rowKey, this.requestOptions());
+      await check();
+      const value = await this.client.getEntity<T>(partitionKey, rowKey, { ...this.requestOptions(),
+        ...(context?.signal === undefined ? {} : { abortSignal: context.signal }) });
+      await check();
       return { value, ...(value.etag === undefined ? {} : { etag: value.etag }) };
     } catch (error) {
+      await check();
       if (isNotFound(error)) return undefined;
       throw mapAzureError(error, 'table read');
     }

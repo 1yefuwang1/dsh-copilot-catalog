@@ -22,8 +22,8 @@ function fixture() {
     headHash: c1.headHash, payloadHash: c1.payloadHash, prevBatchRowKey: row0.rowKey,
   });
   const manifest = cloudSession({
-    sessionId, headerHash: binding, eventCount: 2, chainHash: c1.chainHash,
-    lastBatchRowKey: row1.rowKey, lastBatchGeneration: 1, batchCount: 2,
+    sessionId, headerHash: binding, eventCount: 2, headSeq: 1, headHash: c1.headHash, chainHash: c1.chainHash,
+    lastBatchRowKey: row1.rowKey, lastBatchGeneration: 1, lastBatchBlobName: row1.blobName, batchCount: 2,
   });
   return { sessionId, binding, genesis, row0, row1, manifest, c0, c1 };
 }
@@ -43,8 +43,8 @@ test('the linked tip chain is selected in order and unchosen siblings are ignore
 test('an empty manifest binds to genesis and has no tip', () => {
   const f = fixture();
   const empty = cloudSession({
-    sessionId: f.sessionId, headerHash: f.binding, eventCount: 0, chainHash: f.genesis,
-    lastBatchRowKey: undefined, batchCount: 0,
+    sessionId: f.sessionId, headerHash: f.binding, eventCount: 0, headSeq: -1, headHash: f.genesis, chainHash: f.genesis,
+    lastBatchRowKey: undefined, lastBatchGeneration: undefined, lastBatchBlobName: undefined, batchCount: 0,
   });
   assert.deepEqual(selectCommittedChain(empty, []).rows, []);
   assert.deepEqual(selectCommittedChain(empty, [f.row0]).rows, []);

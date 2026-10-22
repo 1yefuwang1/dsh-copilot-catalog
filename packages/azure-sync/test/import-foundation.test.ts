@@ -1,3 +1,4 @@
+import { withHistory } from './runtime-history-fixture.js';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { randomUUID } from 'node:crypto';
@@ -158,11 +159,11 @@ test('production provider blocks actual legacy cold pull and repair without coor
   const events = [event(0, 'working-directory/change', { cwd: '/remote/project' })];
   const binding = headerHash(header, 0); const genesis = genesisHash(f.sid, 1, binding); const chain = chainEvents(genesis, events);
   const row = batchRow(f.sid, 1, 0, { ...chain });
-  const manifest = { entity: cloudSession({ sessionId: f.sid, headerJson: JSON.stringify(header), headerHash: binding, ...chain, eventCount: 1, lastBatchRowKey: row.rowKey, lastBatchGeneration: 1 }), etag: 'fixture' };
+  const manifest = { entity: cloudSession({ sessionId: f.sid, headerJson: JSON.stringify(header), headerHash: binding, headHash: chain.headHash, chainHash: chain.chainHash, eventCount: 1, lastBatchRowKey: row.rowKey, lastBatchGeneration: 1, lastBatchBlobName: row.blobName }), etag: 'fixture' };
   const mapping = pathMapping({ localPrefix: f.root }); // Intentionally NOT the reserved final cwd.
-  const importer = new Importer({ config: Config({}), persistence: f.ctx.sessionPersistence, local: local.local,
+  const importer = new Importer(withHistory({ config: Config({}), persistence: f.ctx.sessionPersistence, local: local.local,
     repository: { getManifest: async () => manifest, listBatchRows: async () => [row], readCandidate: async () => gzipSync(payloadBytes(events)) } as never,
-    cwdBinding: async () => ({ mapping, fs: nodeCwdFs }), now: Date.now });
+    cwdBinding: async () => ({ mapping, fs: nodeCwdFs }), now: Date.now }));
   await assert.rejects(importer.import(f.sid), /destination import coordinator/);
   assert.equal(local.local.getSession(f.sid)?.importState, 'failed', 'negative evidence: legacy early metadata still exists, but cannot authorize native creation');
   assert.deepEqual(await new ImportRecovery(importer, local.local).repairAll(), { repaired: [], failed: [f.sid] });

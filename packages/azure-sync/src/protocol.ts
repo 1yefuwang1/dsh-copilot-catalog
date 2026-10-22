@@ -4,7 +4,7 @@ export type CloudResponse = JsonValue;
 export type CloudAuth = 'auto' | 'connection-string' | 'azure-cli' | 'managed-identity';
 export type CloudPlatform = 'linux' | 'darwin' | 'win32';
 export type CloudMapping = { id?: string; remotePrefix: string; localPrefix: string; remotePlatform: CloudPlatform };
-type ThreadAction = 'sync' | 'detach' | 'export' | 'repair' | 'acknowledge-degraded' | 'check-ownership' | 'git-info';
+type ThreadAction = 'sync' | 'detach' | 'export' | 'repair' | 'acknowledge-degraded' | 'check-ownership' | 'git-info' | 'verify';
 type ConfirmAction = 'takeover' | 'resurrect';
 /** Missing sessionId is permitted for native invocation fallback. A sid-less pull lists remote threads. */
 export type CloudRequest =
@@ -21,6 +21,33 @@ export type CloudRequest =
   | { action: 'set-auth'; auth: CloudAuth; accountName?: string; managedIdentityClientId?: string; connectionString?: string; clearConnectionString?: boolean }
   | { action: 'test-auth' }
   | { action: 'set-defaults'; defaultEnabled?: boolean; pullOnStartup?: boolean; pollSeconds?: number };
+
+/** Exact audited cutoff only: no event bodies, local paths, credentials or writer authority. */
+export interface CloudAuditWatermark {
+  readonly sessionId: string;
+  readonly schemaVersion: number;
+  readonly formatVersion: number;
+  readonly generation: number;
+  readonly headerHash: string;
+  readonly inheritedEventCount: number;
+  readonly eventCount: number;
+  readonly headSeq: number;
+  readonly headHash: string;
+  readonly chainHash: string;
+  readonly batchCount: number;
+  readonly rootSessionId: string;
+  readonly rootGeneration: number;
+  readonly lastBatchGeneration?: number;
+  readonly lastBatchRowKey?: string;
+  readonly lastBatchBlobName?: string;
+}
+export interface CloudAuditResult {
+  readonly status: 'verified';
+  /** Current only as of the audit's final cloud observation, never an ownership promise. */
+  readonly current: boolean;
+  readonly auditedAt: number;
+  readonly watermark: CloudAuditWatermark;
+}
 
 export interface CloudControllerPort {
   execute(request: CloudRequest, context: { sessionId?: string; origin: 'command' | 'rpc'; signal: AbortSignal }): Promise<CloudResponse>;
@@ -145,6 +172,30 @@ function optionalBoolean(input: RecordValue, key: string): void {
 }
 function session(input: RecordValue): void { optionalText(input, 'sessionId', 256); }
 
+/** Validate a read-only audit summary without exposing arbitrary service/provider diagnostics. */
+export function parseCloudAuditResult(value: unknown, sessionId: string): CloudAuditResult {
+  try {
+    const input = record(boundedJson(value));
+    keys(input, ['status', 'current', 'auditedAt', 'watermark'], ['status', 'current', 'auditedAt', 'watermark']);
+    const natural = (item: JsonValue | undefined, min = 0): item is number => typeof item === 'number' && Number.isSafeInteger(item) && item >= min;
+    const digest = (item: JsonValue | undefined) => typeof item === 'string' && /^[a-f0-9]{64}$/u.test(item);
+    if (input.status !== 'verified' || typeof input.current !== 'boolean' || !natural(input.auditedAt)) invalid();
+    const w = record(input.watermark);
+    const required = ['sessionId', 'schemaVersion', 'formatVersion', 'generation', 'headerHash', 'inheritedEventCount', 'eventCount', 'headSeq', 'headHash', 'chainHash', 'batchCount', 'rootSessionId', 'rootGeneration'];
+    keys(w, [...required, 'lastBatchGeneration', 'lastBatchRowKey', 'lastBatchBlobName'], required);
+    if (w.sessionId !== sessionId || !text(w.sessionId, 256) || w.schemaVersion !== 4 || w.formatVersion !== 4 ||
+        !natural(w.generation, 1) || !natural(w.rootGeneration, 1) || !text(w.rootSessionId, 256) ||
+        !natural(w.inheritedEventCount) || !natural(w.eventCount) || !natural(w.headSeq, -1) ||
+        !natural(w.batchCount) || !digest(w.headerHash) || !digest(w.headHash) || !digest(w.chainHash)) invalid();
+    const count = w.eventCount as number, batches = w.batchCount as number;
+    if (w.headSeq !== count - 1 || batches > count) invalid();
+    if (count === 0) {
+      if (batches !== 0 || w.headHash !== w.chainHash || ['lastBatchGeneration', 'lastBatchRowKey', 'lastBatchBlobName'].some(key => Object.hasOwn(w, key))) invalid();
+    } else if (batches < 1 || w.lastBatchGeneration !== w.generation || !text(w.lastBatchRowKey, 1024) || !text(w.lastBatchBlobName, 1024)) invalid();
+    return input as unknown as CloudAuditResult;
+  } catch { throw new CloudControlError('OPERATION_FAILED'); }
+}
+
 /** Strict runtime validation shared by native commands, RPC, and the controller. */
 export function parseCloudRequest(value: unknown): CloudRequest {
   let snapshot: JsonValue;
@@ -165,7 +216,7 @@ export function parseCloudRequest(value: unknown): CloudRequest {
       if (Object.hasOwn(input, 'limit') && (typeof input.limit !== 'number' || !Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100)) invalid();
       if (Object.hasOwn(input, 'sessionId') && (Object.hasOwn(input, 'cursor') || Object.hasOwn(input, 'limit'))) invalid();
       break;
-    case 'sync': case 'detach': case 'export': case 'acknowledge-degraded': case 'check-ownership': case 'git-info':
+    case 'sync': case 'detach': case 'export': case 'acknowledge-degraded': case 'check-ownership': case 'git-info': case 'verify':
       keys(input, ['action', 'sessionId']); session(input); break;
     case 'repair':
       keys(input, ['action', 'sessionId', 'confirmMapping']); session(input);

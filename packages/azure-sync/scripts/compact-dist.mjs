@@ -1,4 +1,5 @@
 import { transform } from 'esbuild';
+import { compactDeclaration } from './compact-declarations.mjs';
 import { lstat, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,13 +10,21 @@ if (!(await lstat(root)).isDirectory() || await realpath(root) !== root) throw n
 async function compact(directory) {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
-    if (entry.isDirectory()) await compact(path);
-    else if (entry.isFile() && entry.name.endsWith('.js') && path !== join(root, 'client.js')) {
-      const output = await transform(await readFile(path, 'utf8'), {
-        format: 'esm', platform: 'node', target: ['es2022'], keepNames: true,
-        minifyWhitespace: true, minifyIdentifiers: true, minifySyntax: true, legalComments: 'none',
-      });
-      await writeFile(path, output.code);
+    if (entry.isDirectory()) {
+      if (await realpath(path) !== path) throw new Error('Refuse to compact an aliased artifact directory.');
+      await compact(path);
+    } else if (entry.isFile()) {
+      const info = await lstat(path);
+      if (info.nlink !== 1 || await realpath(path) !== path) throw new Error('Refuse to rewrite an aliased artifact file.');
+      if (entry.name.endsWith('.js') && path !== join(root, 'client.js')) {
+        const output = await transform(await readFile(path, 'utf8'), {
+          format: 'esm', platform: 'node', target: ['es2022'], keepNames: true,
+          minifyWhitespace: true, minifyIdentifiers: true, minifySyntax: true, legalComments: 'none',
+        });
+        await writeFile(path, output.code);
+      } else if (entry.name.endsWith('.d.ts')) {
+        await writeFile(path, compactDeclaration(await readFile(path, 'utf8'), path));
+      }
     }
   }
 }

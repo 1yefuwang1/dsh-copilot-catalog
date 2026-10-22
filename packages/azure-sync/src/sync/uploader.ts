@@ -29,13 +29,16 @@ import { DrainCoordinator } from './drain-coordinator.js';
 import { collectAttachmentReferences, type AttachmentSync } from './attachments.js';
 import { canonicalReconcileSnapshot } from './reconciler.js';
 import type { RemoteSession } from './remote-session.js';
-import { RemoteSessionReader } from './remote-session.js';
+import type { RemoteSessionReader } from './remote-session.js';
 import type { DrainSnapshot } from './lease-drain.js';
+import { assertScopedAppliedFloor, publicationScopePatch } from './runtime-history-floor.js';
 
 export interface UploadDependencies {
   readonly config: AzureSyncConfig;
   readonly source: SessionSource;
   readonly repository: CloudRepository;
+  /** Runtime-owned canonical history; omitted only by isolated native-only adapters. */
+  readonly reader?: RemoteSessionReader;
   readonly leases: SessionLeaseManager;
   readonly local: LocalStore;
   readonly deviceId: string;
@@ -97,19 +100,22 @@ function initialLocal(sessionId: string): LocalSessionRecord {
 export class Uploader {
   private readonly deps: UploadDependencies;
   private readonly held = new Map<string, SessionLease>();
+  private readonly retained = new Map<string, ReturnType<RemoteSessionReader['retain']>>();
   private readonly renewals = new Map<string, ReturnType<typeof setInterval>>();
   private readonly drains = new DrainCoordinator();
   private readonly queues = new Map<string, Promise<void>>();
   private readonly intents = new Map<string, number>();
   private readonly localOptOut = new Set<string>();
-  private readonly operations = new Map<number, { sessionId: string; intent: number; aborted: boolean; enabling: boolean; authority: string | undefined }>();
+  private readonly operations = new Map<number, { sessionId: string; intent: number; aborted: boolean; enabling: boolean; authority: string | undefined; retention?: ReturnType<RemoteSessionReader['retain']> }>();
   private nextOperation = 1;
   private suspended = false;
 
   /** Retire this credential generation synchronously; cleanup/release remains allowed. */
   suspend(): void {
     this.suspended = true;
-    for (const operation of this.operations.values()) operation.aborted = true;
+    for (const token of this.operations.keys()) this.cancelOperation(token);
+    for (const retention of this.retained.values()) retention.release();
+    this.retained.clear();
     for (const sessionId of [...this.renewals.keys()]) this.clearRenewal(sessionId);
   }
 
@@ -119,7 +125,8 @@ export class Uploader {
 
   private authority(record: LocalSessionRecord | undefined): string {
     return JSON.stringify([record?.resurrectionCancellationId ?? null, record?.generation ?? null,
-      record?.enabled ?? null, record?.detached ?? null, record?.admissionStopped ?? false, record?.mappingUnstable ?? false]);
+      record?.enabled ?? null, record?.detached ?? null, record?.admissionStopped ?? false, record?.mappingUnstable ?? false,
+      record?.publicationScope ?? null, record?.remoteAuditFailure ?? null, record?.remoteAuditScope ?? null]);
   }
 
   private beginOperation(sessionId: string, enabling = false): number {
@@ -131,15 +138,32 @@ export class Uploader {
     return token;
   }
 
+  private cancelOperation(token: number): void {
+    const operation = this.operations.get(token);
+    if (operation) { operation.aborted = true; operation.retention?.release(); operation.retention = undefined; }
+  }
+
   private finishOperation(token: number): void {
+    this.operations.get(token)?.retention?.release();
     this.operations.delete(token);
+  }
+
+  private pinOperation(record: LocalSessionRecord, token: number, signal?: AbortSignal): void {
+    const operation = this.operations.get(token), reader = this.deps.reader;
+    if (operation && !operation.retention && reader?.retain && record.enabled && !record.detached && this.hasPublicationScope(record)) {
+      this.assertOperation(record.sessionId, token);
+      operation.retention = reader.retain(record.sessionId, this.historyContext(record.sessionId, record, token, signal));
+    }
+  }
+
+  private releaseRetention(sessionId: string): void {
+    this.retained.get(sessionId)?.release(); this.retained.delete(sessionId);
   }
 
   private bumpIntent(sessionId: string): void {
     this.intents.set(sessionId, (this.intents.get(sessionId) ?? 0) + 1);
-    for (const [token, operation] of this.operations) {
-      if (operation.sessionId === sessionId) this.operations.set(token, { ...operation, aborted: true });
-    }
+    for (const [token, operation] of this.operations) if (operation.sessionId === sessionId) this.cancelOperation(token);
+    this.releaseRetention(sessionId);
   }
 
   /** Invalidate every older user intent and all work currently queued for it. */
@@ -178,6 +202,17 @@ export class Uploader {
 
   private holdLease(lease: SessionLease): void {
     this.held.set(lease.sessionId, lease);
+    const reader = this.deps.reader;
+    if (reader?.retain) {
+      const authority = this.authority(this.deps.local.getSession(lease.sessionId));
+      const retention = reader.retain(lease.sessionId, { expectedGeneration: lease.manifest.entity.generation, expectedScope: reader.scopeId, check: () => {
+        if (this.suspended || this.localOptOut.has(lease.sessionId) || this.deps.isOptingOut?.(lease.sessionId) ||
+          this.held.get(lease.sessionId)?.epoch !== lease.epoch || this.authority(this.deps.local.getSession(lease.sessionId)) !== authority) {
+          throw new AzureSyncError('CANCELLED', 'The writer no longer owns this data-retention context.');
+        }
+      } });
+      this.releaseRetention(lease.sessionId); this.retained.set(lease.sessionId, retention);
+    }
     this.drains.hold(lease);
     // Cold controls are finite even if their caller crashes or stalls. A native
     // proof promotes a known cold lease before it can admit active execution.
@@ -204,19 +239,63 @@ export class Uploader {
   private releaseHeld(sessionId: string): SessionLease | undefined {
     this.clearRenewal(sessionId);
     this.drains.forget(sessionId);
+    this.releaseRetention(sessionId);
     const lease = this.held.get(sessionId);
     this.held.delete(sessionId);
     return lease;
   }
 
-  private async update(record: LocalSessionRecord, patch: Partial<LocalSessionRecord>): Promise<LocalSessionRecord> {
+  private async update(record: LocalSessionRecord, patch: Partial<LocalSessionRecord>, check?: () => void): Promise<LocalSessionRecord> {
     const expected = this.authority(record);
     const next = await this.deps.local.transactSession(record.sessionId, current => {
+      check?.();
       if (current === undefined || this.authority(current) !== expected) throw new AzureSyncError('CANCELLED', 'A newer local permission superseded this checkpoint.');
       return { ...current, ...patch, lastAttemptAt: this.deps.now() };
     });
     if (next === undefined) throw new AzureSyncError('CANCELLED', 'The checkpoint no longer has a session.');
     return next;
+  }
+
+  private hasPublicationScope(record: LocalSessionRecord): boolean {
+    return this.deps.reader === undefined || record.publicationScope === this.deps.reader.scopeId;
+  }
+
+  private assertPublicationScope(record: LocalSessionRecord): void {
+    if (!this.hasPublicationScope(record)) throw new AzureSyncError('OWNERSHIP_UNVERIFIED', 'Explicitly Sync or turn On this thread for the current storage account before automatic publication or continuation.');
+  }
+
+  /** Explicit manual consent only. This metadata gate grants no lease or provenance proof. */
+  async bindPublicationScope(sessionId: string, signal?: AbortSignal): Promise<void> {
+    const scope = this.deps.reader?.scopeId;
+    if (scope === undefined) return; // Explicit native-only fixture port.
+    const entry = this.deps.local.getSession(sessionId);
+    const expected = this.authority(entry);
+    const check = (record: LocalSessionRecord | undefined) => {
+      signal?.throwIfAborted();
+      if (this.suspended || this.localOptOut.has(sessionId) || this.deps.isOptingOut?.(sessionId) ||
+        record === undefined || this.authority(record) !== expected || !record.enabled || record.detached ||
+        record.state !== 'active' || record.admissionStopped || record.mappingUnstable || record.resurrectionIntent !== undefined) {
+        throw new AzureSyncError('CANCELLED', 'The explicit scope consent no longer has the current enabled intent.');
+      }
+      this.assertRemoteHealth(record);
+      if (['conflict', 'remote-ahead-live', 'generation-changed', 'removed-remotely', 'remote-missing'].includes(record.status)) throw new AzureSyncError('CONFLICT', 'Resolve the stopped history before binding publication to this account.');
+      if (record.importState !== undefined && record.importState !== 'complete' && !(record.importState === 'degraded' && record.degradedAcknowledged)) throw new AzureSyncError('IMPORT_INCOMPLETE', 'Finish the initial import before binding publication consent.');
+    };
+    check(entry);
+    if (this.deps.destinationReady && !await this.deps.destinationReady(sessionId)) throw new AzureSyncError('IMPORT_INCOMPLETE', 'The recorded destination is not ready.');
+    check(this.deps.local.getSession(sessionId));
+    const saved = await this.deps.local.transactSession(sessionId, current => {
+      check(current);
+      return { ...current!, ...publicationScopePatch(current, scope) };
+    });
+    signal?.throwIfAborted();
+    if (saved === undefined || this.authority(this.deps.local.getSession(sessionId)) !== this.authority(saved)) throw new AzureSyncError('CANCELLED', 'A newer intent superseded the explicit scope binding.');
+  }
+
+  private assertRemoteHealth(record: LocalSessionRecord): void {
+    if (record.remoteAuditFailure !== undefined || record.status === 'corrupt-remote' || record.status === 'committed-index-corrupt') {
+      throw new AzureSyncError((record.remoteAuditFailure ?? record.status) === 'corrupt-remote' ? 'CORRUPT_REMOTE' : 'COMMITTED_INDEX_CORRUPT', 'Reconcile the detected remote-integrity failure explicitly before publication.');
+    }
   }
 
   private async pending(sessionId: string): Promise<UploadSummary> {
@@ -251,7 +330,7 @@ export class Uploader {
   async beginEnableIntent(sessionId: string, signal?: AbortSignal): Promise<number> {
     const entry = this.enableEntry(sessionId);
     const token = this.beginOperation(sessionId, true);
-    const cancel = () => { const operation = this.operations.get(token); if (operation !== undefined) operation.aborted = true; };
+    const cancel = () => this.cancelOperation(token);
     signal?.addEventListener('abort', cancel, { once: true });
     if (signal?.aborted) cancel();
     try {
@@ -267,7 +346,7 @@ export class Uploader {
   }
 
   /** Cancel only this explicit request token, never a concurrent foreground proof. */
-  cancelIntent(token: number): void { this.operations.delete(token); }
+  cancelIntent(token: number): void { this.finishOperation(token); }
 
   /** Continue an explicit enable intent after service-level infrastructure setup. */
   async syncWithIntent(sessionId: string, token: number, seconds: SessionLeaseSeconds = 60): Promise<UploadSummary> {
@@ -294,9 +373,12 @@ export class Uploader {
           (entry.generation !== undefined && current?.generation !== entry.generation) ||
           (!entry.detached && current?.detached)) throw new AzureSyncError('CANCELLED', 'A newer local safety intent superseded this opt-in.');
       const record = current ?? initialLocal(sessionId);
+      this.assertRemoteHealth(record);
       if (record.importState !== undefined && record.importState !== 'complete' && !(record.importState === 'degraded' && record.degradedAcknowledged)) throw new AzureSyncError('IMPORT_INCOMPLETE', 'Repair the initial import before enabling cloud publication.');
       if (record.admissionStopped || record.status === 'conflict' || record.status === 'remote-ahead-live') throw new AzureSyncError('CONFLICT', 'Resolve the stopped recovery/conflict or restart the stale live host before enabling sync.');
-      return { ...record, enabled: true, detached: false, state: 'active', status: record.mappingUnstable ? 'mapping-unstable' : 'syncing',
+      return { ...record, enabled: true, detached: false, state: 'active',
+        ...publicationScopePatch(record, this.deps.reader?.scopeId),
+        status: record.mappingUnstable ? 'mapping-unstable' : 'syncing',
         admissionStopped: record.mappingUnstable, resurrectionCancellationId: cancellationId,
         lastAttemptAt: this.deps.now(), lastError: undefined };
     });
@@ -453,7 +535,7 @@ export class Uploader {
     catch { return { owned: false, reason: 'ownership-unverified' }; }
     const leaseSeconds = validateSessionLeaseSeconds(seconds);
     const token = this.beginOperation(sessionId);
-    const cancel = () => { const operation = this.operations.get(token); if (operation !== undefined) operation.aborted = true; };
+    const cancel = () => this.cancelOperation(token);
     signal?.addEventListener('abort', cancel, { once: true });
     if (signal?.aborted) cancel();
     try { return await this.exclusive(sessionId, () => this.ensureOwnershipImpl(sessionId, token, signal, leaseSeconds)); }
@@ -465,7 +547,7 @@ export class Uploader {
     if (this.deps.destinationReady && !await this.deps.destinationReady(sessionId)) return { owned: false, reason: 'ownership-unverified' };
     const leaseSeconds = validateSessionLeaseSeconds(seconds);
     const token = this.beginOperation(sessionId);
-    const cancel = () => { const operation = this.operations.get(token); if (operation !== undefined) operation.aborted = true; };
+    const cancel = () => this.cancelOperation(token);
     signal?.addEventListener('abort', cancel, { once: true });
     if (signal?.aborted) cancel();
     try {
@@ -473,12 +555,16 @@ export class Uploader {
         this.assertOperation(sessionId, token);
         const record = this.deps.local.getSession(sessionId);
         if (this.localOptOut.has(sessionId) || this.deps.isOptingOut?.(sessionId) || record?.enabled !== true || record.detached || record.admissionStopped || record.mappingUnstable) throw new AzureSyncError('DISABLED', 'The local copy is not eligible for takeover.');
+        this.assertRemoteHealth(record);
+        this.assertPublicationScope(record);
         if (record.importState !== undefined && record.importState !== 'complete' && !(record.importState === 'degraded' && record.degradedAcknowledged)) throw new AzureSyncError('IMPORT_INCOMPLETE', 'Repair the incomplete import before taking over cloud ownership.');
         if (record.status === 'conflict' || record.status === 'remote-ahead-live') throw new AzureSyncError('CONFLICT', 'Resolve the stopped history or restart the stale live host before takeover.');
+        this.pinOperation(record, token, signal);
         await this.deps.source.flush(); this.assertOperation(sessionId, token);
         const raw = await this.deps.source.read(sessionId); this.assertOperation(sessionId, token);
         if (raw === undefined) throw new AzureSyncError('NOT_FOUND', 'Materialize and sync the thread before takeover.');
-        const snapshot = await this.canonicalSnapshot(record, raw); this.assertOperation(sessionId, token);
+        const snapshot = await this.canonicalSnapshot(record, raw, undefined, false, token, signal); this.assertOperation(sessionId, token);
+        await this.checkAcceptedHistory(sessionId, record, token, signal);
         const guard = checkGuards({ header: snapshot.header, events: snapshot.events });
         if (!guard.ok) throw new AzureSyncError('CONFLICT', 'The local history is not safe for takeover.');
         const manifest = await this.deps.repository.getManifest(sessionId); this.assertOperation(sessionId, token);
@@ -527,14 +613,17 @@ export class Uploader {
     if (signal?.aborted) return { owned: false, reason: 'ownership-unverified' };
     const record = this.deps.local.getSession(sessionId);
     if (this.localOptOut.has(sessionId) || this.deps.isOptingOut?.(sessionId) || record === undefined || !record.enabled || record.admissionStopped || record.mappingUnstable) return { owned: false, reason: 'ownership-unverified' };
+    if (!this.hasPublicationScope(record) || record.remoteAuditFailure !== undefined || record.status === 'corrupt-remote' || record.status === 'committed-index-corrupt') return { owned: false, reason: 'ownership-unverified' };
     if (record.importState !== undefined && record.importState !== 'complete' && !(record.importState === 'degraded' && record.degradedAcknowledged)) return { owned: false, reason: 'ownership-unverified' };
+    this.pinOperation(record, generation, signal);
     await this.deps.source.flush();
     this.assertOperation(sessionId, generation);
     const raw = await this.deps.source.read(sessionId);
     this.assertOperation(sessionId, generation);
     if (raw === undefined) return { owned: false, reason: 'ownership-unverified' };
-    const snapshot = await this.canonicalSnapshot(record, raw);
+    const snapshot = await this.canonicalSnapshot(record, raw, undefined, false, generation, signal);
     this.assertOperation(sessionId, generation);
+    await this.checkAcceptedHistory(sessionId, record, generation, signal);
     const guard = checkGuards({ header: snapshot.header, events: snapshot.events });
     if (!guard.ok) return { owned: false, reason: 'ownership-unverified' };
 
@@ -557,7 +646,7 @@ export class Uploader {
           await this.deps.leases.release(renewed).catch(() => undefined);
           return { owned: false, reason: 'ownership-unverified' };
         }
-        this.held.set(sessionId, renewed);
+        this.holdLease(renewed);
       } catch (error) {
         if (this.held.get(sessionId)?.epoch === held.epoch) {
           this.releaseHeld(sessionId);
@@ -628,8 +717,11 @@ export class Uploader {
 
   private async drainImpl(sessionId: string, snapshot: DrainSnapshot, operation: number): Promise<DrainResult> {
     const record = this.deps.local.getSession(sessionId);
-    if (this.localOptOut.has(sessionId) || this.deps.isOptingOut?.(sessionId) || record?.admissionStopped || record?.mappingUnstable) return 'kept';
+    if (this.localOptOut.has(sessionId) || this.deps.isOptingOut?.(sessionId) || record?.admissionStopped || record?.mappingUnstable ||
+      record?.remoteAuditFailure !== undefined || record?.status === 'corrupt-remote' || record?.status === 'committed-index-corrupt' ||
+      (record !== undefined && !this.hasPublicationScope(record))) return 'kept';
     if (!this.held.has(sessionId)) return 'not-ready';
+    if (record !== undefined) this.pinOperation(record, operation);
     const generation = this.drains.generation(sessionId);
     try {
       await this.deps.source.flush();
@@ -653,6 +745,7 @@ export class Uploader {
         if (held?.epoch === lease.epoch) {
           this.clearRenewal(sessionId);
           this.held.delete(sessionId);
+          this.releaseRetention(sessionId);
         }
         await this.deps.leases.release(lease);
       }) ? 'released' : 'not-ready';
@@ -666,13 +759,35 @@ export class Uploader {
     if (record?.enabled && !record.detached && !record.admissionStopped && !record.mappingUnstable) await this.update(record, { status: 'drain-failed', lastError: 'The final drain upload failed; the lease is retained.' });
   }
 
-  private async canonicalSnapshot(record: LocalSessionRecord, snapshot: SourceSnapshot, verifiedRemote?: RemoteSession, allowDisabled = false): Promise<SourceSnapshot> {
+  private historyContext(sessionId: string, record: LocalSessionRecord, token: number, signal?: AbortSignal, allowDisabled = false) {
+    return { ...(signal === undefined ? {} : { signal }), allowDisabled, expectedGeneration: record.generation,
+      check: () => { signal?.throwIfAborted(); this.assertOperation(sessionId, token); } };
+  }
+
+  private async checkAcceptedHistory(sessionId: string, record: LocalSessionRecord, token: number, signal?: AbortSignal, allowDisabled = false): Promise<void> {
+    if (this.deps.reader === undefined) return; // Native-only unit adapter, never production boot.
+    const context = this.historyContext(sessionId, record, token, signal, allowDisabled);
+    const observation = await this.deps.reader.observe(sessionId, context);
+    context.check();
+    if (observation !== undefined) assertScopedAppliedFloor(record, observation.manifest.entity, this.deps.reader.scopeId);
+    else if (record.publicationScope === this.deps.reader.scopeId && record.lastSyncedAt !== undefined) {
+      throw new AzureSyncError('REMOVED_REMOTELY', 'The previously applied cloud copy is missing; lost accepted-history metadata cannot authorize recreating it.');
+    }
+  }
+
+  private async canonicalSnapshot(record: LocalSessionRecord, snapshot: SourceSnapshot, verifiedRemote?: RemoteSession, allowDisabled = false, token = 0, signal?: AbortSignal): Promise<SourceSnapshot> {
+    const context = this.historyContext(record.sessionId, record, token, signal, allowDisabled);
+    context.check();
+    if (snapshot.header.id !== record.sessionId) throw new AzureSyncError('PRECONDITION', 'The durable source header does not belong to the requested session.');
     const binding = await this.deps.cwdBinding?.(snapshot.header.id, record);
-    const remote = verifiedRemote ?? (record.imported && binding !== undefined ? await new RemoteSessionReader(this.deps.repository, {
-      maxCompressedBytes: Math.max(this.deps.config.maxBatchBytes * 4, 1_048_576),
-      maxExpandedBytes: this.deps.config.maxBatchBytes,
-      maxEvents: this.deps.config.maxEventsPerSession,
-    }).read(snapshot.header.id, { allowDisabled }) : undefined);
+    context.check();
+    let remote = verifiedRemote;
+    if (remote === undefined && record.imported && binding !== undefined) {
+      if (this.deps.reader === undefined) throw new AzureSyncError('IMPORT_INCOMPLETE', 'The shared canonical history reader is unavailable.');
+      await this.checkAcceptedHistory(record.sessionId, record, token, signal, allowDisabled);
+      remote = await this.deps.reader.read(snapshot.header.id, context);
+      context.check();
+    }
     return canonicalReconcileSnapshot(record, snapshot, remote, binding);
   }
 
@@ -707,7 +822,7 @@ export class Uploader {
 
   async sync(sessionId: string, options: UploadOptions = {}): Promise<UploadSummary> {
     const token = this.beginOperation(sessionId);
-    const cancel = () => { const operation = this.operations.get(token); if (operation !== undefined) operation.aborted = true; };
+    const cancel = () => this.cancelOperation(token);
     options.signal?.addEventListener('abort', cancel, { once: true });
     if (options.signal?.aborted) cancel();
     try { return await this.exclusive(sessionId, () => this.syncImpl(sessionId, options, token)); }
@@ -720,16 +835,20 @@ export class Uploader {
     const leaseSeconds = validateSessionLeaseSeconds(options.leaseSeconds ?? (options.release === true ? 30 : 60));
     const record = this.deps.local.getSession(sessionId);
     if (this.localOptOut.has(sessionId) || this.deps.isOptingOut?.(sessionId) || record === undefined || !record.enabled) return { status: 'disabled', eventCount: 0, uploadedBatches: 0 };
+    this.assertRemoteHealth(record);
+    this.assertPublicationScope(record);
     if (record.importState !== undefined && record.importState !== 'complete' && !(record.importState === 'degraded' && record.degradedAcknowledged)) throw new AzureSyncError('IMPORT_INCOMPLETE', 'Repair the incomplete import before publication.');
     if (record.admissionStopped || record.mappingUnstable) throw new AzureSyncError('MAPPING_UNSTABLE', 'Repair the frozen mapping or recovery before publication.');
     if (record.status === 'conflict' || record.status === 'remote-ahead-live') throw new AzureSyncError('CONFLICT', 'The local session is blocked pending explicit conflict resolution or host restart.');
+    this.pinOperation(record, generation, options.signal);
     try {
       await this.deps.source.flush();
       this.assertOperation(sessionId, generation);
       const raw = await this.deps.source.read(sessionId);
       this.assertOperation(sessionId, generation);
       if (raw === undefined) return this.pending(sessionId);
-      const snapshot = await this.canonicalSnapshot(record, raw, undefined, options.resume === true);
+      const snapshot = await this.canonicalSnapshot(record, raw, undefined, options.resume === true, generation, options.signal);
+      await this.checkAcceptedHistory(sessionId, record, generation, options.signal, options.resume === true);
       this.assertOperation(sessionId, generation);
       if (snapshot.events.length > this.deps.config.maxEventsPerSession) {
         throw new AzureSyncError('LIMIT', 'The session exceeds the configured maximum event count.');
@@ -904,10 +1023,12 @@ export class Uploader {
             continue;
           }
           let retryBatch = false;
+          let confirmedReceipt = false;
           for (;;) {
             try {
               this.assertOperation(sessionId, generation);
               committed = await this.deps.repository.commitBatch(proof, row, next, root);
+              confirmedReceipt = true;
               break;
             } catch (error) {
               if (!(error instanceof AzureSyncError) || (error.code !== 'PRECONDITION' && error.code !== 'CONFLICT')) throw error;
@@ -937,13 +1058,21 @@ export class Uploader {
           if (committed.entity.writerEpoch !== heldLease.epoch || committed.entity.leaseOwner !== heldLease.deviceId) throw new AzureSyncError('LEASE_LOST', 'The publication response no longer belongs to this writer.');
           const tipFields = ['eventCount', 'headSeq', 'headHash', 'chainHash', 'batchCount', 'lastBatchRowKey', 'lastBatchGeneration', 'lastBatchBlobName'] as const;
           if (tipFields.some(field => committed.entity[field] !== next[field])) throw new AzureSyncError('CORRUPT_REMOTE', 'The publication response changed its accepted committed tip.');
-          uploadedBatches += 1;
+          // This is confirmed Native/publication progress, independent of whether
+          // optional payload retention has capacity. Never lose its rollback floor.
           current = await this.update(current, {
             status: 'syncing', lastSyncedEventCount: committed.entity.eventCount,
             lastSyncedChainHash: committed.entity.chainHash, lastSyncedHeaderHash: committed.entity.headerHash,
             remoteETag: committed.etag, lastSyncedAt: this.deps.now(), lastError: undefined,
             generation: committed.entity.generation, writerEpoch: heldLease.epoch,
-          });
+          }, () => this.assertOperation(sessionId, generation));
+          this.assertOperation(sessionId, generation);
+          if (confirmedReceipt && this.deps.reader !== undefined) {
+            await this.deps.reader.seedConfirmedUpload({ base: proof, row, compressed: plan.gzip, receipt: committed },
+              this.historyContext(sessionId, record, generation, options.signal));
+            this.assertOperation(sessionId, generation);
+          }
+          uploadedBatches += 1;
         }
         this.assertOperation(sessionId, generation);
         this.verifyLocalPrefix(committed, snapshot, record.generation);
@@ -981,6 +1110,7 @@ export class Uploader {
   }
 
   private verifyLocalPrefix(manifest: StoredManifest, snapshot: SourceSnapshot, expectedGeneration?: number, allowDisabled = false): void {
+    assertScopedAppliedFloor(this.deps.local.getSession(manifest.entity.sessionId), manifest.entity, this.deps.reader?.scopeId);
     if (manifest.entity.state === 'deleted') throw new AzureSyncError('REMOVED_REMOTELY', 'The cloud session was removed during upload.');
     if ((manifest.entity.state !== 'active' || !manifest.entity.enabled) && !allowDisabled) throw new AzureSyncError('DISABLED', 'The cloud session was disabled during upload.');
     if (expectedGeneration !== undefined && manifest.entity.generation !== expectedGeneration) {

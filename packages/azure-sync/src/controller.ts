@@ -10,7 +10,7 @@ import type { SessionSource } from './sync/session-source.js';
 import { exportLocalSnapshot } from './sync/conflict.js';
 import { isInside, mappingRevision, nodeCwdFs, normalizeMapping, normalizeRemotePath, selectMapping, type CwdFs } from './sync/effective-cwd.js';
 import { requiresCloudAdmission } from './sync/admission.js';
-import { boundedJson, CloudControlError, parseCloudRequest, type CloudControllerPort, type CloudRequest, type CloudResponse } from './protocol.js';
+import { boundedJson, CloudControlError, parseCloudAuditResult, parseCloudRequest, type CloudAuditResult, type CloudControllerPort, type CloudRequest, type CloudResponse } from './protocol.js';
 
 export interface CloudCore {
   readonly service: SyncService;
@@ -61,6 +61,7 @@ export class CloudController implements CloudControllerPort {
   private readonly coreFlights = new Set<Promise<CloudCore>>();
   private readonly authProbeFlights = new Set<Promise<void>>();
   private readonly gitProbeFlights = new Set<Promise<GitFacts | null | undefined>>();
+  private readonly auditFlights = new Set<Promise<CloudAuditResult>>();
 
   private intentSignal(sessionId: string, replace = false): AbortSignal {
     let intent = this.sessionIntents.get(sessionId);
@@ -247,6 +248,24 @@ export class CloudController implements CloudControllerPort {
       try { return boundedJson(await task); }
       catch (error) { if (signal.aborted) throw new CloudControlError('CANCELLED'); throw error; }
     }
+    if (request.action === 'verify') {
+      // An audit is read-only: never enter a mutation/ownership workflow or grant native admission.
+      if (this.auditFlights.size >= 4) throw new CloudControlError('CAPACITY');
+      if (barrier !== undefined) await this.cancellable(barrier.catch(() => undefined), signal);
+      this.check(signal);
+      const core = await this.core(signal), current = this.current(signal, core);
+      this.check(current);
+      if (this.auditFlights.size >= 4) throw new CloudControlError('CAPACITY');
+      const target = sessionId!;
+      const work = Promise.resolve().then(() => { this.check(current); return core.service.verifyCloudCopy(target, current); });
+      this.auditFlights.add(work);
+      void work.then(() => this.auditFlights.delete(work), () => this.auditFlights.delete(work));
+      try {
+        const detail = parseCloudAuditResult(await this.cancellable(work, current), target);
+        this.check(current);
+        return boundedJson({ kind: 'action', action: 'verify', sessionId: target, state: core.service.status(target).status, detail });
+      } catch (error) { if (current.aborted) throw new CloudControlError('CANCELLED'); throw error; }
+    }
     let operationSignal = signal;
     return this.exclusive(async () => {
       this.check(signal);
@@ -337,7 +356,7 @@ export class CloudController implements CloudControllerPort {
           let detail: unknown;
           switch (request.action) {
             case 'toggle': detail = request.enabled ? await core.service.enable(sessionId, current) : await core.service.disable(sessionId); break;
-            case 'sync': detail = await core.service.sync(sessionId, current); break;
+            case 'sync': detail = await core.service.sync(sessionId, current, { explicit: true }); break;
             case 'repair': await core.service.repairSession(sessionId, { signal: current, confirmMapping: request.confirmMapping === true }); break;
             case 'acknowledge-degraded': await core.service.acknowledgeDegraded(sessionId, current); break;
             case 'check-ownership': detail = await core.service.ensureOwnership(sessionId, current, { inspection: true }); break;

@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { AzureSyncError } from './azure/errors.js';
 
 export const CLOUD_SCHEMA_VERSION = 4;
-export const LOCAL_DOMAIN_VERSION = 4;
+export const LOCAL_DOMAIN_VERSION = 5;
 export const MAX_TABLE_STRING = 32 * 1024;
 export const MAX_PATH_LENGTH = 4096;
 export const INT64_MAX = Number.MAX_SAFE_INTEGER;
@@ -230,6 +230,11 @@ export const localSessionRecordSchema = z.object({
   writerEpoch: int64,
   state: z.enum(['active', 'disabled', 'deleted']),
   status: syncStatusSchema,
+  /** Explicit publication/admission consent for an actual endpoint namespace; never inferred from H or L. */
+  publicationScope: hex64.optional(),
+  /** Durable remote-health refusal; cached history or runtime restart cannot clear an audit failure. */
+  remoteAuditFailure: z.enum(['corrupt-remote', 'committed-index-corrupt']).optional(),
+  remoteAuditScope: hex64.optional(),
   deletedAt: int64.optional(),
   deletedBy: optionalText(256),
   previousGeneration: int64.min(1).optional(),

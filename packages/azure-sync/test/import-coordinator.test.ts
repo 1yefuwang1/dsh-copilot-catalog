@@ -15,6 +15,7 @@ import { chainEvents, genesisHash, headerHash } from '../src/sync/chain.js';
 import { payloadBytes } from '../src/sync/canonical.js';
 import { candidateBlobName } from '../src/sync/cloud-repository.js';
 import { publicCloudError } from '../src/protocol.js';
+import { AzureSyncError } from '../src/azure/errors.js';
 import { batchRow, cloudSession, event, sessionHeader } from './helpers.js';
 import { AcceptanceCloud } from './acceptance-helpers.js';
 import { coordinatorFixture } from './import-coordinator-fixture.js';
@@ -108,14 +109,22 @@ class DelayedCloud extends AcceptanceCloud {
 test('cancel before effects is durable/quick despite ignored remote abort, late verification cannot reserve or create, new operation can replan', { timeout: 30_000 }, async t => {
   const cloud = new DelayedCloud(); const f = await fixture(t, cloud);
   const plan = await f.plan(); assert.equal(plan.kind, 'import-plan'); if (plan.kind !== 'import-plan') return;
+  // Force a cold payload read: a retained verified cache hit legitimately performs no cloud data IO.
+  (f.host.runtime.reader as unknown as { invalidate(sessionId?: string): void }).invalidate(f.sid);
   let release!: () => void, entered!: () => void;
   cloud.gate = new Promise(resolve => { release = resolve; }); const blocked = new Promise<void>(resolve => { entered = resolve; }); cloud.entered = entered;
-  const commit = f.host.coordinator.execute({ action: 'commit-import', sessionId: f.sid, operationId: f.operationId, revision: plan.revision, confirm: true, acknowledgeCodeMismatch: true }, f.context());
+  const commit = f.host.coordinator.execute({ action: 'commit-import', sessionId: f.sid, operationId: f.operationId, revision: plan.revision, confirm: true, acknowledgeCodeMismatch: true }, f.context())
+    .then(value => ({ ok: true as const, value }), error => ({ ok: false as const, error }));
   await blocked;
   const stopped = await f.host.coordinator.execute({ action: 'cancel-import', sessionId: f.sid, operationId: f.operationId }, f.context());
   assert.equal(stopped.kind, 'import-operation'); if (stopped.kind === 'import-operation') assert.equal(stopped.phase, 'cancelled');
   assert.equal(f.host.local.getSession(f.sid), undefined); assert.equal(await f.host.guard.journal.read(f.sid), undefined);
-  release(); await commit; cloud.gate = undefined;
+  // Logical cancellation now settles before an ignored transport returns. Depending on durable-cancel
+  // scheduling it returns the canceled view or the exact cancellation error, never a generic failure.
+  const outcome = await commit;
+  if (outcome.ok) { assert.equal(outcome.value.kind, 'import-operation'); if (outcome.value.kind === 'import-operation') assert.equal(outcome.value.phase, 'cancelled'); }
+  else assert.ok(outcome.error instanceof AzureSyncError && outcome.error.code === 'CANCELLED');
+  release(); cloud.gate = undefined;
   assert.equal(f.host.local.getSession(f.sid), undefined); assert.equal(await f.host.ctx.sessionPersistence.stat(f.sid), undefined);
   const replanned = await f.host.coordinator.execute({ action: 'plan-import', sessionId: f.sid, generation: 1, operationId: randomUUID(), gitContextVersion: 2,
     destination: { kind: 'local', folderPath: f.host.cwd }, mapping: { remotePlatform: 'linux', remotePrefix: f.source } }, f.context());

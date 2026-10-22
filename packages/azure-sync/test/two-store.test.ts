@@ -392,6 +392,7 @@ test('service.sync reconciles a cold remote suffix before upload and leaves the 
 
 for (const fault of ['transient-partial', 'cancel-complete'] as const) {
   test(`same-process refreshAll retries ${fault} cold catch-up through real JSONL and warms projections without an epoch write`, { timeout: 20_000 }, async t => {
+    t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
     const f = await fixture(t);
     const bAgent = await advanceB(f);
     for (let index = 0; index < 9; index += 1) bAgent.session.append('session/title', { title: `B durable suffix ${index}`, messageSeqs: [], source: { kind: 'user' } });
@@ -442,7 +443,14 @@ for (const fault of ['transient-partial', 'cancel-complete'] as const) {
       });
     };
     try {
-      await assert.rejects(cold.service.refreshAll(fault === 'cancel-complete' ? controller.signal : undefined), error => fault === 'cancel-complete' ? error === cancelReason : error instanceof AzureSyncError && error.code === 'TRANSIENT');
+      if (fault === 'cancel-complete') {
+        // Explicit request cancellation owns reconciliation; a poll tick must
+        // never be the lifetime owner of a separately registered real worker.
+        await assert.rejects(cold.service.reconcile(f.id, controller.signal), error => error === cancelReason);
+      } else {
+        await cold.service.refreshAll();
+        await assert.rejects(cold.service.waitForHistoryWork(f.id), error => error instanceof AzureSyncError && error.code === 'TRANSIENT');
+      }
       await closed;
       // Caller cancellation may settle service's abort race before the importer
       // finally removes its write claim. Yield one event-loop turn, not a retry
@@ -466,8 +474,11 @@ for (const fault of ['transient-partial', 'cancel-complete'] as const) {
       const appendsBeforeRetry = appendCalls;
 
       // No new host, ImportService, or SyncService instance is created here.
-      // refreshAll must not skip this incomplete catch-up as an initial import.
+      // Advance the retry clock past bounded backoff, never reset or bypass it.
+      t.mock.timers.setTime(Date.now() + 10_000);
+      // Observation registers work; the readonly join observes its own lifetime.
       await cold.service.refreshAll();
+      await cold.service.waitForHistoryWork(f.id);
       const complete = await cold.source.read(f.id); assert.ok(complete);
       assert.deepEqual(complete.events, remote.events, 'retry neither duplicates nor rewrites the already-durable prefix');
       if (fault === 'cancel-complete') assert.equal(appendCalls, appendsBeforeRetry, 'same-count retry only verifies/finalizes; it appends no duplicate suffix');

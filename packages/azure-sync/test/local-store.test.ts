@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { Context } from '@deepseek-ai/cordis';
-import { DomainError, DomainFacility } from '@deepseek-ai/dsh-storage-domain';
+import { defineDomain, DomainError, DomainFacility } from '@deepseek-ai/dsh-storage-domain';
 import { JsonStorageBackend } from '@deepseek-ai/dsh-storage-json';
 import { LocalStore, localDomain } from '../src/local/store.js';
 import { admitPreStep } from '../src/sync/admission.js';
@@ -28,9 +28,10 @@ async function fixture() {
   return { root, host, backend, facility, store };
 }
 
-test('the local domain is version 4 and persists sessions, mappings, device, and settings', async (t) => {
+test('the local domain is version 5 and persists sessions, mappings, device, and settings', async (t) => {
   assert.equal(localDomain.name, 'dsh_azure_sync');
-  assert.equal(localDomain.version, 4);
+  assert.equal(localDomain.version, 5);
+  assert.deepEqual(localDomain.compatibleVersions, [4]);
   const f = await fixture();
   t.after(async () => {
     await f.store.close();
@@ -51,6 +52,31 @@ test('the local domain is version 4 and persists sessions, mappings, device, and
   assert.equal(f.store.getSettings()?.pollSeconds, 300);
   assert.equal([...f.store.listSessions()].length, 1);
   assert.equal([...f.store.listMappings()].length, 1);
+});
+
+test('version-four upgrade retains old records without inventing account publication consent', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'azure-scope-upgrade-'));
+  const openHost = () => {
+    const host = new Context(); new Storage(host);
+    const backend = new JsonStorageBackend(resolve(root, 'data')); host.storage.backend.register('fixture-json', backend);
+    const facility = new DomainFacility(host, { backend: 'fixture-json' });
+    return { host, backend, facility };
+  };
+  const old = openHost();
+  const previous = defineDomain({ ...localDomain, version: 4, compatibleVersions: [] });
+  const legacy = await old.facility.open(previous);
+  const record = localSession({ sessionId: 'legacy-unscoped', lastSyncedAt: 123, lastSyncedEventCount: 50 });
+  await legacy.table('sessions').put(record.sessionId, record);
+  await legacy.close(); await old.facility.closeAll(); await old.backend.close();
+  const current = openHost(), store = new LocalStore(current.facility);
+  t.after(async () => { await store.close(); await current.facility.closeAll(); await current.backend.close(); await rm(root, { recursive: true, force: true }); });
+  await store.open();
+  assert.deepEqual(store.getSession(record.sessionId), record, 'compatible upgrade preserves enabled intent and existing L without inventing its namespace');
+  assert.equal(store.getSession(record.sessionId)?.publicationScope, undefined);
+  const scope = 'a'.repeat(64);
+  await store.transactSession(record.sessionId, latest => latest && { ...latest, publicationScope: scope });
+  await store.close(); await current.facility.closeAll(); await store.open();
+  assert.equal(store.getSession(record.sessionId)?.publicationScope, scope, 'explicit account-consent metadata is durable independently of canonical payload retention');
 });
 
 test('the local domain reopens durably and rejects invalid records', async (t) => {

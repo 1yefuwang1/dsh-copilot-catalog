@@ -63,7 +63,7 @@ test('real remapped Windows-source import is explicitly resurrected with a fresh
     },
     cachedSnapshot(header: SessionHeader) { return checkpoints.get(header.id); },
   } as never });
-  const importer = new Importer({ config, persistence: device.ctx.sessionPersistence, repository: cloud.asRepository(),
+  const importer = new Importer({ config, persistence: device.ctx.sessionPersistence, repository: cloud.asRepository(), reader: device.reader,
     local: device.local, cwdBinding: async () => binding, projection, now: Date.now });
   assert.equal((await importer.import(id)).status, 'complete');
   const imported = device.local.getSession(id);
@@ -73,11 +73,11 @@ test('real remapped Windows-source import is explicitly resurrected with a fresh
   assert.equal(localized.header.cwd, device.cwd);
   assert.equal(localized.events[0]?.type, 'working-directory/change');
   assert.equal((localized.events[0]?.data as { cwd: string }).cwd, join(device.cwd, 'nested'));
-  const uploader = new Uploader({ config, source: device.source, repository: cloud.asRepository(), leases: cloud.leases('device-b'),
+  const uploader = new Uploader({ config, source: device.source, repository: cloud.asRepository(), reader: device.reader, leases: cloud.leases('device-b'),
     local: device.local, deviceId: 'device-b', platform: 'linux', cwdBinding: async () => binding, now: Date.now });
   service = new SyncService({ uploader, local: device.local, repository: cloud.asRepository(), reader: device.reader,
     source: device.source, agents: device.ctx.agents,
-    tombstones: new TombstoneManager(cloud.asRepository(), device.local, Date.now, 'device-b'), now: Date.now });
+    tombstones: new TombstoneManager(cloud.asRepository(), device.local, Date.now, 'device-b', (intent, receipt, context) => device.reader.confirmGenerationActivation(intent, receipt, context)), now: Date.now });
   await service.removeFromCloud(id);
   assert.equal((await cloud.getManifest(id))?.entity.cleanupPending, false);
   assert.equal((await cloud.listBatchRows(id, 1)).length, 0);

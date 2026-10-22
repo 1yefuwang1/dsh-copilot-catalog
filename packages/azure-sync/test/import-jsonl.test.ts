@@ -1,3 +1,4 @@
+import { withHistory } from './runtime-history-fixture.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mkdtemp, mkdir, realpath, rm } from 'node:fs/promises';
@@ -28,7 +29,7 @@ test('importer works against a real JSONL persistence handle with no synthetic c
   const e0 = event(0, 'working-directory/change', { cwd: '/remote/project' });
   const chain = chainEvents(genesis, [e0]);
   const row = batchRow('session-jsonl', 1, 0, { endSeq: 0, eventCount: 1, prevChainHash: genesis, chainHash: chain.chainHash, headHash: chain.headHash, payloadHash: chain.payloadHash });
-  const manifest: StoredManifest = { entity: cloudSession({ sessionId: 'session-jsonl', headerHash: binding, eventCount: 1, chainHash: chain.chainHash, lastBatchRowKey: row.rowKey, lastBatchGeneration: 1 }), etag: 'e' };
+  const manifest: StoredManifest = { entity: cloudSession({ sessionId: 'session-jsonl', headerHash: binding, eventCount: 1, headHash: chain.headHash, chainHash: chain.chainHash, lastBatchRowKey: row.rowKey, lastBatchGeneration: 1, lastBatchBlobName: row.blobName }), etag: 'e' };
   const repository = {
     getManifest: async () => manifest,
     listBatchRows: async () => [row],
@@ -47,11 +48,11 @@ test('importer works against a real JSONL persistence handle with no synthetic c
   } as unknown as LocalStore;
   const ctx = new Context();
   await jsonl.apply(ctx, { root: join(root, 'data') });
-  const importer = new Importer({
+  const importer = new Importer(withHistory({
     config: Config({}), persistence: ctx.sessionPersistence, repository, local,
     cwdBinding: async () => ({ mapping: pathMapping({ remotePrefix: '/remote/project', localPrefix: real, remotePlatform: 'linux' }), fs: nodeCwdFs }),
     projection: { warm: async () => 'complete' } as unknown as ProjectionWarmer, now: () => 1,
-  });
+  }));
   const result = await importer.import('session-jsonl');
   assert.equal(result.status, 'complete');
   const handle = await ctx.sessionPersistence.open('session-jsonl' as never, 'read');
