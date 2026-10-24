@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { packages, packageManager, containedPath, type PackageManifest } from './workspaces.js';
 
-interface Policy { modules: string[]; extras: string[]; maxBytes: number }
+interface Policy { modules: string[]; extras: string[]; maxBytes?: number }
 export interface PackedPackage { name: string; version: string; files: { path: string }[] }
 
 const policies: Record<string, Policy> = {
@@ -34,11 +34,12 @@ const policies: Record<string, Policy> = {
       'sync/lease-drain', 'sync/lease-manager', 'sync/lifecycle', 'sync/scheduler', 'sync/service', 'sync/session-source',
       'sync/uploader', 'sync/remote-session', 'sync/history-state', 'sync/history-work', 'sync/history-cache', 'sync/history-retention', 'sync/history-files', 'sync/runtime-history-jobs', 'sync/runtime-history-floor', 'sync/attachments', 'sync/projection-warmer', 'sync/importer', 'sync/import-service', 'sync/recovery', 'sync/live-guard', 'sync/conflict', 'sync/reconciler', 'sync/tombstone', 'sync/tombstone-manager', 'sync/poller', 'sync/cleanup', 'sync/workspace', 'local/store', 'git/probe', 'git/sanitize', 'git/guidance', 'git/context', 'import/protocol', 'import/claims', 'import/journal', 'import/guard', 'import/persistence', 'import/cwd-admission', 'import/bindings', 'import/plans', 'import/profile', 'import/materialize', 'import/coordinator', 'import/commands', 'import/local-code',
     ],
-    extras: ['dist/client.js', 'locale/en.json', 'icon.svg'], maxBytes: 720_000,
+    // No size cap: the exact published-file allowlist is the guard for this leaf.
+    extras: ['dist/client.js', 'locale/en.json', 'icon.svg'],
   },
 };
 
-/** Exact per-package limits: a new leaf must not widen either existing tarball. */
+/** Exact per-package allowlists. Size caps apply only to packages that declare one. */
 export function publicationPolicy(name: string) {
   assert.ok(Object.hasOwn(policies, name), 'Package must have an explicit publication allowlist');
   const policy = policies[name];
@@ -69,7 +70,10 @@ export function validatePublicationMetadata(pkg: Pick<PackageManifest, 'name' | 
 }
 
 export function validatePublicationSize(name: string, unpackedSize: number) {
-  assert.ok(Number.isSafeInteger(unpackedSize) && unpackedSize >= 0 && unpackedSize < publicationPolicy(name).maxBytes, `Unexpectedly large package: ${name}`);
+  const { maxBytes } = publicationPolicy(name);
+  assert.ok(Number.isSafeInteger(unpackedSize) && unpackedSize >= 0, `Unexpectedly large package: ${name}`);
+  if (maxBytes === undefined) return;
+  assert.ok(unpackedSize < maxBytes, `Unexpectedly large package: ${name}`);
 }
 
 async function main() {

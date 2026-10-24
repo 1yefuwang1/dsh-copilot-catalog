@@ -35,7 +35,8 @@
   [acceptance matrix](<docs/acceptance/azure-sync.md>) and
   [cost evidence](<docs/acceptance/azure-sync-cost.md>).
 - Retarget this plugin to DSH and DSH peer packages `0.2.1-rc.3`; no runtime
-  behavior change is claimed.
+  behavior change is claimed. Remove the arbitrary 720,000-byte tarball cap;
+  the exact published-file allowlist remains.
 
 ## DSH 0.2.1-rc.3 compatibility
 

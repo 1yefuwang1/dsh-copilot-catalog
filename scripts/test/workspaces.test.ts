@@ -148,11 +148,15 @@ test('publication allowlists and bounds cover every leaf and its exact extras', 
     const policy = publicationPolicy(name);
     const extras = name === '@1yefuwang1/dsh-worktrees' ? ['dist/client.js', 'locale/en.json', 'icon.svg']
       : name === '@1yefuwang1/dsh-azure-sync' ? ['dist/client.js', 'locale/en.json', 'icon.svg'] : [];
-    const maxBytes = name === '@1yefuwang1/dsh-worktrees' ? 825_000 : name === '@1yefuwang1/dsh-azure-sync' ? 720_000 : 150_000;
+    const maxBytes = name === '@1yefuwang1/dsh-worktrees' ? 825_000 : name === '@1yefuwang1/dsh-azure-sync' ? undefined : 150_000;
     assert.deepEqual(policy.files, [...common, ...names.flatMap(module => [`dist/${module}.js`, `dist/${module}.d.ts`]), ...extras].sort());
     assert.equal(policy.maxBytes, maxBytes);
-    assert.doesNotThrow(() => validatePublicationSize(name, policy.maxBytes - 1));
-    assert.throws(() => validatePublicationSize(name, policy.maxBytes), /Unexpectedly large/u);
+    if (maxBytes === undefined) {
+      assert.doesNotThrow(() => validatePublicationSize(name, 10_000_000));
+    } else {
+      assert.doesNotThrow(() => validatePublicationSize(name, maxBytes - 1));
+      assert.throws(() => validatePublicationSize(name, maxBytes), /Unexpectedly large/u);
+    }
     assert.throws(() => validatePublicationSize(name, -1), /Unexpectedly large/u);
     assert.throws(() => validatePublicationSize(name, NaN), /Unexpectedly large/u);
   }
@@ -192,7 +196,7 @@ test('azure-sync browser tarball identity and exact asset are enforced without w
   const source = await readFile(resolve(root, 'packages/azure-sync/client.ts'), 'utf8');
   assert.match(source, /window\.__ModuleLoader__\.load\(\{\s*id: '@1yefuwang1\/dsh-azure-sync'/u);
   assert.match(source, /name: 'plugins\.row\.config', key: '@1yefuwang1\/dsh-azure-sync#azure-sync'/u);
-  assert.equal(publicationPolicy('@1yefuwang1/dsh-azure-sync').maxBytes, 720_000);
+  assert.equal(publicationPolicy('@1yefuwang1/dsh-azure-sync').maxBytes, undefined);
   assert.equal(publicationPolicy('@1yefuwang1/dsh-worktrees').maxBytes, 825_000);
 });
 

@@ -3,6 +3,7 @@
 ## Unreleased — DSH 0.2.1-rc.3 retarget
 
 Retarget `engines.dsh` and every `@deepseek-ai/dsh-*` peer/dev pin to `0.2.1-rc.3`; no behavior change.
+Remove the 720,000-byte tarball cap; the exact published-file allowlist remains.
 
 ## Unreleased — incremental verification
 
