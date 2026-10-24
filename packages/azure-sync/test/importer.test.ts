@@ -922,7 +922,7 @@ test('mapping reconfirmation changes pins only after immutable header/cut and en
       }));
       let newRoot = f.real;
       if (variant === 'new-root') {
-        newRoot = join(f.root, 'new-root');
+        newRoot = join(f.real, 'new-root');
         await mkdir(join(newRoot, 'sub'), { recursive: true });
       }
       const binding: CwdBinding = { ...f.binding, mapping: { ...f.binding.mapping, id: 'reconfirmed-mapping', revision: 'b'.repeat(64), localPrefix: newRoot } };

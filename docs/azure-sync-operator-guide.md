@@ -4,7 +4,7 @@ Opt-in conversation continuation between devices using **Azure Blob Hot LRS + Ta
 No Postgres, Functions, App Service, or always-on Azure compute. Code, Git checkouts, credentials,
 profiles, schedules, global configuration and browser drafts are **not** synchronized.
 
-Experimental third-party plugin for **DSH 0.2.1-rc.2**, Node **>=22.19.0**. This working-tree version
+Experimental third-party plugin for **DSH 0.2.1-rc.3**, Node **>=22.19.0**. This working-tree version
 is `0.1.0`; registry publication, a deployed GUI installation, live Azure acceptance and Windows GUI
 acceptance have not been established. The source acceptance ledger distinguishes tested and deferred
 items. Do not infer a published release or a real Azure bill from the automated tests.

@@ -34,6 +34,8 @@
   See the [package changelog](<packages/azure-sync/CHANGELOG.md>),
   [acceptance matrix](<docs/acceptance/azure-sync.md>) and
   [cost evidence](<docs/acceptance/azure-sync-cost.md>).
+- Retarget this plugin to DSH and DSH peer packages `0.2.1-rc.3`; no runtime
+  behavior change is claimed.
 
 ## DSH 0.2.1-rc.3 compatibility
 

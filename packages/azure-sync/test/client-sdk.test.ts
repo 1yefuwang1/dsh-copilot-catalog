@@ -149,7 +149,7 @@ async function bench({ blank = false, hangStatus = false, nativeVisibility = fal
 test('public SDK runtime artifacts are exactly the approved pinned version', async () => {
   for (const name of ['dsh-client-store', 'dsh-client-ui-slots', 'dsh-client-ui-renderer', 'dsh-client-locale', 'dsh-client-ui-conversation']) {
     const manifest = JSON.parse(await readFile(new URL(import.meta.resolve('@deepseek-ai/' + name + '/package.json')), 'utf8')) as { name: string; version: string };
-    assert.equal(manifest.name, '@deepseek-ai/' + name); assert.equal(manifest.version, '0.2.1-rc.2');
+    assert.equal(manifest.name, '@deepseek-ai/' + name); assert.equal(manifest.version, '0.2.1-rc.3');
   }
 });
 

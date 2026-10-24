@@ -1,7 +1,7 @@
 # @1yefuwang1/dsh-azure-sync
 
 Experimental opt-in continuation using **Blob Hot LRS + Table Storage**, not Azure compute/Postgres.
-For SDK **0.2.1-rc.2**, Node **>=22.19.0**, pnpm **11.7.0**; working-tree version0.1.0 is not a published
+For SDK **0.2.1-rc.3**, Node **>=22.19.0**, pnpm **11.7.0**; working-tree version0.1.0 is not a published
 release, installed GUI or live Azure/Windows/billing acceptance claim. **Code/checkouts, credentials,
 profiles, settings, schedules and drafts are not transferred.** Logs/attachments can themselves contain
 secrets/code/host paths: upload only to trusted writers permitted to hold them. TLS/SSE is not client-side
