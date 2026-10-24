@@ -16,7 +16,7 @@ const resultBody = () => ({ status: 'completed', output: [
   ] } },
   { id: 'msg_synthetic', type: 'message', status: 'completed', content: [{ type: 'output_text', text: 'Synthetic answer', annotations: [] }] },
 ] });
-/** Parse the same plain provider ids the shipped cordis.patch.yml supplies; rc.2 yields live volatile refs. */
+/** Parse the same plain provider ids the shipped cordis.patch.yml supplies; rc.3 yields live volatile refs. */
 const webConfig = () => WebRuntime.Config({ searchProvider: COPILOT_SEARCH_PROVIDER_ID, fetchProvider: 'http' });
 
 test('runtime uses the adapter-resolved real public pi-ai collection and unchanged credential key', async () => {

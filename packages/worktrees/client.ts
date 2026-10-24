@@ -860,7 +860,7 @@ window.__ModuleLoader__.load({
       if (await form.mutate(ops, expectedRevision) !== true) throw new WorktreeError('cleanupConflict', 'cleanup-setting-refused');
       return { enabled, days: value };
     }
-    const NATIVE_SUBMIT_ABI = '0.2.1-rc.2/default-sink-v1';
+    const NATIVE_SUBMIT_ABI = '0.2.1-rc.3/default-sink-v1';
     const later = (callback: () => void) => { void Promise.resolve().then(() => Promise.resolve()).then(callback); };
     function interrupted<T>(promise: T | PromiseLike<T>, signal: AbortSignal): Promise<T> {
       return new Promise((resolve, reject) => {

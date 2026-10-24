@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.8 — DSH 0.2.1-rc.3 compatibility
+
+- Retarget the exact runtime pins to DSH/`@deepseek-ai/dsh-llm-pi-ai`
+  `0.2.1-rc.3`, Cordis `~4.0.5`, Schemastery `~3.18.5` and pi-ai `^1.1.0`.
+- No behavior change: discovery, routing, identity headers and the guarded pi-ai
+  adapter contract are unchanged.
+
 ## 0.2.7 — exact pi-ai behavior headers
 
 - Remove every behavior-header mutation. `X-GitHub-Api-Version`,

@@ -40,7 +40,7 @@ const require = createRequire(import.meta.url);
 const targetEntry = require.resolve('@deepseek-ai/dsh-client-ui-conversation/client');
 const targetManifest = JSON.parse(await readFile(require.resolve('@deepseek-ai/dsh-client-ui-conversation/package.json'), 'utf8')) as { version?: string };
 const targetVersion = required(targetManifest.version);
-assert.equal(targetVersion, '0.2.1-rc.2', 'the native-shell harness is pinned to the guarded target');
+assert.equal(targetVersion, '0.2.1-rc.3', 'the native-shell harness is pinned to the guarded target');
 
 function required<T>(value: T | null | undefined): T {
   assert.ok(value !== null && value !== undefined);
@@ -181,7 +181,7 @@ const protocol = protocolOf(plugin.factory(name => {
   if (name === 'react') return React;
   throw new Error(`Unexpected plugin external ${name}`);
 }));
-assert.equal(protocol.NATIVE_SUBMIT_ABI, '0.2.1-rc.2/default-sink-v1', 'the plugin adapter names the exact installed target ABI');
+assert.equal(protocol.NATIVE_SUBMIT_ABI, '0.2.1-rc.3/default-sink-v1', 'the plugin adapter names the exact installed target ABI');
 
 interface HarnessEvent {
   kind: string; text?: string; ids?: string[]; mode?: string; aborted?: boolean;

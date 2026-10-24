@@ -79,7 +79,7 @@ function fixture(t: import('node:test').TestContext, { initial = info, reply, na
         if (navigate) sessions.publish({ byId: Object.fromEntries([...new Set([...Object.keys(sessions.getSnapshot().byId), id])].map((key: string) => [key, { retainedBy: { mainView: key === id ? 1 : 0 }, blank: false }])) });
         layout.selectPanel(null);
       },
-      // rc.2 openWorkspace/New Thread starts navigation synchronously, awaits
+      // rc.3 openWorkspace/New Thread starts navigation synchronously, awaits
       // connectWorkspace without changing mainView, then commits only if current.
       connectWorkspace(workspaceId: string) { const connection = deferred<string>(); pending.push({ workspaceId, ...connection }); return connection.promise; },
       async openWorkspace(workspaceId: string) {

@@ -98,7 +98,7 @@ account-policy/terms risk.
 
 | Component | Supported version |
 | --- | --- |
-| DSH and `@deepseek-ai/dsh-llm-pi-ai` | `0.2.1-rc.2` |
+| DSH and `@deepseek-ai/dsh-llm-pi-ai` | `0.2.1-rc.3` |
 | `@earendil-works/pi-ai` | `^1.1.0` (tested at `1.1.0` and `1.3.0`) |
 | Node.js | `>=22.19.0` |
 | Runtime format | ESM only; no CommonJS entry |

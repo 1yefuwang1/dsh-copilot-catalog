@@ -1,5 +1,18 @@
 # Monorepo changelog
 
+## DSH 0.2.1-rc.3 compatibility
+
+- Retarget all four plugins to DSH and DSH peer packages `0.2.1-rc.3`: the root
+  development pins, each `engines.dsh`, peer/dev dependency pins, the pnpm
+  release-age allowlist and the regenerated lockfile.
+- Release catalog `0.2.8`, search `0.1.4`, tool-schema `0.1.2` and worktrees
+  `0.2.24`. No runtime behavior changes; worktrees renames its guarded native
+  submit ABI to `0.2.1-rc.3/default-sink-v1`.
+- rc.3 keeps the Host packages' published API unchanged and adds client-side
+  contracts (draft `whenDraftExists`/`appendDraft`, View pin/More rows, the
+  submission preset snapshot). The existing structural boundaries need no code
+  change.
+
 ## dsh-copilot-catalog 0.2.7 — exact pi-ai behavior headers
 
 - Preserve `X-GitHub-Api-Version`, `Openai-Intent`, `X-Interaction-Type`,

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.4 — DSH 0.2.1-rc.3 compatibility
+
+- Retarget the exact runtime pins to DSH `0.2.1-rc.3`, Cordis `~4.0.5`,
+  Schemastery `~3.18.5` and pi-ai `^1.1.0`.
+- No behavior change: the cancellation-safe refresh hook, origin validation and
+  provider routing are unchanged.
+
 ## 0.1.3 — DSH 0.2.1-rc.2 compatibility
 
 - Retarget the exact runtime pins to DSH `0.2.1-rc.2`, Cordis `~4.0.5` and

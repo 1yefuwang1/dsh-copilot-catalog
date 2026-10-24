@@ -13,7 +13,7 @@ export async function loadRuntime(options: { adapterEntry?: string } = {}): Prom
   try {
     adapterEntry = options.adapterEntry ?? require.resolve('@deepseek-ai/dsh-llm-pi-ai');
   } catch {
-    throw new Error('dsh-copilot-catalog requires @deepseek-ai/dsh-llm-pi-ai@0.2.1-rc.2; install it in the same profile');
+    throw new Error('dsh-copilot-catalog requires @deepseek-ai/dsh-llm-pi-ai@0.2.1-rc.3; install it in the same profile');
   }
   const adapterUrl = pathToFileURL(adapterEntry);
   const piManifest = findPackageJSON('@earendil-works/pi-ai', adapterUrl);

@@ -4,7 +4,7 @@ A **pnpm monorepo with four independently installable DeepSeek Harness plugins**
 All maintained code—including Host implementations, the Web Client, tests and
 repository tooling—uses strict TypeScript. Published Host modules are ESM with
 declarations; the worktree Web Client is compiled to a persistent browser factory. The worktree plugin is packaged as
-`@1yefuwang1/dsh-worktrees@0.2.23`; npm availability follows maintainer approval
+`@1yefuwang1/dsh-worktrees@0.2.24`; npm availability follows maintainer approval
 of the staged release.
 
 | Package | Purpose | DSH behavior |
@@ -20,7 +20,7 @@ root/catalog/discovery exports are unchanged.
 
 ## Compatibility
 
-- DSH and DSH peer packages: `0.2.1-rc.2`.
+- DSH and DSH peer packages: `0.2.1-rc.3`.
 - `@earendil-works/pi-ai`: `^1.1.0` (host-aligned peer range; tested at `1.1.0` and `1.3.0`).
 - Node.js: `>=22.19.0`.
 - Development package manager: **pnpm `11.7.0`**, pinned in the root manifest.
@@ -186,14 +186,14 @@ A release selects **one package**, never the root or multiple packages at once:
 - `@1yefuwang1/dsh-worktrees-vX.Y.Z`
 
 The tag must match its leaf version and repository identity. Catalog is currently
-`0.2.7`, preserving pi-ai's exact behavior headers while retaining the scoped
-Copilot wire-identity interceptor, and Search is `0.1.3`; both target
-DSH `0.2.1-rc.2` (adapter-relative pi-ai resolution and cancellation-safe
-credential refresh respectively); published versions cannot be republished. Tool schema is `dsh-copilot-tool-schema@0.1.1`, a
-DSH `0.2.1-rc.2` retarget with no behavior change. Worktrees is
-`@1yefuwang1/dsh-worktrees@0.2.23`, adding DSH `0.2.1-rc.2` compatibility,
-exact-session discovery/non-creating Open, and thread-switch-safe first Send with
-source-keyed recovery and prepared-target revalidation. It retains factory staging,
+`0.2.8`, preserving pi-ai's exact behavior headers while retaining the scoped
+Copilot wire-identity interceptor, and Search is `0.1.4`; both target
+DSH `0.2.1-rc.3` (adapter-relative pi-ai resolution and cancellation-safe
+credential refresh respectively); published versions cannot be republished. Tool schema is `dsh-copilot-tool-schema@0.1.2`, a
+DSH `0.2.1-rc.3` retarget with no behavior change. Worktrees is
+`@1yefuwang1/dsh-worktrees@0.2.24`, retargeting DSH `0.2.1-rc.3` and its guarded
+native-submit ABI; exact-session discovery/non-creating Open, and thread-switch-safe first Send with
+source-keyed recovery and prepared-target revalidation remain. It retains factory staging,
 held-target resource checks, Local runtime admission/spawn guards, navigation
 fixes, ready Local recovery commits, guarded handoff, multi-folder projects and
 cleanup semantics. This release uses staged npm publishing; npm availability

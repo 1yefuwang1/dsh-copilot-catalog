@@ -1,6 +1,6 @@
 {
   "name": "dsh-copilot-tool-schema",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Copilot Gemini tool-declaration guard for DeepSeek Harness: supplies a missing root properties bucket for configured routes.",
   "type": "module",
   "main": "./dist/index.js",
@@ -64,7 +64,7 @@
   },
   "engines": {
     "node": ">=22.19.0",
-    "dsh": "0.2.1-rc.2"
+    "dsh": "0.2.1-rc.3"
   },
   "publishConfig": {
     "access": "public",
@@ -72,15 +72,15 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.0.5",
-    "@deepseek-ai/dsh-system-prompt": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-system-prompt": "0.2.1-rc.3",
     "@deepseek-ai/schemastery": "~3.18.5"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.5",
-    "@deepseek-ai/dsh-agent": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-scope": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-session": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-system-prompt": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-agent": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-scope": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-session": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-system-prompt": "0.2.1-rc.3",
     "@deepseek-ai/schemastery": "3.18.5"
   },
   "dsh": {
