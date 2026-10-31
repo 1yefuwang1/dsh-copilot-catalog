@@ -1,6 +1,6 @@
 # @1yefuwang1/dsh-worktrees changelog
 
-## 0.2.24 — DSH 0.2.1-rc.5 compatibility
+## 0.2.25 — DSH 0.2.1-rc.5 compatibility
 
 - Retarget the exact engine and DSH peers to `0.2.1-rc.5` and the guarded native
   submission adapter to its pre-detachment capture boundary. Preserve native
@@ -15,6 +15,15 @@
   retain the factory input hold through the later publication sequence.
 - Update native-shell and recovery-factory regressions against the installed rc.5
   runtime; retain exact-session recovery, Local-owner guards and rollback safety.
+
+## 0.2.24 — DSH 0.2.1-rc.3 compatibility
+
+- Retarget DSH/peers, the guarded native submit adapter and the Connection browser
+  peer to `0.2.1-rc.3`; the ABI string is now `0.2.1-rc.3/default-sink-v1`.
+- Verify the structural Client boundaries against rc.3's additive composer and
+  View contracts. No project, worktree, cleanup, recovery or handoff behavior
+  changes; native New Session's reuse of a Workspace blank leaves the plugin's
+  New thread navigation intact.
 
 ## 0.2.23 — DSH 0.2.1-rc.2 compatibility, exact-session discovery and thread-switch-safe first Send
 

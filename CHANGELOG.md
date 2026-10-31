@@ -3,8 +3,8 @@
 ## DSH 0.2.1-rc.5 compatibility
 
 - Retarget all four plugin engines, DSH peers and development SDK pins to
-  `0.2.1-rc.5`: catalog `0.2.8`, search `0.1.4`, tool schema `0.1.2`, and
-  worktrees `0.2.24`.
+  `0.2.1-rc.5`: catalog `0.2.9`, search `0.1.5`, tool schema `0.1.3`, and
+  worktrees `0.2.25`.
 - Refresh the pnpm lockfile and version-specific release-age allowlist; align
   Cordis include/group development peers with the target host.
 - Strengthen the shared SDK baseline checks and test rejection of neighboring
@@ -17,6 +17,19 @@
 - Keep the worktrees 50-file publication allowlist unchanged; increase only its
   size cap from 825 kB to 850 kB for the approximately 828 kB compiled package
   and compatibility documentation. Other package limits are unchanged.
+
+## DSH 0.2.1-rc.3 compatibility
+
+- Retarget all four plugins to DSH and DSH peer packages `0.2.1-rc.3`: the root
+  development pins, each `engines.dsh`, peer/dev dependency pins, the pnpm
+  release-age allowlist and the regenerated lockfile.
+- Release catalog `0.2.8`, search `0.1.4`, tool-schema `0.1.2` and worktrees
+  `0.2.24`. No runtime behavior changes; worktrees renames its guarded native
+  submit ABI to `0.2.1-rc.3/default-sink-v1`.
+- rc.3 keeps the Host packages' published API unchanged and adds client-side
+  contracts (draft `whenDraftExists`/`appendDraft`, View pin/More rows, the
+  submission preset snapshot). The existing structural boundaries need no code
+  change.
 
 ## dsh-copilot-catalog 0.2.7 — exact pi-ai behavior headers
 
@@ -230,7 +243,7 @@
 
 Package history and versions are independent:
 
-- [Catalog changelog](<packages/catalog/CHANGELOG.md>) — `0.2.8`, DSH 0.2.1-rc.5 compatibility with exact pi-ai behavior headers.
-- [Search changelog](<packages/search/CHANGELOG.md>) — `0.1.4`, DSH 0.2.1-rc.5 compatibility with cancellation-safe credential refresh.
-- [Tool schema changelog](<packages/tool-schema/CHANGELOG.md>) — `0.1.2`, DSH 0.2.1-rc.5 compatibility with the Copilot Gemini properties-bucket guard.
-- [Worktrees changelog](<packages/worktrees/CHANGELOG.md>) — `@1yefuwang1/dsh-worktrees@0.2.24`, DSH 0.2.1-rc.5 compatibility; npm availability still requires staged-release approval.
+- [Catalog changelog](<packages/catalog/CHANGELOG.md>) — `0.2.9`, DSH 0.2.1-rc.5 compatibility with exact pi-ai behavior headers.
+- [Search changelog](<packages/search/CHANGELOG.md>) — `0.1.5`, DSH 0.2.1-rc.5 compatibility with cancellation-safe credential refresh.
+- [Tool schema changelog](<packages/tool-schema/CHANGELOG.md>) — `0.1.3`, DSH 0.2.1-rc.5 compatibility with the Copilot Gemini properties-bucket guard.
+- [Worktrees changelog](<packages/worktrees/CHANGELOG.md>) — `@1yefuwang1/dsh-worktrees@0.2.25`, DSH 0.2.1-rc.5 compatibility; npm availability still requires staged-release approval.

@@ -4,7 +4,7 @@ A **pnpm monorepo with four independently installable DeepSeek Harness plugins**
 All maintained code—including Host implementations, the Web Client, tests and
 repository tooling—uses strict TypeScript. Published Host modules are ESM with
 declarations; the worktree Web Client is compiled to a persistent browser factory. The worktree plugin is packaged as
-`@1yefuwang1/dsh-worktrees@0.2.24`; npm availability follows maintainer approval
+`@1yefuwang1/dsh-worktrees@0.2.25`; npm availability follows maintainer approval
 of the staged release.
 
 | Package | Purpose | DSH behavior |
@@ -187,13 +187,13 @@ A release selects **one package**, never the root or multiple packages at once:
 - `@1yefuwang1/dsh-worktrees-vX.Y.Z`
 
 The tag must match its leaf version and repository identity. Catalog is currently
-`0.2.8`, preserving pi-ai's exact behavior headers while retaining the scoped
-Copilot wire-identity interceptor, and Search is `0.1.4`; both target
+`0.2.9`, preserving pi-ai's exact behavior headers while retaining the scoped
+Copilot wire-identity interceptor, and Search is `0.1.5`; both target
 DSH `0.2.1-rc.5` (adapter-relative pi-ai resolution and cancellation-safe
-credential refresh respectively); published versions cannot be republished. Tool schema is `dsh-copilot-tool-schema@0.1.2`, a
+credential refresh respectively); published versions cannot be republished. Tool schema is `dsh-copilot-tool-schema@0.1.3`, a
 DSH `0.2.1-rc.5` retarget with no behavior change. These compatibility versions
 are local source updates, not evidence of an npm publication. Worktrees is
-`@1yefuwang1/dsh-worktrees@0.2.24`, adding DSH `0.2.1-rc.5` compatibility,
+`@1yefuwang1/dsh-worktrees@0.2.25`, adding DSH `0.2.1-rc.5` compatibility,
 exact-session discovery/non-creating Open, and thread-switch-safe first Send with
 source-keyed recovery and prepared-target revalidation. It retains factory staging,
 held-target resource checks, Local runtime admission/spawn guards, navigation
