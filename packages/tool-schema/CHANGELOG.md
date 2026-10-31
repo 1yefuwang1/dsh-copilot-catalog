@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2 — DSH 0.2.1-rc.5 compatibility
+
+- Retarget exact DSH engine and peer requirements to `0.2.1-rc.5`; keep plugins independently installable.
+- Exercise the installed prompt waterfall to preserve the complete prompt result
+  and context while repairing configured Copilot Gemini tool declarations.
+
 ## 0.1.1 — DSH 0.2.1-rc.2 compatibility
 
 - Retarget the exact runtime pins to DSH/`@deepseek-ai/dsh-system-prompt`

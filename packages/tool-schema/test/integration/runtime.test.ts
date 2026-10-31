@@ -38,6 +38,40 @@ test('the real assembly waterfall normalizes a defective declaration for a gemin
   }
 });
 
+test('rc.5 complete prompts and refreshed contexts survive tool normalization', async () => {
+  const { ctx, service } = await host([fixtures.missingBucketTool], 'github-copilot', 'gemini-4-argon');
+  let contextText = 'first operational context';
+  let assemblies = 0;
+  const controller = new AbortController();
+  ctx.systemPrompt.section({ name: 'synthetic-complete', order: 0, text: 'Exact complete instructions', complete: true });
+  ctx.systemPrompt.context({ name: 'synthetic-context', order: 0, text: () => contextText });
+  ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
+    assemblies++;
+    assert.equal(context.signal, controller.signal, 'the guard forwards this explicit assembly signal');
+    const assembly = await next();
+    // rc.5 restores a registered complete prompt after all waterfall listeners.
+    return { ...assembly, sections: [{ name: 'ignored-override', text: 'Not authoritative' }] };
+  });
+  const plugin = ctx.plugin(createPlugin(), {});
+  await plugin;
+  try {
+    const assembly = await ctx.systemPrompt.assemble({ signal: controller.signal });
+    assert.deepEqual(assembly.sections.map(({ name, text }) => ({ name, text })),
+      [{ name: 'synthetic-complete', text: 'Exact complete instructions' }]);
+    assert.deepEqual(fixtures.parameters(assembly.tools[0]!).properties, {});
+    assert.equal(assembly.contexts.find(context => context.name === 'synthetic-context')!.text, contextText);
+    contextText = 'next operational context';
+    const refreshed = ctx.systemPrompt.refreshContext(assembly, { signal: controller.signal });
+    assert.equal(refreshed.contexts.find(context => context.name === 'synthetic-context')!.text, contextText);
+    assert.equal(refreshed.tools, assembly.tools, 'accepted normalized tools do not reassemble at admission');
+    assert.equal(refreshed.sections, assembly.sections, 'complete instructions remain unchanged at admission');
+    assert.equal(assemblies, 1, 'context refresh does not rerun the guard or downstream waterfall');
+  } finally {
+    await plugin.dispose();
+    await service.dispose();
+  }
+});
+
 test('an inner route-selection listener runs before the guard; disposal stops normalization', async () => {
   const { ctx, service } = await host([fixtures.missingBucketTool]);
   ctx.on('system-prompt/assemble', async (_assembly, _context, next) => {

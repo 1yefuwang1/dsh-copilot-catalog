@@ -117,7 +117,9 @@ async function controls(t: import('node:test').TestContext, { git = true, reposi
   const session = observable<SessionSnapshot>(blank), state = observable(draft), panel = observable<{ activePanelId: string | undefined }>({ activePanelId: undefined }), list = observable<SessionList>({ byId: { source: { retainedBy: { mainView: 1 } } } });
   const binding = { ctx: { effect }, session };
   const nativeSink = async (_text: string, _ids: string[], _mode: string, _signal: AbortSignal) => { assert.fail('rendering or choosing options must not submit a prompt'); };
-  const input = { state, deps: { actx: binding.ctx, defaultSink: nativeSink, inputTriggers: () => undefined } };
+  // Match the rc.5 constructor callback shape even though this fixture only renders pickers.
+  const submissionState = () => undefined;
+  const input = { state, deps: { actx: binding.ctx, defaultSink: nativeSink, inputTriggers: () => undefined, submissionState } };
   const block = observable<ComposerBlock>(undefined), metadata = observable<Metadata>({ projects: [], bindings: [], records: [] });
   let context = initialContext;
   const projects = { store: metadata, context: () => context };
@@ -139,7 +141,7 @@ async function controls(t: import('node:test').TestContext, { git = true, reposi
     useSession: (selector: Selector) => selector(session.getSnapshot()), useInput: (selector: Selector) => selector(state.getSnapshot()),
     usePanelInfo: (selector: Selector) => selector(React.useSyncExternalStore(panel.subscribe, panel.getSnapshot)), useWorkspaces: (selector: Selector) => selector(workspaces),
   }), React.createElement(real.SetupProgress, { sessionId: 'source', flow, t: (key: string) => real.en[key] || key })));
-  t.after(async () => { await act(async () => { await flow.dispose(); repositories.dispose(); await Promise.allSettled([...cleanups].map(stop => stop())); }); assert.equal(input.deps.defaultSink, nativeSink); });
+  t.after(async () => { await act(async () => { await flow.dispose(); repositories.dispose(); await Promise.allSettled([...cleanups].map(stop => stop())); }); assert.equal(input.deps.defaultSink, nativeSink); assert.equal(input.deps.submissionState, submissionState); });
   return { ...mounted, calls, flow, repositories, panel, runtime, input, block,
     contextChanged(next: ProjectContext | undefined) { context = next; metadata.publish({ ...metadata.getSnapshot(), revision: calls.length }); },
     mode: () => mounted.container.querySelector<HTMLButtonElement>('button[aria-label="Thread mode"]'),

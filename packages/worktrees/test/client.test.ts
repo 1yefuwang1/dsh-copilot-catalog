@@ -348,7 +348,7 @@ test('lazy native mode preserves composer, commands and editor; no custom messag
 
 test('private adapter is explicitly pinned, fail-closed and paired with native SDK ABI checks', async () => {
   const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
-  assert.equal(manifest.engines.dsh, '0.2.1-rc.2'); assert.match(helpers.NATIVE_SUBMIT_ABI, /^0\.2\.1-rc\.2\//);
+  assert.equal(manifest.engines.dsh, '0.2.1-rc.5'); assert.match(helpers.NATIVE_SUBMIT_ABI, /^0\.2\.1-rc\.5\//);
   const native = await readFile(require.resolve('@deepseek-ai/dsh-client-ui-conversation/client'), 'utf8');
   assert.match(native, /this.deps = deps/);
   assert.match(native, /this.deps.defaultSink\(draft.trim\(\), attachmentIds, mode, attempt.signal\)/);
@@ -481,7 +481,7 @@ function leaseFixture({ mode = 'new', codec, adjudicate }: { mode?: string; code
   const calls: ['local' | 'target', string, string[], string, AbortSignal][] = [], finished: { captured: { mode: string }; error: unknown }[] = [], scope = {}, binding = { ctx: scope };
   const controller = { serializeReference: codec || (async (owner: string, ref: string) => `model:${owner}/${ref}`), adjudicate: adjudicate || (async () => undefined), other() { return this === controller; } };
   const original = async (text: string, ids: string[], mode: string, signal: AbortSignal) => { calls.push(['local', text, [...ids], mode, signal]); return { kind: 'success' }; };
-  const input = { deps: { actx: scope, defaultSink: original, inputTriggers: () => controller } };
+  const input = { deps: { actx: scope, defaultSink: original, inputTriggers: () => controller, submissionState: () => undefined } };
   let choice = mode;
   const lease = helpers.leaseNativeSink(input, binding, { capture: () => ({ mode: choice }), async submit(_: { mode: string }, text: string, ids: string[], mode: string, signal: AbortSignal) { calls.push(['target', text, [...ids], mode, signal]); return { kind: 'success' }; }, settled(captured: { mode: string }, error: unknown) { finished.push({ captured, error }); }, error: (error: Error) => error.message });
   return { input, binding, lease, original, calls, finished, setMode(value: string) { choice = value; } };
@@ -537,6 +537,29 @@ test('unsupported private shape and accessor trap fail without invoking getters 
   assert.throws(() => helpers.leaseNativeSink(wrong, binding, {}), (error: VmValue) => error.kind === 'unsupported');
 });
 
+test('a submission capture with no native codec or sink retires rather than leaking New into a later Local gesture', async () => {
+  const run = leaseFixture();
+  assert.equal(run.input.deps.submissionState(), undefined);
+  run.setMode('local'); await settle();
+  assert.equal(run.finished.length, 1);
+  await run.input.deps.defaultSink('next native gesture', [], 'queue', new AbortController().signal);
+  assert.equal(run.calls.length, 1); assert.equal(run.calls[0]![0], 'local');
+  await run.lease.close();
+});
+
+test('rc.5 submission-state descriptor admission never invokes accessor traps or mutates callbacks', () => {
+  const binding = { ctx: {} }, defaultSink = async (_text: string, _ids: string[], _mode: string, _signal: AbortSignal) => ({ kind: 'success' });
+  const inputTriggers = () => undefined;
+  for (const shape of ['missing', 'accessor', 'readonly', 'arity']) {
+    let reads = 0; const deps = { actx: binding.ctx, defaultSink, inputTriggers };
+    if (shape === 'accessor') Object.defineProperty(deps, 'submissionState', { get() { reads++; throw Error('trap'); } });
+    if (shape === 'readonly') Object.defineProperty(deps, 'submissionState', { value: () => undefined, writable: false });
+    if (shape === 'arity') Object.defineProperty(deps, 'submissionState', { value: (_unused: unknown) => undefined, writable: true });
+    assert.throws(() => helpers.leaseNativeSink({ deps }, binding, {}), (error: VmValue) => error.kind === 'unsupported');
+    assert.equal(reads, 0); assert.equal(deps.defaultSink, defaultSink); assert.equal(deps.inputTriggers, inputTriggers);
+  }
+});
+
 test('lease restoration is identity-safe and never overwrites a competing writer', async () => {
   const run = leaseFixture(), replacement = async () => ({ kind: 'success' }); run.input.deps.defaultSink = replacement;
   await run.lease.close(); assert.equal(run.input.deps.defaultSink, replacement);
@@ -556,7 +579,7 @@ function transaction({ deferredSetup = false, setupFailure, deferredUpload = fal
   const nativeSink = async (text: string, ids: string[], mode: string, signal: AbortSignal) => { sourceAdmissions.push({ text, ids, mode, signal }); return { kind: 'success' }; };
   const dstNativeSink = async (text: string, ids: string[], mode: string, signal: AbortSignal) => { dstAdmissions.push({ text, ids, mode, signal }); return { kind: 'success' }; };
   const codec = { async serializeReference(owner: string, ref: string, _signal?: AbortSignal) { events.push('native-serialize'); return `native-model:${owner}/${ref}`; }, async adjudicate() { return undefined; } };
-  const srcInput = { state: src, deps: { actx: srcBinding.ctx, defaultSink: nativeSink, inputTriggers: () => codec }, setDraft() { assert.fail('native machine owns editor mutation'); } }, dstInput = { state: dst, deps: { actx: dstBinding.ctx, defaultSink: dstNativeSink, inputTriggers: () => codec }, setDraft() { assert.fail('native machine owns editor mutation'); } };
+  const srcInput = { state: src, deps: { actx: srcBinding.ctx, defaultSink: nativeSink, inputTriggers: () => codec, submissionState: () => undefined }, setDraft() { assert.fail('native machine owns editor mutation'); } }, dstInput = { state: dst, deps: { actx: dstBinding.ctx, defaultSink: dstNativeSink, inputTriggers: () => codec, submissionState: () => undefined }, setDraft() { assert.fail('native machine owns editor mutation'); } };
   const blocks = new Map([['source', observable<ComposerBlock>(undefined)], ['target', observable<ComposerBlock>(undefined)], ['other', observable<ComposerBlock>(undefined)]]);
   const fileUploads = observable(Object.fromEntries(attachments.filter((id: string) => id.startsWith('file')).map((id: string) => [id, { status: 'ready', owner: 'source' }])));
   const descriptors = new Map(attachments.map((id: string) => [id, { id, kind: id.startsWith('file') ? 'file' : 'image', file: { name: id } }]));
@@ -1386,7 +1409,7 @@ test('pipeline progress validates operation identity, revision and bounded stage
 });
 
 
-test('exact native ABI requires both callback descriptors and rejects missing trigger capture', () => {
+test('exact native ABI requires all capture callback descriptors and rejects missing trigger capture', () => {
   const binding = { ctx: {} };
   const defaultSink = async (_text: string, _ids: string[], _mode: string, _signal: AbortSignal) => ({ kind: 'success' });
   const input = { deps: { actx: binding.ctx, defaultSink } };
@@ -1395,7 +1418,7 @@ test('exact native ABI requires both callback descriptors and rejects missing tr
 });
 
 test('adapter native settlement callback runs after native promise reaction restores the source snapshot', async () => {
-  const binding = { ctx: {} }, input = { deps: { actx: binding.ctx, defaultSink: async (_text: string, _ids: string[], _mode: string, _signal: AbortSignal) => ({ kind: 'success' }), inputTriggers: () => undefined } };
+  const binding = { ctx: {} }, input = { deps: { actx: binding.ctx, defaultSink: async (_text: string, _ids: string[], _mode: string, _signal: AbortSignal) => ({ kind: 'success' }), inputTriggers: () => undefined, submissionState: () => undefined } };
   let restored = false, retained = true;
   const lease = helpers.leaseNativeSink(input, binding, { capture: () => ({ mode: 'new' }), async submit() { return { kind: 'error', text: 'refused' }; }, settled() { assert.equal(restored, true); retained = false; }, error: (error: Error) => error.message });
   const pending = input.deps.defaultSink('native snapshot', [], 'queue', new AbortController().signal);

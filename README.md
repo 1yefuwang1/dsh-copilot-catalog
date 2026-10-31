@@ -4,7 +4,7 @@ A **pnpm monorepo with four independently installable DeepSeek Harness plugins**
 All maintained code—including Host implementations, the Web Client, tests and
 repository tooling—uses strict TypeScript. Published Host modules are ESM with
 declarations; the worktree Web Client is compiled to a persistent browser factory. The worktree plugin is packaged as
-`@1yefuwang1/dsh-worktrees@0.2.23`; npm availability follows maintainer approval
+`@1yefuwang1/dsh-worktrees@0.2.24`; npm availability follows maintainer approval
 of the staged release.
 
 | Package | Purpose | DSH behavior |
@@ -20,7 +20,7 @@ root/catalog/discovery exports are unchanged.
 
 ## Compatibility
 
-- DSH and DSH peer packages: `0.2.1-rc.2`.
+- DSH and DSH peer packages: `0.2.1-rc.5`.
 - `@earendil-works/pi-ai`: `^1.1.0` (host-aligned peer range; tested at `1.1.0` and `1.3.0`).
 - Node.js: `>=22.19.0`.
 - Development package manager: **pnpm `11.7.0`**, pinned in the root manifest.
@@ -59,8 +59,9 @@ instead of assuming a registry release exists.
   fetch provider. Preserve custom fetch selection in a higher-priority override.
 - Search uses DSH's ordinary `web_search` tool independently of the conversation
   model. The existing Web search settings card is DeepSeek-specific, not a chooser.
-- Restart the DSH host after host-plugin installation/removal or changing the
-  nonvolatile web-service provider selection. No Web UI rebuild is required.
+- Restart the DSH host after host-plugin installation/removal. In rc.5, web-service
+  provider selection is volatile and applies to the next operation without a
+  remount. No Web UI rebuild is required for these host-only Copilot plugins.
 - Worktrees defaults to the current local branch without a remote fetch, or lets
   you select a freshly fetched remote branch on first native Send. Its themed
   branch picker searches loaded lists without network requests. It creates a
@@ -186,12 +187,13 @@ A release selects **one package**, never the root or multiple packages at once:
 - `@1yefuwang1/dsh-worktrees-vX.Y.Z`
 
 The tag must match its leaf version and repository identity. Catalog is currently
-`0.2.7`, preserving pi-ai's exact behavior headers while retaining the scoped
-Copilot wire-identity interceptor, and Search is `0.1.3`; both target
-DSH `0.2.1-rc.2` (adapter-relative pi-ai resolution and cancellation-safe
-credential refresh respectively); published versions cannot be republished. Tool schema is `dsh-copilot-tool-schema@0.1.1`, a
-DSH `0.2.1-rc.2` retarget with no behavior change. Worktrees is
-`@1yefuwang1/dsh-worktrees@0.2.23`, adding DSH `0.2.1-rc.2` compatibility,
+`0.2.8`, preserving pi-ai's exact behavior headers while retaining the scoped
+Copilot wire-identity interceptor, and Search is `0.1.4`; both target
+DSH `0.2.1-rc.5` (adapter-relative pi-ai resolution and cancellation-safe
+credential refresh respectively); published versions cannot be republished. Tool schema is `dsh-copilot-tool-schema@0.1.2`, a
+DSH `0.2.1-rc.5` retarget with no behavior change. These compatibility versions
+are local source updates, not evidence of an npm publication. Worktrees is
+`@1yefuwang1/dsh-worktrees@0.2.24`, adding DSH `0.2.1-rc.5` compatibility,
 exact-session discovery/non-creating Open, and thread-switch-safe first Send with
 source-keyed recovery and prepared-target revalidation. It retains factory staging,
 held-target resource checks, Local runtime admission/spawn guards, navigation

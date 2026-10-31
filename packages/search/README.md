@@ -28,7 +28,7 @@
 
 ## Compatibility and prerequisites
 
-DSH/DSH peers `0.2.1-rc.2`, pi-ai `^1.1.0` (tested at `1.1.0` and `1.3.0`), Node.js `>=22.19.0`. The repository
+DSH/DSH peers `0.2.1-rc.5`, pi-ai `^1.1.0` (tested at `1.1.0` and `1.3.0`), Node.js `>=22.19.0`. The repository
 uses pnpm `11.7.0` for development; installed compiled packages do not run builds
 or require a workspace checkout to execute.
 
@@ -45,7 +45,9 @@ No live native-search compatibility is asserted by the synthetic tests.
 
 ## Install
 
-Use DSH's Plugins page to install the published package, or:
+Local source updates do not imply npm availability; use the build/link path below
+for this checkout. After the rc.5-compatible version is published, use DSH's
+Plugins page or:
 
 ```sh
 dsh plugin --profile <profile> add dsh-copilot-search
@@ -55,7 +57,7 @@ Or build/link from this monorepo's root:
 
 ```sh
 pnpm install --frozen-lockfile --ignore-scripts
-pnpm --filter dsh-copilot-search run build
+pnpm --config.ignore-scripts=true --filter dsh-copilot-search run build
 # This command alters the chosen profile only if you choose to run it:
 dsh plugin --profile <profile> add -w packages/search
 ```
@@ -63,8 +65,8 @@ dsh plugin --profile <profile> add -w packages/search
 The included bundle overrides the base `web` row to select this provider, keeping
 `fetchProvider: http`. It inserts `web-search-copilot` and leaves inference adapters
 untouched. If you have a custom fetch provider, preserve it in a higher-priority
-profile override. Restart DSH after host-side installation or changing service
-selection; there is no browser component or UI rebuild.
+profile override. Restart DSH after host-side installation/removal, not after
+provider-selector settings changes; there is no browser component or UI rebuild.
 
 **The root Git URL is not an installable plugin:** the root is a private monorepo.
 Use a leaf package, its tarball, or its published npm name. Neither this package nor
@@ -107,8 +109,8 @@ higher-priority profile configuration:
 | `forceSearch` | `false` | Set `tool_choice: required` when true; only enable if the gateway accepts it |
 
 All provider fields are volatile; each search snapshots them once. The `web`
-service's provider selector is nonvolatile, so changing selection requires host
-reconfiguration/restart. Explicit YAML selection wins over
+service's provider selectors are also volatile and read per operation, so a
+settings change takes effect on the next search/fetch without remounting. Explicit YAML selection wins over
 `DSH_WEB_SEARCH_PROVIDER`; the environment variable cannot override a configured
 base/bundle pin. The existing Web search settings card configures DeepSeek only,
 not this provider. No generic provider chooser is added here.

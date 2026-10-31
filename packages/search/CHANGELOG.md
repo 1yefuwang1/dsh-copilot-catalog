@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.4 — DSH 0.2.1-rc.5 compatibility
+
+- Retarget exact DSH engine and peer requirements to `0.2.1-rc.5`; keep plugins independently installable.
+- Document live web-provider selection in rc.5 and cover selector changes and
+  credential rotation through the installed web runtime.
+
 ## 0.1.3 — DSH 0.2.1-rc.2 compatibility
 
 - Retarget the exact runtime pins to DSH `0.2.1-rc.2`, Cordis `~4.0.5` and

@@ -1,5 +1,21 @@
 # @1yefuwang1/dsh-worktrees changelog
 
+## 0.2.24 — DSH 0.2.1-rc.5 compatibility
+
+- Retarget the exact engine and DSH peers to `0.2.1-rc.5` and the guarded native
+  submission adapter to its pre-detachment capture boundary. Preserve native
+  editor, command, attachment and submission-facts behavior.
+- Capture first-Send intent before rc.5 clears attachment-only submissions; refuse
+  uncorrelatable reentrant gestures rather than swapping their target choices.
+  Independent detached submissions retain their own signals and target captures.
+- Preserve native claimed/handled commands even when route capture is refused;
+  apply routing refusal only to model-send fallback and retire unused captures.
+- Use rc.5 synchronous Agent setup commits for cold continuation validation and
+  input-hold admission after setup completes and before persistence/publication;
+  retain the factory input hold through the later publication sequence.
+- Update native-shell and recovery-factory regressions against the installed rc.5
+  runtime; retain exact-session recovery, Local-owner guards and rollback safety.
+
 ## 0.2.23 — DSH 0.2.1-rc.2 compatibility, exact-session discovery and thread-switch-safe first Send
 
 - Treat switching to another thread, and the native attempt rollback it causes, as

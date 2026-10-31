@@ -1,6 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { evaluatePluginCompatibility } from '@deepseek-ai/dsh-app-boot';
+import { evaluatePluginCompatibility, getDshRuntimeVersion } from '@deepseek-ai/dsh-app-boot';
 import { root, packages, assertWorkspaceDefinition, type PackageManifest } from './workspaces.js';
 
 async function sourceFiles(directory: string, suffix: string): Promise<string[]> {
@@ -28,6 +28,15 @@ if (typeof dshVersion !== 'string' || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.te
   throw new Error('Root must pin one exact @deepseek-ai/dsh-agent development version');
 }
 
+if (getDshRuntimeVersion() !== dshVersion) {
+  throw new Error(`Installed SDK runtime must be exactly ${dshVersion}; reinstall from the frozen lockfile`);
+}
+for (const [name, version] of Object.entries(rootManifest.devDependencies ?? {})) {
+  if (name.startsWith('@deepseek-ai/dsh-') && version !== dshVersion) {
+    throw new Error(`Root SDK ${name} must be exactly ${dshVersion}`);
+  }
+}
+
 const files = [...await sourceFiles('scripts', '.ts')];
 const sources: string[] = [];
 const names = new Set<string>();
@@ -50,6 +59,11 @@ for (const { path, manifest } of leaves) {
   // Every leaf declares the same exact runtime, and the runtime itself accepts it.
   if (manifest.engines?.dsh !== dshVersion) {
     throw new Error(`${path} must declare engines.dsh ${dshVersion}`);
+  }
+  for (const [name, version] of Object.entries(manifest.devDependencies ?? {})) {
+    if (name.startsWith('@deepseek-ai/dsh-') && version !== dshVersion) {
+      throw new Error(`${path} SDK ${name} must be exactly ${dshVersion}`);
+    }
   }
   for (const [name, range] of Object.entries(manifest.peerDependencies ?? {})) {
     if ((name === '@deepseek-ai/dsh' || name.startsWith('@deepseek-ai/dsh-')) && range !== dshVersion) {

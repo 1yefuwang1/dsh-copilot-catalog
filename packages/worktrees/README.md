@@ -1,7 +1,7 @@
 # @1yefuwang1/dsh-worktrees
 
 Multi-folder projects with Local and isolated Git worktree threads for DeepSeek
-Harness. This experimental Host + Web Client package is **`0.2.23`**; new releases
+Harness. This experimental Host + Web Client package is **`0.2.24`**; new releases
 use staged npm publishing with maintainer review/2FA. It does not require Copilot, the
 catalog plugin, or the search plugin. The scoped name avoids collision with the
 unrelated npm package `dsh-worktrees`; stable tool, command and metadata names are
@@ -221,15 +221,25 @@ the exact created session, then explicitly dismiss recovery if starting over.
 
 The installed runtime has no public ordinary-message target-resolution hook.
 This version uses the **explicitly approved version-pinned adapter**: it leases
-only the per-session native submit sink plus the trigger-controller thunk needed
-to capture Send-time intent before asynchronous codecs/adjudication. The editor,
+only the per-session native submit sink, submission-state thunk and trigger-controller
+thunk needed to capture Send-time intent before draft detachment or asynchronous
+codecs/adjudication. The editor,
 command machine, serialization, undo/rollback and normal prompt transport remain
 native. No core file, global business service, native endpoint, keyboard handler
 or other plugin's DOM is replaced.
 
-Compatibility is the exact manifest/peer pin to DSH `0.2.1-rc.2` **plus structural
-callback/owner checks**, not a runtime-source fingerprint or an upgrade-stability
-claim. Missing/changed shapes fail closed rather than sending a worktree-selected
+Compatibility is the exact manifest/peer pin to DSH `0.2.1-rc.5` **plus structural
+callback/owner checks** (`0.2.1-rc.5/default-sink-v2`), not a runtime-source
+fingerprint or an upgrade-stability claim. The four-argument native sink and its
+readonly attachment list are retained; native session facts and submission analytics
+still use their original callbacks. Attachment-only Send captures intent before the
+native commit publishes its emptied rail. Independent detached sends keep distinct
+signal-owned tokens; reentrant submits before that signal handoff are refused rather
+than exchanging targets. A capture refusal is retained even when native session-facts
+lookup errors are swallowed, and captures that become native commands cannot leak
+into the next Send. Native command adjudication still runs when worktree route
+capture is refused: real claimed/handled commands stay native, while an ordinary
+message fallthrough remains refused. Missing/changed shapes fail closed rather than sending a worktree-selected
 prompt to Local. Descriptor ownership is identity-checked on teardown; pending
 attempts settle before restoration. Future runtime upgrades require reviewing this
 adapter. Do not grant a version exemption to bypass that compatibility boundary.
@@ -347,6 +357,12 @@ explicit choice, not a fallback.
   for automatic Client navigation: late metadata/lifecycle responses update warnings
   and actions only, never replace a newer, pre-existing, or pending native selection.
   Explicit **Continue on selected branch** normally opens the requested Local target.
+- Cold create/resume use the rc.5 `AgentSetupCommit` finalizer to recheck the exact
+  target identity, inherited prefix and absence of new execution after asynchronous
+  preset setup. This is the setup-completion boundary, before the factory persists
+  its setup suffix and then publishes; it is not an atomic publication barrier.
+  New-target startup input is cleared there, resumed held input remains untouched,
+  and the existing factory initialization claim stays held through serial publication.
 - Pending recovery stages the real Local target under the runtime factory's existing
   serial initialization claim—not a nested `runMaintenance` claim or invented private
   Agent phase. Native controls remain usable through **Open Local permission controls**;
@@ -527,7 +543,7 @@ protection, identity, and activity checks.
 
 ## Install from this repository
 
-Requires DSH/DSH peers `0.2.1-rc.2`, Node.js `>=22.19.0`, a suitable local Git
+Requires DSH/DSH peers `0.2.1-rc.5`, Node.js `>=22.19.0`, a suitable local Git
 executable, and the ordinary session/filesystem/subprocess/sandbox/preset/plan
 capabilities. The manifest names `@deepseek-ai/dsh-agent-preset-registry` and
 `@deepseek-ai/dsh-plan-mode`; the Web Client mounts beside the existing
@@ -537,7 +553,7 @@ After the staged release is approved and appears on npm, install the scoped
 package (the similarly named unscoped package is unrelated):
 
 ```sh
-dsh plugin --profile <profile> add @1yefuwang1/dsh-worktrees@0.2.23
+dsh plugin --profile <profile> add @1yefuwang1/dsh-worktrees@0.2.24
 ```
 
 For local development or while release approval is pending, build explicitly from
@@ -673,10 +689,10 @@ Public ESM exports are the root plugin/config/types, `./git`, `./naming`,
 ## Verification and release status
 
 ```sh
-pnpm --filter @1yefuwang1/dsh-worktrees run test
-pnpm --filter @1yefuwang1/dsh-worktrees run test:integration
-pnpm --filter @1yefuwang1/dsh-worktrees run test:types
-pnpm --filter @1yefuwang1/dsh-worktrees run test:pack
+pnpm --config.ignore-scripts=true --filter @1yefuwang1/dsh-worktrees run test
+pnpm --config.ignore-scripts=true --filter @1yefuwang1/dsh-worktrees run test:integration
+pnpm --config.ignore-scripts=true --filter @1yefuwang1/dsh-worktrees run test:types
+pnpm --config.ignore-scripts=true --filter @1yefuwang1/dsh-worktrees run test:pack
 ```
 
 Unit/protocol, real React interaction tests, and temporary local-Git fixtures are
@@ -686,6 +702,13 @@ authenticated quiet RPC, and immutable history/settings. Actual pinned AgentLoop
 native Session controller, goals/presets/policies and JSONL persistence fixtures
 exercise real create/resume initialization claims, native permission changes, queued
 input, ready-journal/publication failures, exact-ID retry, and shutdown writer drains.
+The browser harness evaluates the published rc.5 shell, editor, reference codec
+choreography and submit machine, including attachment-only pre-detachment capture,
+reentrant fail-closed behavior and out-of-order detached failure restoration.
+On macOS, a signed bundled Node may reject a differently signed native persistence
+addon with `ERR_DLOPEN_FAILED` (different Team IDs). That blocks native JSONL factory
+coverage before plugin behavior; it is not a reason to alter active runtime signatures
+or profiles, or to report the blocked integration cases as passing.
 Production Local-claim tests cover held resources, new/resumed/replaced owners,
 canonical aliases, cancellation, and asynchronous lookup-to-spawn races. No user
 checkout is reclaimed by the test suite. Browser interaction, visible slot registration, and

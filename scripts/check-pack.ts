@@ -22,9 +22,9 @@ const policies: Record<string, Policy> = {
   },
   '@1yefuwang1/dsh-worktrees': {
     modules: ['index', 'types', 'errors', 'runtime', 'schema', 'store', 'sessions', 'context', 'service', 'git', 'naming', 'rpc', 'projects', 'project-store', 'project-rpc', 'project-context', 'quiet-rpc', 'first-message', 'cleanup-store', 'cleanup', 'recovery-rpc'],
-    // Readable TypeScript-emitted Client formatting brings the unchanged 50-file
-    // allowlist to ~779k; retain bounded headroom without widening other leaves.
-    extras: ['dist/client.js', 'locale/en.json', 'icon.svg'], maxBytes: 825_000,
+    // rc.5 capture/publication guards and compatibility docs bring the unchanged
+    // 50-file allowlist to ~828k; retain bounded headroom only for this leaf.
+    extras: ['dist/client.js', 'locale/en.json', 'icon.svg'], maxBytes: 850_000,
   },
 };
 

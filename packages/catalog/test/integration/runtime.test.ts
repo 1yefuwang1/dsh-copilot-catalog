@@ -6,6 +6,7 @@ import { syncCopilotCatalog } from '../../dist/discovery.js';
 import { accountItem, grantFixture } from '../helpers.js';
 import { GITHUB_COPILOT_MODELS } from '@earendil-works/pi-ai/providers/github-copilot.models';
 import { builtinProviders, getBuiltinModels } from '@earendil-works/pi-ai/providers/all';
+import { supportedProtocols } from '@deepseek-ai/dsh-llm-pi-ai';
 
 test('npm peers load a real DSH adapter and its public Copilot OAuth hooks', async () => {
   const runtime = await loadRuntime();
@@ -68,6 +69,7 @@ test('actual published provider supports every dynamically selected protocol', a
     ['future-chat-model', 'openai-completions'],
     ['future-messages-model', 'anthropic-messages'],
   ] as const) {
+    assert.ok(supportedProtocols().includes(api), `${api} remains serviceable by the published adapter`);
     assert.equal(models[id]!.api, api);
     assert.equal(models[id]!.provider, 'github-copilot');
     assert.equal(models[id]!.contextWindow, 1000000);
@@ -84,6 +86,7 @@ test('public package entry exports Cordis metadata without doing credential/netw
     assert.equal(plugin.name, original.name);
     assert.ok(plugin.inject.includes('llm'));
     assert.ok(plugin.inject.includes('credentials'));
+    assert.deepEqual(plugin.inject, [...new Set([...original.inject, 'credentials'])], 'every adapter injection survives wrapping');
     assert.equal(typeof plugin.apply, 'function');
     assert.equal(typeof plugin.syncCopilotCatalog, 'function');
   } finally {

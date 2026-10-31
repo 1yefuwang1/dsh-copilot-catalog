@@ -860,7 +860,7 @@ window.__ModuleLoader__.load({
       if (await form.mutate(ops, expectedRevision) !== true) throw new WorktreeError('cleanupConflict', 'cleanup-setting-refused');
       return { enabled, days: value };
     }
-    const NATIVE_SUBMIT_ABI = '0.2.1-rc.2/default-sink-v1';
+    const NATIVE_SUBMIT_ABI = '0.2.1-rc.5/default-sink-v2';
     const later = (callback: () => void) => { void Promise.resolve().then(() => Promise.resolve()).then(callback); };
     function interrupted<T>(promise: T | PromiseLike<T>, signal: AbortSignal): Promise<T> {
       return new Promise((resolve, reject) => {
@@ -882,12 +882,49 @@ window.__ModuleLoader__.load({
       const sink = object(deps) ? own(deps, 'defaultSink') : undefined;
       const triggers = object(deps) ? own(deps, 'inputTriggers') : undefined;
       const actor = object(deps) ? own(deps, 'actx') : undefined;
-      const sinkValue: unknown = sink?.value, triggerValue: unknown = triggers?.value;
-      if (!object(deps) || !actor || !('value' in actor) || actor.value !== binding.ctx || !sink || !('value' in sink) || !sink.writable || typeof sinkValue !== 'function' || sinkValue.length !== 4 || !triggers || !('value' in triggers) || !triggers.writable || typeof triggerValue !== 'function') throw new WorktreeError('unsupported', 'native-submit-abi', NATIVE_SUBMIT_ABI);
-      type NativeSink = (text: string, ids: string[], mode: WT.SubmitMode, signal: AbortSignal) => Promise<WT.SubmitResult>;
+      const submission = object(deps) ? own(deps, 'submissionState') : undefined;
+      const sinkValue: unknown = sink?.value, triggerValue: unknown = triggers?.value, submissionValue: unknown = submission?.value;
+      if (!object(deps) || !actor || !('value' in actor) || actor.value !== binding.ctx || !sink || !('value' in sink) || !sink.writable || typeof sinkValue !== 'function' || sinkValue.length !== 4 || !triggers || !('value' in triggers) || !triggers.writable || typeof triggerValue !== 'function' || !submission || !('value' in submission) || !submission.writable || typeof submissionValue !== 'function' || submissionValue.length !== 0) throw new WorktreeError('unsupported', 'native-submit-abi', NATIVE_SUBMIT_ABI);
+      type NativeSink = (text: string, ids: readonly string[], mode: WT.SubmitMode, signal: AbortSignal) => Promise<WT.SubmitResult>;
       // Parameter/return contracts belong to the explicitly versioned native ABI;
       // reflection cannot inspect a function's TypeScript signature at runtime.
       const original = sinkValue as NativeSink, originalTriggers = triggerValue as () => object | null | undefined;
+      const originalSubmission = submissionValue as () => unknown;
+      interface CapturedSend { controller: AbortController; signal: AbortSignal; choice?: WT.Choice; error?: unknown; refused?: boolean }
+      const pendingCaptures: CapturedSend[] = [];
+      function discardCapture(captured: CapturedSend, error?: unknown) {
+        captured.controller.abort();
+        if (captured.choice) later(() => hooks.settled(captured.choice!, error));
+      }
+      // rc.5 publishes attachment-only commitSend before calling defaultSink. Its
+      // submissionState thunk is the last synchronous pre-detachment boundary.
+      // Preserve native facts/analytics, but freeze intent before editor observers
+      // can change mode, folder or navigation. Native swallows facts errors, so a
+      // capture refusal must travel to the later codec/sink instead of falling Local.
+      function submissionAdapter(): unknown {
+        const controller = new AbortController(), signal = AbortSignal.any([controller.signal, shutdown.signal]);
+        const captured: CapturedSend = { controller, signal };
+        // There is no public signal/attempt id at this thunk. Nested submits
+        // before the synchronous codec/sink handoff cannot be safely correlated:
+        // refuse every nested gesture, never swap their targets. Independent
+        // detached flights already have tokens and remain fully supported.
+        if (pendingCaptures.length) {
+          const error = new WorktreeError('busy', 'reentrant-native-submit');
+          for (const pending of pendingCaptures) { pending.refused = true; pending.error = error; }
+          captured.refused = true; captured.error = error;
+        }
+        pendingCaptures.push(captured);
+        // An observer can change the draft into an already-claimed command.
+        // If no default codec/sink claimed this capture in the native sync turn,
+        // retire it rather than contaminating the next gesture.
+        later(() => { const index = pendingCaptures.indexOf(captured); if (index !== -1) { pendingCaptures.splice(index, 1); discardCapture(captured, captured.error); } });
+        try {
+          if (closing) throw new WorktreeError('cancelled', 'cancelled');
+          if (captured.refused) throw captured.error;
+          captured.choice = hooks.capture(signal, controller);
+        } catch (error) { captured.refused = true; captured.error = error; }
+        return originalSubmission.call(deps);
+      }
       const tokens = new Map<AbortSignal, WT.SinkToken>(), active = new Set<Promise<unknown>>();
       const shutdown = new AbortController(); let closing = false, closeTask: Promise<void> | undefined;
       const track = <T,>(promise: Promise<T>): Promise<T> => { active.add(promise); void promise.then(() => active.delete(promise), () => active.delete(promise)); return promise; };
@@ -896,31 +933,35 @@ window.__ModuleLoader__.load({
         token.nativeSignal.removeEventListener('abort', token.abort);
         later(() => { hooks.settled(token.choice, error); tokens.delete(token.nativeSignal); token.done(); });
       }
-      function tokenFor(nativeSignal: AbortSignal): WT.SinkToken {
+      function tokenFor(nativeSignal: AbortSignal, deferRefusal = false): WT.SinkToken {
         const existing = tokens.get(nativeSignal); if (existing) return existing;
-        const controller = new AbortController(); let done: () => void = () => {};
+        const captured = pendingCaptures.pop();
+        if (captured?.refused && !deferRefusal) { discardCapture(captured, captured.error); throw captured.error; }
+        const controller = captured?.controller ?? new AbortController(); let done: () => void = () => {};
         // Native navigation aborts its optimistic attempt, but it is not a plugin
         // cancellation: the captured first message still has to reach the exact
         // prepared conversation. Only Cancel setup, reconnect, shutdown and an
         // unattempted native gesture own this token's cancellation.
         const token: WT.SinkToken = { nativeSignal, controller, signal: AbortSignal.any([controller.signal, shutdown.signal]), entered: false, finished: false, donePromise: new Promise<void>(resolve => { done = resolve; }), done: () => done(), choice: { mode: 'local' }, abort: () => {} };
-        token.choice = hooks.capture(token.signal, controller);
+        token.choice = captured?.choice ?? (captured?.refused ? { mode: 'local' } : hooks.capture(token.signal, controller));
+        if (captured?.refused) { token.refused = true; token.error = captured.error; }
         token.abort = () => { if (!token.entered) finish(token, new WorktreeError('cancelled', 'native-attempt-cancelled')); };
         nativeSignal.addEventListener('abort', token.abort, { once: true }); tokens.set(nativeSignal, token);
         if (nativeSignal.aborted) token.abort();
         return token;
       }
-      async function adapter(text: string, ids: string[], mode: WT.SubmitMode, nativeSignal: AbortSignal): Promise<WT.SubmitResult> {
+      async function adapter(text: string, ids: readonly string[], mode: WT.SubmitMode, nativeSignal: AbortSignal): Promise<WT.SubmitResult> {
         let token: WT.SinkToken | undefined;
         try {
           token = tokenFor(nativeSignal); token.entered = true;
+          if (token.refused) throw token.error;
           if (closing || token.finished || token.signal.aborted) throw new WorktreeError('cancelled', 'cancelled');
           if (token.choice.mode === 'local') {
             // Local work stays native work: its gesture abort must still stop it.
             const local = AbortSignal.any([nativeSignal, token.signal]);
-            await hooks.beforeLocal?.(ids, local); return await track(interrupted(original.call(deps, text, ids, mode, local), local));
+            await hooks.beforeLocal?.([...ids], local); return await track(interrupted(original.call(deps, text, ids, mode, local), local));
           }
-          return await track(hooks.submit(token.choice, text, ids, mode, token.signal));
+          return await track(hooks.submit(token.choice, text, [...ids], mode, token.signal));
         } catch (error) { return { kind: 'error', text: hooks.error(error) }; }
         finally { if (token) finish(token); }
       }
@@ -937,7 +978,11 @@ window.__ModuleLoader__.load({
               try {
                 const signal = args[key === 'adjudicate' ? 1 : 2];
                 if (!object(signal) || typeof signal.aborted !== 'boolean' || typeof signal.addEventListener !== 'function' || typeof signal.removeEventListener !== 'function') throw new WorktreeError('unsupported', 'native-submit-signal', NATIVE_SUBMIT_ABI);
-                token = tokenFor(signal as unknown as AbortSignal);
+                // A route-capture refusal cannot suppress a native command.
+                // Adjudicate first; enforce it only if the result reaches an
+                // ordinary model codec/sink. Commands still settle natively.
+                token = tokenFor(signal as unknown as AbortSignal, key === 'adjudicate');
+                if (key !== 'adjudicate' && token.refused) throw token.error;
                 // Codec/adjudication is native gesture work, not the redirected
                 // first-Send admission; a native abort must still stop it.
                 const gesture = AbortSignal.any([token.nativeSignal, token.controller.signal, shutdown.signal]);
@@ -957,13 +1002,15 @@ window.__ModuleLoader__.load({
         } });
         controllers.set(controller, proxy); return proxy;
       }
+      Object.defineProperty(deps, 'submissionState', { ...submission, value: submissionAdapter });
       Object.defineProperty(deps, 'defaultSink', { ...sink, value: adapter });
       if (triggers) Object.defineProperty(deps, 'inputTriggers', { ...triggers, value: triggerAdapter });
       return { abi: NATIVE_SUBMIT_ABI,
-        cancelNew() { for (const token of tokens.values()) if (token.choice.mode === 'new') token.controller.abort(); },
+        cancelNew() { for (const captured of pendingCaptures) if (captured.choice?.mode === 'new') captured.controller.abort(); for (const token of tokens.values()) if (token.choice.mode === 'new') token.controller.abort(); },
         close() {
           if (closeTask) return closeTask; closing = true; shutdown.abort();
           closeTask = (async () => {
+            for (const captured of pendingCaptures.splice(0)) discardCapture(captured, new WorktreeError('cancelled', 'cancelled'));
             await Promise.allSettled([...active]);
             await Promise.resolve(); await Promise.resolve();
             // A cancelled codec/adjudicator must settle natively before restoring
@@ -971,6 +1018,7 @@ window.__ModuleLoader__.load({
             await Promise.allSettled([...tokens.values()].map(token => token.donePromise));
             if (own(input, 'deps')?.value === deps && own(deps, 'defaultSink')?.value === adapter) Object.defineProperty(deps, 'defaultSink', sink);
             if (triggers && own(input, 'deps')?.value === deps && own(deps, 'inputTriggers')?.value === triggerAdapter) Object.defineProperty(deps, 'inputTriggers', triggers);
+            if (own(input, 'deps')?.value === deps && own(deps, 'submissionState')?.value === submissionAdapter) Object.defineProperty(deps, 'submissionState', submission);
           })(); return closeTask;
         },
       };

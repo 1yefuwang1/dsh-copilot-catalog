@@ -250,6 +250,20 @@ export class SessionBootstrap {
       await presets.mount(agentCtx, selected.id);
     } else if (source.preset !== null) throw new WorktreeError('MISSING_PRESET_SERVICE', 'The source preset cannot be mounted in this profile.');
   }
+  /** rc.5 finalizer checks setup completion before the factory persists its suffix and publishes. */
+  private commitCold(input: ColdContinuationInput, child: Agent, cwd: string, clearStartup: boolean): void {
+    const header = child.session.header, source = input.source;
+    if (child.id !== input.sessionId || header.cwd !== cwd || header.parentSession !== source.sourceSessionId || !header.isSeeded || header.origin === 'subagent' || child.session.inheritedEventCount !== source.inheritedEventCount) throw new WorktreeError('COLD_CONTINUATION_CONFLICT', 'The unpublished continuation identity changed during setup.');
+    const events = child.session.snapshotEvents();
+    const prefix = source.seed;
+    if (prefix.length ? hashValue(events.slice(0, prefix.length)) !== hashValue(prefix) : events[0]?.type !== 'session/end-seed' || events[0].data.inherited !== true) throw new WorktreeError('COLD_CONTINUATION_CONFLICT', 'The unpublished continuation lost its inherited seed.');
+    if (events.slice(prefix.length || 1).some(event => ['turn/start', 'step/start', 'user/message', 'request/header', 'tool/result'].includes(event.type))) throw new WorktreeError('COLD_CONTINUATION_CONFLICT', 'The unpublished continuation acquired its own execution during setup.');
+    // Only new-target startup input is suppressed. Resumed held input stays intact.
+    if (clearStartup) child.inbox.clear();
+    const stage = this.stages.get(input.sessionId);
+    if (stage !== undefined) stage.agent = child;
+    else input.holdInput?.(child);
+  }
   private async finishCold(input: ColdContinuationInput, agent: Agent, cwd: string): Promise<ColdContinuationResult> {
     const workspace = await required<WorkspaceCapability>(this.owner, 'workspaceRegistry').create(cwd, input.title);
     if (workspace.path !== cwd) throw new WorktreeError('WORKSPACE_IDENTITY', 'The canonical Workspace path does not match the execution directory.');
@@ -274,11 +288,9 @@ export class SessionBootstrap {
       agentOptions: this.coldAgentOptions(input.source),
       setup: async (agentCtx, child) => {
         await this.mountColdPreset(agentCtx, input.source);
-        // No source inbox is cleared. Only preset-generated child startup input is suppressed, before publication.
-        child.inbox.clear();
-        const stage = this.stages.get(input.sessionId);
-        if (stage !== undefined) stage.agent = child;
-        else input.holdInput?.(child);
+        // Finalize after the setup-result await, before factory suffix persistence.
+        // Its initialization claim remains held through later serial publication.
+        return { commit: () => this.commitCold(input, child, cwd, true) };
       },
     });
     this.handles.set(handle.agent.id, handle);
@@ -339,10 +351,7 @@ export class SessionBootstrap {
           if (child.session.header.cwd !== cwd || child.session.header.parentSession !== input.source.sourceSessionId || child.session.inheritedEventCount !== input.source.inheritedEventCount) throw new WorktreeError('COLD_CONTINUATION_CONFLICT', 'The loaded continuation identity changed during resume.');
           await this.mountColdPreset(agentCtx, intent);
           // A trusted hold parks durable queued input intact; only an already-proved empty target may suppress preset startup input.
-          if (input.holdInput === undefined) child.inbox.clear();
-          const stage = this.stages.get(input.sessionId);
-          if (stage !== undefined) stage.agent = child;
-          else input.holdInput?.(child);
+          return { commit: () => this.commitCold(input, child, cwd, input.holdInput === undefined) };
         },
       });
       this.handles.set(handle.agent.id, handle); agent = handle.agent;

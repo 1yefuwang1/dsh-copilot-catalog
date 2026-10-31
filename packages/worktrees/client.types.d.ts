@@ -171,7 +171,7 @@ declare namespace WT {
     beforeLocal?(ids: string[], signal: AbortSignal): Promise<void>;
     error(error: unknown): string;
   }
-  interface SinkToken { nativeSignal: AbortSignal; controller: AbortController; signal: AbortSignal; entered: boolean; finished: boolean; donePromise: Promise<void>; done(): void; choice: Choice; abort(): void }
+  interface SinkToken { nativeSignal: AbortSignal; controller: AbortController; signal: AbortSignal; entered: boolean; finished: boolean; refused?: boolean; error?: unknown; donePromise: Promise<void>; done(): void; choice: Choice; abort(): void }
   interface SinkLease { abi: string; cancelNew(): void; close(): Promise<void>; stopScope?: Dispose }
   interface FlowState {
     sessionId?: string; mode: 'local' | 'new'; sourceChanged: boolean; busy: boolean; loading: boolean; error: string;

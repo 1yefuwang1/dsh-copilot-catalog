@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.8 — DSH 0.2.1-rc.5 compatibility
+
+- Retarget exact DSH engine and peer requirements to `0.2.1-rc.5`; keep plugins independently installable.
+
 ## 0.2.7 — exact pi-ai behavior headers
 
 - Remove every behavior-header mutation. `X-GitHub-Api-Version`,

@@ -40,6 +40,14 @@ One rule, applied only when the assembled route matches `providers` and `familie
 Nothing else is rewritten: no keyword stripping, no union flattening, no description
 changes, no output schemas.
 
+## Compatibility
+
+DSH/DSH peers `0.2.1-rc.5`, Cordis `~4.0.5`, Schemastery `~3.18.5`,
+and Node.js `>=22.19.0`. The public assembly waterfall and scoped model-selection
+listener are exercised against the installed release. Complete system-prompt
+sections and dynamic contexts remain owned by the prompt registry; this guard
+changes only tool declarations.
+
 ## Mechanism
 
 Registers an **outer global** listener on DSH's public `system-prompt/assemble`
@@ -71,8 +79,19 @@ a downstream `next()` failure propagates unchanged.
 
 ## Install
 
+After the rc.5-compatible version is published:
+
 ```sh
 dsh plugin --profile <profile> add dsh-copilot-tool-schema
+```
+
+For this local source version, build and link the leaf from the repository root
+(the last command changes only the profile you explicitly select):
+
+```sh
+pnpm install --frozen-lockfile --ignore-scripts
+pnpm --config.ignore-scripts=true --filter dsh-copilot-tool-schema run build
+dsh plugin --profile <profile> add -w packages/tool-schema
 ```
 
 Restart the whole DSH process after installing or removing it. The bundle only inserts

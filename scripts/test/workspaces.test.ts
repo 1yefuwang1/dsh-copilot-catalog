@@ -6,7 +6,7 @@ import { root, workspacePaths, packages, containedPath, releasePackage, assertWo
 import { releaseIdentity } from '../release.js';
 import { findCredentialIssues } from '../check-secrets.js';
 import { publicationPolicy, validatePublicationMetadata, validatePublicationSize } from '../check-pack.js';
-import { evaluatePluginCompatibility } from '@deepseek-ai/dsh-app-boot';
+import { evaluatePluginCompatibility, getDshRuntimeVersion } from '@deepseek-ai/dsh-app-boot';
 
 const repository = '1yefuwang1/dsh-copilot-catalog';
 const candidates = ['catalog', 'search', 'tool-schema', 'worktrees'].map((name) => ({ path: `packages/${name}`, manifest: {
@@ -131,7 +131,7 @@ test('publication allowlists and bounds preserve every existing leaf and explici
     const policy = publicationPolicy(name);
     const extras = name === '@1yefuwang1/dsh-worktrees' ? ['dist/client.js', 'locale/en.json', 'icon.svg'] : [];
     assert.deepEqual(policy.files, [...common, ...names.flatMap(module => [`dist/${module}.js`, `dist/${module}.d.ts`]), ...extras].sort());
-    assert.equal(policy.maxBytes, name === '@1yefuwang1/dsh-worktrees' ? 825_000 : 150_000);
+    assert.equal(policy.maxBytes, name === '@1yefuwang1/dsh-worktrees' ? 850_000 : 150_000);
     assert.doesNotThrow(() => validatePublicationSize(name, policy.maxBytes - 1));
     assert.throws(() => validatePublicationSize(name, policy.maxBytes), /Unexpectedly large/u);
     assert.throws(() => validatePublicationSize(name, -1), /Unexpectedly large/u);
@@ -164,11 +164,19 @@ test('every plugin accepts the pinned runtime and rejects other DSH versions wit
   const rootManifest = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'));
   const pinned = rootManifest.devDependencies['@deepseek-ai/dsh-agent'];
   assert.match(pinned, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u);
+  assert.equal(pinned, '0.2.1-rc.5');
+  assert.equal(getDshRuntimeVersion(), pinned, 'tests must use the installed target runtime, not just retargeted manifest labels');
+  for (const [name, version] of Object.entries(rootManifest.devDependencies)) {
+    if (name.startsWith('@deepseek-ai/dsh-')) assert.equal(version, pinned, name);
+  }
   for (const { manifest } of await packages()) {
+    for (const [name, version] of Object.entries(manifest.devDependencies ?? {})) {
+      if (name.startsWith('@deepseek-ai/dsh-')) assert.equal(version, pinned, manifest.name + ': ' + name);
+    }
     assert.equal(manifest.engines?.dsh, pinned, manifest.name + ' must pin the shared runtime');
     assert.equal(evaluatePluginCompatibility(manifest, {}, pinned), undefined,
       manifest.name + ' must install on the pinned runtime without an exemption');
-    for (const other of ['0.2.0-rc.2', '0.2.1-rc.3', '0.2.1', '0.1.9']) {
+    for (const other of ['0.2.0-rc.2', '0.2.1-rc.2', '0.2.1-rc.3', '0.2.1-rc.4', '0.2.1-rc.6', '0.2.1', '0.1.9']) {
       const issue = evaluatePluginCompatibility(manifest, {}, other);
       assert.ok(issue, manifest.name + ' must report ' + other + ' as unmet');
       assert.deepEqual(Object.keys(issue.requirements), ['engines.dsh']);

@@ -24,7 +24,7 @@ const lastModel = { provider: 'github-copilot', model: 'previous-model' };
 type InboxProjection = { 'next-turn': UserMessage[]; 'next-step': UserMessage[] };
 interface ProjectionValues { inbox?: InboxProjection; modelSelection?: { next: SessionSettings['model']; lastUsed: SessionSettings['model'] }; agentPreset?: string }
 interface PersistedSession { header: MutableHeader; events: SessionEvent[]; inheritedEventCount: SessionLogOffset; projections: ProjectionValues }
-interface FixtureBehavior { flushFailure?: boolean; createdFailure?: boolean; synthetic?: boolean; durability?: boolean }
+interface FixtureBehavior { flushFailure?: boolean; createdFailure?: boolean; synthetic?: boolean; durability?: boolean; beforeCommit?: (agent: Agent, source: 'create' | 'resume') => void }
 const emptyInbox = (): InboxProjection => ({ 'next-turn': [], 'next-step': [] });
 const code = (value: string) => (error: unknown) => error instanceof WorktreeError && error.code === value;
 const message: UserMessage = { id: 'pending-message' as UserMessage['id'], role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'unrun work' }] };
@@ -76,7 +76,8 @@ async function fixture(t: TestContext, behavior: FixtureBehavior = {}) {
       created.push(options); if (createdFailure) throw Error('unknown create effect');
       const sourceRecord = persisted.get(presentValue(presentValue(options.meta).parentSession));
       const agent = makeAgent(options.sessionId, options.seed, options.inheritedEventCount, options.meta, options.agentOptions, presentValue(sourceRecord).projections);
-      agent.inbox.nextTurn.push('preset-input'); await presentValue(options.setup)(agent.ctx, agent);
+      agent.inbox.nextTurn.push('preset-input'); const setup = await presentValue(options.setup)(agent.ctx, agent);
+      behavior.beforeCommit?.(agent, 'create'); setup?.commit();
       await owner.serial('agent/created', { agent, source: 'startup', signal: options.signal ?? new AbortController().signal });
       lifecycle.push(['published', agent.id]); save(agent.session, agent.projections); return handle(agent);
     },
@@ -84,7 +85,8 @@ async function fixture(t: TestContext, behavior: FixtureBehavior = {}) {
       resumed.push(options); const record = persisted.get(options.resumeSessionId);
       assert.ok(record); assert.notEqual(options.resumeSessionId, source.id);
       const agent = makeAgent(options.resumeSessionId, record.events, record.inheritedEventCount, record.header, options.agentOptions, record.projections);
-      await presentValue(options.setup)(agent.ctx, agent);
+      const setup = await presentValue(options.setup)(agent.ctx, agent);
+      behavior.beforeCommit?.(agent, 'resume'); setup?.commit();
       await owner.serial('agent/created', { agent, source: 'resume', signal: options.signal ?? new AbortController().signal });
       lifecycle.push(['resumed', agent.id]); return handle(agent);
     },
@@ -127,6 +129,22 @@ test('cold create uses exact preallocated ID, full seed, selected preset and no 
   assert.deepEqual(presentValue(f.persisted.get(result.sessionId)).events, input.source.seed); assert.deepEqual(presentValue(f.persisted.get(f.source.id)), old); assert.deepEqual(result.agent.inbox.nextTurn, []);
   assert.deepEqual(f.lifecycle.filter(([kind]) => ['published', 'receipt', 'attach', 'flush'].includes(kind)).map(([kind]) => kind), ['published', 'receipt', 'attach', 'flush']);
   assert.ok(f.lifecycle.some(([kind, id]) => kind === 'mount-preset' && id === 'selected-preset')); assert.equal(f.resumed.length, 0);
+});
+
+test('rc.5 setup-completion commit suppresses late child startup input before the entered boundary', async t => {
+  const f = await fixture(t, { beforeCommit(agent, source) { assert.equal(source, 'create'); (agent.inbox.nextTurn as UserMessage[]).push(message); } });
+  closedHistory(f); const input = await coldInput(f);
+  const result = await f.bootstrap.createColdContinuation(input);
+  assert.deepEqual(result.agent.inbox.nextTurn, []);
+  assert.ok(f.created[0]?.setup, 'the typed rc.5 setup result owns the synchronous finalizer');
+  assert.equal(f.lifecycle.filter(([kind]) => kind === 'clear-child').length, 1);
+});
+
+test('rc.5 cold setup-completion commit refuses new execution added after the setup await', async t => {
+  const f = await fixture(t, { beforeCommit(agent) { agent.session.append('turn/start', { turn: 1 }); } });
+  closedHistory(f); const input = await coldInput(f);
+  await assert.rejects(f.bootstrap.createColdContinuation(input), code('COLD_CONTINUATION_CONFLICT'));
+  assert.equal(f.lifecycle.some(([kind]) => ['published', 'receipt', 'attach', 'flush'].includes(kind)), false);
 });
 
 test('blank continuation honestly has zero inherited events and current preset defaults without guessed overrides', async t => {
