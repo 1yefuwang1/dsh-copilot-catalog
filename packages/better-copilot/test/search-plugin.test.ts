@@ -83,19 +83,35 @@ test('search metadata, defaults and registration keep credential writes and requ
   const fixture = credentialFixture(grant());
   const registrations: WebSearchProvider[] = [];
   const calls: (CapturedRequest & { body?: SearchBody })[] = [];
-  // Capability-local proof: a credential store that refuses reads cannot prevent
-  // or precede search registration. Only the separate discovery step may read.
+  // Capability-local proof: count credential read *attempts* and assert zero at the
+  // exact moment the provider registers, before mount-time discovery runs.
+  let readAttempts = 0;
   const strictService: CopilotCredentialService = {
     ...fixture.service,
-    readRecord: () => { throw new Error('search registration must not read credentials'); },
+    readRecord: async () => { readAttempts++; throw new Error('search registration must not read credentials'); },
   };
+  const context = authContext({
+    ...contextFixture(strictService),
+    effect: (execute: () => () => void) => execute(),
+    on: () => ({ dispose() {} }),
+    inject: (_deps: string[], callback: (child: { web: { registerSearchProvider(provider: WebSearchProvider): () => void } }) => void) => {
+      callback({ web: { registerSearchProvider(provider: WebSearchProvider) {
+        assert.equal(readAttempts, 0, 'search registration performs no credential read');
+        registrations.push(provider);
+        return () => {};
+      } } });
+      return () => {};
+    },
+    llm: { registerAdapter() { throw new Error('Search must not replace an inference adapter'); } },
+  });
   const mounting = createPlugin(dependencies({ fetcher: dualFetcher(calls) }))
-    .apply(registrationContext(strictService, registrations), Config({}));
+    .apply(context, Config({}));
   assert.equal(registrations.length, 1, 'registered without any credential read');
   assert.equal(registrations[0]!.id, COPILOT_SEARCH_PROVIDER_ID);
   assert.equal(registrations[0]!.available(), true);
   await mounting;
-  // Discovery fails open on the refused read: no request, no write, no throw.
+  // Only the separate discovery step reads; it fails open: no request, no write.
+  assert.equal(readAttempts, 1, 'mount-time discovery is the only reader');
   assert.deepEqual(calls, []);
   assert.equal(fixture.stats.writes, 0);
 
@@ -112,7 +128,7 @@ test('configured plugin performs a single native auxiliary request using existin
   const fixture = credentialFixture(grant());
   const registrations: WebSearchProvider[] = [];
   const calls: (CapturedRequest & { body?: SearchBody })[] = [];
-  void createPlugin(dependencies({ fetcher: dualFetcher(calls) }))
+  await createPlugin(dependencies({ fetcher: dualFetcher(calls) }))
     .apply(registrationContext(fixture.service, registrations), Config({ search: { model: 'synthetic-responses-model' } }));
   const result = await registrations[0]!.search({ query: 'synthetic query', maxResults: 1 });
   const dispatched = calls.filter((call) => new URL(call.url).pathname === '/responses');

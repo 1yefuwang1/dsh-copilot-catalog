@@ -152,7 +152,7 @@ test('a throwing logger cannot change the assembly', async () => {
 
 test('duplicate installation is idempotent', async () => {
   const state = await mount();
-  void createPlugin(dependencies()).apply(state.ctx as unknown as Context, Config({ toolSchema: {} }) as never);
+  await createPlugin(dependencies()).apply(state.ctx as unknown as Context, Config({ toolSchema: {} }) as never);
   assert.equal(state.listeners.length, 2);
   const downstream = fixtures.assembly([fixtures.missingBucketTool]);
   const once = await state.listeners[0]!.handler(downstream, {}, async () => downstream);
