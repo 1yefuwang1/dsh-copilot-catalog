@@ -21,10 +21,10 @@ const policies: Record<string, Policy> = {
     extras: [], maxBytes: 150_000,
   },
   '@1yefuwang1/dsh-worktrees': {
-    modules: ['index', 'types', 'errors', 'runtime', 'schema', 'store', 'sessions', 'context', 'service', 'git', 'naming', 'rpc', 'projects', 'project-store', 'project-rpc', 'project-context', 'quiet-rpc', 'first-message', 'cleanup-store', 'cleanup', 'recovery-rpc'],
-    // rc.5 capture/publication guards and compatibility docs bring the unchanged
-    // 50-file allowlist to ~828k; retain bounded headroom only for this leaf.
-    extras: ['dist/client.js', 'locale/en.json', 'icon.svg'], maxBytes: 850_000,
+    modules: ['index', 'types', 'errors', 'runtime', 'schema', 'store', 'sessions', 'context', 'service', 'branch-release', 'git', 'naming', 'rpc', 'projects', 'project-store', 'project-rpc', 'project-context', 'quiet-rpc', 'first-message', 'cleanup-store', 'cleanup', 'recovery-rpc'],
+    // The rc.5 client bundle dominates the unpacked size; the 52-file allowlist is
+    // 858k, so retain bounded headroom only for this leaf.
+    extras: ['dist/client.js', 'locale/en.json', 'icon.svg'], maxBytes: 875_000,
   },
 };
 

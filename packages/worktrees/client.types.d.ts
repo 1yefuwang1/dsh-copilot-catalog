@@ -18,19 +18,20 @@ declare namespace WT {
     reclaimedAt: number | null; originalFolder: string | null; recoveryRef: string | null; reason: Failure | null;
   }
   interface Branch { name: string; oid: string }
+  interface BranchHolder { branch: string; root: string; managed: boolean; worktreeId?: string; displayName?: string }
   interface Repository { root: string; head: string; branch: string | null; commonDir?: string }
   interface RecoveryInfo {
     sourceSessionId: string; worktreeId: string | null; cleanup: Cleanup | null;
     continuationSessionId: string | null; pendingSessionId?: string;
     originalFolder: string | null; repository?: Repository & { commonDir: string };
-    branches?: Branch[]; nextCursor?: string; observedAt?: number; revision: number; recoveredBranch?: string | null;
+    branches?: Branch[]; holders?: BranchHolder[]; nextCursor?: string; observedAt?: number; revision: number; recoveredBranch?: string | null;
   }
   interface RecoveryResult {
     sourceSessionId: string; sessionId: string; workspaceId: string; worktreeId: string;
     cwd: string; branch: string | null; cleanup: Cleanup;
   }
   interface RecoveryInfoRequest { action: 'reopen-info'; sourceSessionId: string; cursor?: string; limit?: number; after?: number }
-  interface RecoveryResumeRequest { action: 'reopen'; sourceSessionId: string; localBranch: string; localOid: string }
+  interface RecoveryResumeRequest { action: 'reopen'; sourceSessionId: string; localBranch: string; localOid: string; takeover?: boolean }
   type RecoveryRequest = RecoveryInfoRequest | RecoveryResumeRequest;
   type RecoveryReply<R extends RecoveryRequest> = R extends RecoveryInfoRequest ? RecoveryInfo : RecoveryResult;
   interface Naming { title: string; slug: string; directoryName: string; branch: string; source: 'model' | 'fallback'; fallbackReason?: string }
@@ -41,7 +42,7 @@ declare namespace WT {
     displayName?: string; naming?: Naming; error?: string | null;
   }
   interface Operation { id: string; phase: string; error: Failure | null; generatedName?: Naming; workspaceId?: string | null; settingsHash?: string }
-  interface Checkout { dirty: boolean; head: string; changes?: number; untracked?: number }
+  interface Checkout { dirty: boolean; head: string; branch: string | null; changes?: number; untracked?: number }
   interface RepositoryReply { settingsHash: string; repository: Repository; remotes: { name: string; identity: string }[]; projectPath?: string; defaults?: { remote?: string; branch?: string } }
   interface OperationReply { settingsHash: string; operation: Operation; sessionId?: string; worktree?: Record }
   interface CheckoutReply { settingsHash: string; worktree: Record; status: Checkout | null }
@@ -53,8 +54,10 @@ declare namespace WT {
   interface SessionResult { sessionId: string; workspaceId: string; settingsHash: string; worktree: Record; operation: Operation }
   interface Preview { id: string; worktreeId: string; sourceSessionId: string; targetRoot: string; baseOid: string; patchHash: string; patchPath: string; bytes: number; files: { path: string; status: string; binary: boolean }[] }
   interface Export { path: string; patchHash: string; bytes: number; patch?: string }
+  interface ReleasedBranchHolder { worktreeId: string; checkoutRoot: string; head: string; previousBranch: string; branch: string | null }
+  interface ReleaseResult { branch: string; released: ReleasedBranchHolder[] }
   interface WorktreeRequest {
-    action: 'list' | 'status' | 'branches' | 'create' | 'start' | 'branch' | 'protect' | 'preview' | 'export' | 'handoff' | 'archive';
+    action: 'list' | 'status' | 'branches' | 'create' | 'start' | 'branch' | 'protect' | 'preview' | 'export' | 'handoff' | 'archive' | 'release';
     repoPath?: string; id?: string; operationId?: string; branchSource?: 'local' | 'remote'; localBranch?: string;
     localOid?: string; remote?: string; remoteIdentity?: string; remoteBranch?: string; sourceSessionId?: string;
     sessionMode?: 'new' | 'continue'; requireBlankSource?: boolean; settingsHash?: string;
@@ -70,6 +73,7 @@ declare namespace WT {
     : R extends { action: 'preview' } ? Preview
     : R extends { action: 'export' } ? Export
     : R extends { action: 'branch' | 'protect' | 'archive' } ? { worktree?: Record; sessionId?: string }
+    : R extends { action: 'release' } ? ReleaseResult
     : SessionResult | { worktree?: Record; sessionId?: string };
   interface ProgressStep { stage: 'fetching' | 'creating' | 'naming' | 'opening' | 'ready'; operationId: string; worktreeId?: string }
   interface Progress { operationId: string; revision: number; terminal: boolean; stages: ProgressStep[] }
@@ -142,12 +146,12 @@ declare namespace WT {
   interface RecoveryState {
     sessionId?: string; info: RecoveryInfo | null; branches: RecoveryBranch[]; selected: Branch | null; query: string;
     checked: boolean; loading: boolean; paging: boolean; busy: boolean; error: string; foreignBlock: boolean;
-    cancelled: boolean; draftHistoryId?: string;
+    cancelled: boolean; draftHistoryId?: string; takeover: boolean;
   }
   interface RecoveryBranch extends Branch { current: boolean; retained: boolean }
   interface RecoveryOperation { id: string; generation: string | number; sequence: number; controller: AbortController; watch: AbortController | null; page: AbortController | null; action: AbortController | null }
   interface RecoveryBlock { source: Store<Block | undefined>; handle: BlockHandle | null; acquiring: boolean; unsubscribe: Dispose }
-  interface RecoveryStore { store: Store<RecoveryState>; refresh(): Promise<void>; more(): Promise<void>; resume(): Promise<void>; setQuery(query: string): void; choose(name: string): boolean; cancel(): void; retry(): Promise<void> | undefined; openTarget(): Promise<void> | undefined; openPermissions(): Promise<void> | undefined; openHistory(): Promise<void> | void; dispose(): void }
+  interface RecoveryStore { store: Store<RecoveryState>; refresh(): Promise<void>; more(): Promise<void>; resume(): Promise<void>; setQuery(query: string): void; setTakeover(value: boolean): void; choose(name: string): boolean; cancel(): void; retry(): Promise<void> | undefined; openTarget(): Promise<void> | undefined; openPermissions(): Promise<void> | undefined; openHistory(): Promise<void> | void; dispose(): void }
   interface SettingsState { status: string; mode?: string; writable?: boolean; revision?: number; value?: { root?: unknown; cleanupEnabled?: unknown; cleanupInactivityDays?: unknown } }
   type SettingsOperation = { op: 'unset'; path: string[] } | { op: 'set'; path: string[]; value: unknown };
   interface SettingsForm { state?: SettingsState; mutate(operations: SettingsOperation[], expectedRevision: number): Promise<boolean> }

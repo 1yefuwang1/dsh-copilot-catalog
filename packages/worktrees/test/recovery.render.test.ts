@@ -16,7 +16,7 @@ interface MockRequest {
   sessionId?: string; sourceSessionId?: string; branchSource?: string; remote?: string;
   remoteIdentity?: string; remoteBranch?: string; localBranch?: string; localOid?: string;
   repoPath?: string; cursor?: string; limit?: number; title?: string; folders?: string[];
-  mainFolder?: string; firstPrompt?: string; sessionMode?: string; requireBlankSource?: boolean;
+  mainFolder?: string; firstPrompt?: string; sessionMode?: string; requireBlankSource?: boolean; takeover?: boolean;
 }
 interface MockPayload { v: number; actorId?: string; request: MockRequest; after?: number; }
 type RpcArgs = [channel: string, endpoint: string, payload: MockPayload, signal: AbortSignal];
@@ -169,4 +169,45 @@ test('Manager cannot resolve a reclaimed selected Agent through normal execute R
   assert.match(f.container.textContent, /Worktree reclaimed/); assert.match(f.container.textContent, /Unsaved files were discarded/);
   assert.ok([...f.container.querySelectorAll('button')].filter((item) => ['Create branch here', 'Open conversation', 'Check operation status'].includes(item.textContent)).every((item) => item.disabled));
   assert.ok(f.calls.every(call => ['reopen-info', 'reopen'].includes(call.request.action)));
+});
+
+test('a managed holder warns, requires explicit takeover, and sends it only after confirmation', async (t) => {
+  const holders = [{ branch: 'feature/retained', root: '/managed/tree', managed: true, worktreeId: '9c2b4e9a-1f3e-4b0e-8f4e-8b1a2c3d4e5f', displayName: 'Retained checkout' }];
+  const f = await fixture(t, { initial: { ...base, holders } });
+  assert.match(f.container.textContent!, /in use by Retained checkout/);
+  const row = [...f.container.querySelectorAll('label')].find(item => item.textContent!.includes('feature/retained'))!;
+  await click(row.querySelector('input'));
+  assert.match(f.container.textContent!, /returns that worktree to its own branch/);
+  assert.equal(button(f.container, real.en.gcContinue)!.disabled, true);
+  const checkbox = f.container.querySelector('input[type=checkbox]')!;
+  await click(checkbox);
+  assert.equal(button(f.container, real.en.gcContinue)!.disabled, false);
+  await click(button(f.container, real.en.gcContinue));
+  assert.equal(f.calls.find(call => call.request.action === 'reopen')!.request.takeover, true);
+  await act(async () => { f.render('exact-local'); await flush(); });
+  assert.ok(button(f.container, real.en.gcHistoryDraft));
+});
+
+test('changing the branch or query clears the takeover confirmation', async (t) => {
+  const holders = [{ branch: 'feature/retained', root: '/managed/tree', managed: true }];
+  const f = await fixture(t, { initial: { ...base, holders } });
+  const row = [...f.container.querySelectorAll('label')].find(item => item.textContent!.includes('feature/retained'))!;
+  await click(row.querySelector('input'));
+  await click(f.container.querySelector('input[type=checkbox]'));
+  assert.equal(button(f.container, real.en.gcContinue)!.disabled, false);
+  const other = [...f.container.querySelectorAll('label')].find(item => item.textContent!.includes('main'))!;
+  await click(other.querySelector('input'));
+  assert.equal(f.container.querySelector('input[type=checkbox]'), null, 'no takeover prompt for a branch nobody holds');
+  assert.equal(button(f.container, real.en.gcContinue)!.disabled, false);
+  await click(row.querySelector('input'));
+  assert.equal(button(f.container, real.en.gcContinue)!.disabled, true, 'the confirmation does not survive a branch change');
+});
+
+test('an unmanaged holder is visible but never offered as a takeover', async (t) => {
+  const holders = [{ branch: 'feature/retained', root: '/foreign/tree', managed: false }];
+  const f = await fixture(t, { initial: { ...base, holders } });
+  assert.match(f.container.textContent!, /in use by an unmanaged worktree/);
+  const row = [...f.container.querySelectorAll('label')].find(item => item.textContent!.includes('feature/retained'))!;
+  assert.equal(row.querySelector<HTMLInputElement>('input')!.disabled, true);
+  assert.equal(f.container.querySelector('input[type=checkbox]'), null);
 });

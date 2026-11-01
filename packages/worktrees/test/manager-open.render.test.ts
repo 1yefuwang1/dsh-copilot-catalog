@@ -30,6 +30,9 @@ interface FixtureOptions {
   workspace?: Partial<WorkspaceList>; workspaceItems?: Workspace[]; coldIds?: string[];
   snapshots?: Record<string, Partial<SessionSnapshot>>; discoverIds?: string[];
   refreshWait?: Promise<void>; nativeError?: Error;
+  /** Observed checkout facts; the recorded branch defaults to the fixture record. */
+  status?: { branch?: string | null; dirty?: boolean; head?: string };
+  allowRelease?: boolean;
 }
 
 const clientUrl = new URL('../dist/client.js', import.meta.url);
@@ -215,8 +218,12 @@ async function mountCard(t: TestContext, options: FixtureOptions = {}) {
     connection: { generation, rpc: { async call(channel: string, endpoint: string, payload: { v: number; actorId?: string; request: Request }) {
       calls.requests.push({ ...payload.request });
       assert.equal(channel, '/api'); assert.equal(endpoint, 'dsh-worktrees/execute'); assert.equal(payload.v, 1);
+      if (payload.request.action === 'release') {
+        assert.equal(options.allowRelease, true, 'only the drift fixture permits a release');
+        return { ok: true, value: { v: 1, ok: true, data: { branch: 'main', released: [{ worktreeId: '9c2b4e9a-1f3e-4b0e-8f4e-8b1a2c3d4e5f', checkoutRoot: '/worktrees/one', head: record.baseOid, previousBranch: 'main', branch: record.branch }] } } };
+      }
       assert.equal(payload.request.action, 'status', 'mount-time status is the only allowed Host action');
-      return { ok: true, value: { v: 1, ok: true, data: { settingsHash: 'settings-one', worktree: record, status: { dirty: false, head: record.baseOid, changes: 0, untracked: 0 } } } };
+      return { ok: true, value: { v: 1, ok: true, data: { settingsHash: 'settings-one', worktree: record, status: { dirty: false, head: record.baseOid, changes: 0, untracked: 0, ...options.status, branch: options.status?.branch === undefined ? record.branch : options.status.branch } } } };
     } } },
     layout: {
       beginNavigation() { navigation.abort(); navigation = new AbortController(); return navigation.signal; },
@@ -243,15 +250,15 @@ async function mountCard(t: TestContext, options: FixtureOptions = {}) {
     const currentMetadata = React.useSyncExternalStore(metadata.subscribe, metadata.getSnapshot);
     return React.createElement(RecordCard, {
       record: currentMetadata.records[0]!, runtime, actorId: mainActor(currentList), list: currentList, sessionStatuses: currentStatuses,
-      t: (key: string) => real.en[key] || key, onChanged() { calls.changed += 1; }, onPreview() {},
+      t: (key: string, params: Record<string, unknown> = {}) => (real.en[key] || key).replace(/\{(\w+)\}/g, (_: string, field: string) => String(params[field] ?? '{' + field + '}')), onChanged() { calls.changed += 1; }, onPreview() {},
     });
   }
   async function unmount() { if (mounted) { mounted = false; await act(async () => root.unmount()); container.remove(); } }
   t.after(async () => {
     await unmount();
     assert.deepEqual(calls.forbidden, [], 'Open never creates, starts or forks a conversation');
-    assert.ok(calls.requests.every(request => request.action === 'status'), 'Open never sends start/create/fork/continue RPCs');
-    assert.equal(calls.changed, 0, 'opening an existing conversation is not a worktree mutation');
+    assert.ok(calls.requests.every(request => options.allowRelease === true ? ['status', 'release'].includes(request.action) : request.action === 'status'), 'Open never sends start/create/fork/continue RPCs');
+    if (options.allowRelease !== true) assert.equal(calls.changed, 0, 'opening an existing conversation is not a worktree mutation');
     for (const reference of references) assert.equal(reference.releases, 1, `released ${reference.sessionId}`);
     assert.ok(Object.values(list.getSnapshot().byId).every(item => !item.retainedBy.controllerOperation), 'no controller retention leaks');
     assert.equal(workspaces.listenerCount(), 0, 'unmount releases every native workspace listener');
@@ -496,4 +503,23 @@ test('cancelling during unknown-session refresh never retains or opens the late 
   const card = await mountCard(t, { knownIds: ['source'], record: { sessionIds: ['discovered'] }, workspaceItems: [workspace(['discovered'])], discoverIds: ['discovered'], refreshWait: refresh.promise });
   await click(card.open()); assert.equal(card.calls.refresh, 1); assert.equal(card.references.length, 0); await card.navigate();
   await act(async () => refresh.resolve()); assert.deepEqual(card.calls.open, []); assert.equal(card.references.length, 0); assert.equal(card.calls.refresh, 1);
+});
+
+test('the manager shows the branch Git reports, warns on drift and releases only the managed holder', async (t) => {
+  const f = await mountCard(t, { record: { branch: 'feature/one' }, status: { branch: 'main' }, allowRelease: true });
+  await act(async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); });
+  assert.match(f.container.textContent!, /Actual branch/);
+  assert.match(f.container.textContent!, /This worktree is on main but records feature\/one/);
+  assert.equal(f.calls.requests.filter(request => request.action === 'status').length, 1);
+  await click(button(f.container, real.en.releaseBranch));
+  assert.deepEqual(f.calls.requests.at(-1), { action: 'release', id: 'worktree-one' });
+  assert.equal(f.calls.changed, 1, 'a verified release refreshes the manager facts');
+});
+
+test('the manager offers no release action when the checkout matches its recorded branch', async (t) => {
+  const f = await mountCard(t);
+  await act(async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); });
+  assert.match(f.container.textContent!, /Actual branch/);
+  assert.equal([...f.container.querySelectorAll('button')].some(item => item.textContent === real.en.releaseBranch), false);
+  assert.equal(f.calls.changed, 0);
 });

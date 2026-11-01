@@ -39,10 +39,32 @@ export interface WorktreeReopenInfo {
   originalFolder: string | null;
   repository?: { root: string; commonDir: string; head: string; branch: string | null };
   branches?: RemoteBranch[];
+  /** Checkouts that currently hold a Local branch; read-only and bounded. */
+  holders?: BranchHolder[];
   nextCursor?: string;
   observedAt?: number;
   revision: number;
   recoveredBranch?: string | null;
+}
+/** One checkout holding a Local branch; managed means this plugin owns the checkout. */
+export interface BranchHolder {
+  branch: string;
+  root: string;
+  managed: boolean;
+  worktreeId?: string;
+  displayName?: string;
+}
+/** Safe, verified result of transferring one held branch; files and HEAD commit are unchanged. */
+export interface ReleasedBranchHolder {
+  worktreeId: string;
+  checkoutRoot: string;
+  head: string;
+  previousBranch: string;
+  branch: string | null;
+}
+export interface WorktreeReleaseResult {
+  branch: string;
+  released: ReleasedBranchHolder[];
 }
 export interface WorktreeReopenResult {
   sourceSessionId: string;
@@ -262,7 +284,7 @@ export interface OperationRecord {
   error: { code: string; message: string } | null;
 }
 
-export type WorktreeAction = 'list' | 'status' | 'branches' | 'create' | 'start' | 'branch' | 'protect' | 'preview' | 'export' | 'handoff' | 'archive' | 'reopen-info' | 'reopen';
+export type WorktreeAction = 'list' | 'status' | 'branches' | 'create' | 'start' | 'branch' | 'protect' | 'preview' | 'export' | 'handoff' | 'archive' | 'reopen-info' | 'reopen' | 'release';
 export interface WorktreeRequest {
   action: WorktreeAction;
   repoPath?: string;
@@ -291,6 +313,8 @@ export interface WorktreeRequest {
   cursor?: string;
   limit?: number;
   includeArchived?: boolean;
+  /** Reopen only: transfer a branch held by a managed checkout before switching. */
+  takeover?: boolean;
 }
 export type CommandEnvelope = { v: 1; ok: true; data: unknown } | { v: 1; ok: false; error: { code: string; message: string } };
 

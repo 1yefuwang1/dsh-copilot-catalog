@@ -122,7 +122,7 @@ export async function apply(ctx: Context, config: PluginConfig): Promise<void> {
   });
   await projects.synchronize();
   ctx.commands.register({
-    name: 'worktree', description: 'Manage isolated Git worktree conversations and review or hand off changes.',
+    name: 'worktree', description: 'Manage isolated Git worktree conversations, review or hand off changes, and release branches a managed worktree has taken.',
     input: { hint: '<action> [JSON arguments]' },
     handler: async ({ agent, rawInput, signal }) => {
       try {
@@ -134,7 +134,7 @@ export async function apply(ctx: Context, config: PluginConfig): Promise<void> {
   });
   ctx.tools.register({
     name: 'git_worktree',
-    description: 'Manage isolated Git worktree threads, preview/export or hand off changes, and inspect or reopen reclaimed threads on a user-chosen Local branch. Cross-root Git mutations require existing full access. Handoff refuses running sessions and never resets or deletes checkouts; recovery does not apply old worktree changes.',
+    description: 'Manage isolated Git worktree threads, preview/export or hand off changes, release a branch that a managed worktree holds so the original Local checkout can switch to it, and inspect or reopen reclaimed threads on a user-chosen Local branch. Git allows a local branch to be checked out in only one worktree; release transfers it back to the managed worktree\'s own branch or detaches that worktree at the same commit, so files and commits never change. Cross-root Git mutations require existing full access. Handoff refuses running sessions and never resets or deletes checkouts; recovery does not apply old worktree changes.',
     parameters: parameterSchema,
     output: { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
     isConcurrencySafe: args => {

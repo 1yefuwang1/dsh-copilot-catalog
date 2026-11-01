@@ -65,7 +65,7 @@ interface HistoryRow {
   projections: { inbox?: { 'next-turn': unknown[]; 'next-step': unknown[] }; sessionListMetadata: { blank: boolean; lastPromptAt: number | null } };
   revision: string;
 }
-interface FixtureOptions { now?: number; settings?: Partial<CleanupSettings>; source?: HistoryOptions; inspectError?: string; useDefaults?: boolean }
+interface FixtureOptions { now?: number; settings?: Partial<CleanupSettings>; source?: HistoryOptions; inspectError?: string; useDefaults?: boolean; holderBranch?: string }
 interface WriterLease { id: string; header: MutableHeader; inheritedEventCount: number; close(): Promise<void> }
 interface CleanupAgentMock {
   id: string; ctx: Context; status: string; session: { header: MutableHeader }; inbox: { nextTurn: unknown[]; nextStep: unknown[] }; claimed: boolean; drives: number;
@@ -133,6 +133,7 @@ async function fixture(t: TestContext, options: FixtureOptions = {}) {
   const identity: RemovalIdentity = { checkoutRoot, sourceRoot: localRoot, commonDir, adminDir: resolve(commonDir, 'worktrees', 'fixture-admin'), head: HEAD, branch: 'actual-current-branch', checkoutIdentity: 'fixture-checkout-inode', sourceIdentity: 'fixture-source-inode', commonIdentity: 'fixture-common-inode', adminIdentity: 'fixture-admin-inode', pointerIdentity: 'fixture-pointer-inode', pointerHash: HASH, backlinkIdentity: 'fixture-backlink-inode', backlinkHash: HASH, commonPointerIdentity: 'fixture-common-pointer-inode', commonPointerHash: HASH, sourceMappingIdentity: 'fixture-source-mapping-inode', sourceMappingHash: '', privateStateHash: HASH, retainedHeads: [HEAD, 'd'.repeat(40)] };
   const repository: RepositoryInfo = { root: localRoot, commonDir, projectSubdir: 'project', head: OID, branch: 'main' };
   let removes = 0, preserves = 0, switchCalls = 0, localClaims = 0, queue: Promise<unknown> = Promise.resolve();
+  const holders = (): { root: string; canonical: string | null; branch: string | null; locked: boolean }[] => options.holderBranch === undefined ? [] : [{ root: checkoutRoot, canonical: checkoutRoot, branch: options.holderBranch, locked: false }];
   const git: NonNullable<CleanupDependencies['git']> = (_record, guard, signal) => ({
     async discover(path) { guard(); trace.push(['discover', path]); return clone(repository); },
     async localBranches() { guard(); return { branchSource: 'local', currentBranch: repository.branch, defaultBranch: repository.branch ?? 'HEAD', branches: [{ name: 'main', oid: OID }, { name: 'topic', oid: HEAD }], observedAt: clock }; },
@@ -141,6 +142,9 @@ async function fixture(t: TestContext, options: FixtureOptions = {}) {
     async removeManagedCheckout(_record, value) { guard(); assert.deepEqual(value, identity); await hooks.beforeRemove?.(guard, signal); guard(); removes++; trace.push(['remove']); state = 'absent'; await hooks.remove?.(guard, signal); },
     async removalState(_record, sourceRoot, value) { guard(); assert.equal(sourceRoot, localRoot); assert.deepEqual(value, identity); trace.push(['removal-state', state]); return state; },
     async switchLocalBranch(path, expectedCommon, branch, oid, _signal, verifyOnly) { guard(); switchCalls++; trace.push(['switch-local', path, expectedCommon, branch, oid, verifyOnly]); await hooks.switch?.(verifyOnly); if (verifyOnly && repository.branch !== branch) throw new WorktreeError('BRANCH_CHANGED', 'Fixture no-op selection changed.'); return { head: oid, branch, dirty: true, changes: 3, untracked: 2 }; },
+    async switchLocalBranchTakingOver(path, expectedCommon, branch, oid, _signal, release) { guard(); switchCalls++; trace.push(['switch-local-takeover', path, expectedCommon, branch, oid]); await release(clone(holders())); return { head: oid, branch, dirty: true, changes: 3, untracked: 2 }; },
+    async branchHolders() { guard(); return clone(holders()); },
+    async releaseCheckout(input) { guard(); trace.push(['release-checkout', input.checkoutRoot, input.branch, input.preferred]); return { head: OID, branch: input.preferred ?? null, dirty: false, changes: 0, untracked: 0 }; },
   });
   function agent(id: string, cwd: string, meta: Partial<MutableHeader> = {}): CleanupAgent {
     const maintenance = new AbortController(); const value: CleanupAgentMock = { id, ctx: owner, status: 'idle', session: { header: { version: SESSION_FORMAT_VERSION, id: SessionId(id), cwd, createdAt: clock, isSeeded: true, ...meta } }, inbox: { nextTurn: [], nextStep: [] }, claimed: false, drives: 0,
@@ -179,10 +183,11 @@ async function fixture(t: TestContext, options: FixtureOptions = {}) {
     },
     async close() { for (const value of targets.values()) value.cancel({ kind: 'disposed' }, { keepInbox: true }); trace.push(['bootstrap-close']); },
   };
-  const controller: Pick<WorktreeController, 'withRepositoryMaintenance' | 'hasPendingEffects' | 'withLocalClaims'> = {
+  const controller: Pick<WorktreeController, 'withRepositoryMaintenance' | 'hasPendingEffects' | 'withLocalClaims' | 'releaseManagedBranchFor'> = {
     withRepositoryMaintenance(common, signal, task) { assert.equal(common, commonDir); const flight = queue.then(() => task(signal)); queue = flight.catch(() => undefined); return flight; },
     hasPendingEffects: () => pendingEffects,
     async withLocalClaims(roots, invocation, _task, held) { localClaims++; assert.deepEqual(roots, [localRoot]); assert.equal(invocation.agent, [...targets.values()][0]); assert.ok(held?.every(value => (value as CleanupAgent).claimed)); await hooks.claims?.(); throw new WorktreeError('LOCAL_BUSY', 'A real Local idle claim refused the switch.'); },
+    async releaseManagedBranchFor(_repository, branch) { trace.push(['release-managed', branch]); return []; },
   };
   const projectId = randomUUID(), folderId = randomUUID(); const bindings: ProjectThreadBinding[] = [];
   const projects: NonNullable<CleanupDependencies['projects']> = { selectionForWorktree() { return { projectId, folderId, path: originalFolder }; }, folderForPath(path) { assert.equal(path, originalFolder); return { projectId, folderId, path }; }, async recordThread(value) { bindings.push(clone(value)); } };
@@ -190,7 +195,7 @@ async function fixture(t: TestContext, options: FixtureOptions = {}) {
   const cleanup = new WorktreeCleanup(owner, config, worktrees, store, controller, { ...(options.useDefaults ? {} : { settings: () => clone(settings) }), now: () => clock, git, bootstrap, projects }); cleanup.start(false);
   t.after(async () => { await cleanup.close(); assert.equal(leased.size, 0); assert.equal(dirname(root), tmpBase); assert.equal(await realpath(root), root); await rm(root, { recursive: true, force: true }); });
   const invocation = (): RecoveryInvocation => ({ origin: 'ui', signal: new AbortController().signal });
-  const reopen = (branch = 'main', oid = OID) => cleanup.reopen({ action: 'reopen', sourceSessionId: source.header.id, localBranch: branch, localOid: oid }, invocation());
+  const reopen = (branch = 'main', oid = OID, extra: { takeover?: boolean } = {}) => cleanup.reopen({ action: 'reopen', sourceSessionId: source.header.id, localBranch: branch, localOid: oid, ...extra }, invocation());
   return { root, managedRoot, localRoot, originalFolder, record, source, histories, owner, live, leased, store, worktrees, cleanup, identity, repository, trace, hooks, resources, modes, bootstrap, bindings, ensureCalls, agent, history, config, reopen, invocation,
     get disposed() { return disposed; }, get removes() { return removes; }, get preserves() { return preserves; }, get switchCalls() { return switchCalls; }, get localClaims() { return localClaims; }, get spawnCalls() { return spawnCalls; }, get policyReads() { return policyReads; }, get targets() { return targets; },
     get settings() { return settings; }, set settings(value: CleanupSettings) { settings = value; }, get now() { return clock; }, set now(value: number) { clock = value; }, set removalState(value: 'present' | 'absent' | 'partial' | 'replaced') { state = value; }, set pendingEffects(value: boolean) { pendingEffects = value; },
@@ -391,4 +396,20 @@ test('lifecycle wait wakes on durable state changes and abort/shutdown drain wit
   const waited = f.cleanup.wait(f.source.header.id, first.revision, new AbortController().signal); await f.cleanup.sweep(); assert.ok((await waited).revision > first.revision); assert.deepEqual(f.source, original);
   const next = await f.cleanup.info(f.source.header.id, new AbortController().signal), abort = new AbortController(); const cancelled = f.cleanup.wait(f.source.header.id, next.revision, abort.signal); abort.abort(); await assert.rejects(cancelled, code('CANCELLED'));
   const closing = f.cleanup.wait(f.source.header.id, next.revision, new AbortController().signal); const rejected = assert.rejects(closing, code('CANCELLED')); await f.cleanup.close(); await rejected;
+});
+
+
+test('reopen-info reports branch holders so the chooser can warn and take over', async t => {
+  const f = await fixture(t, { holderBranch: 'main' }); await reclaimed(f);
+  const info = await f.cleanup.info(f.source.header.id, new AbortController().signal);
+  assert.deepEqual(info.holders, [{ branch: 'main', root: f.record.checkoutRoot, managed: true, worktreeId: f.record.id }]);
+});
+
+test('recovery takeover still requires full access and Local idle claims before any release', async t => {
+  const f = await fixture(t, { holderBranch: 'topic' }); await reclaimed(f);
+  await assert.rejects(f.reopen('topic', HEAD, { takeover: true }), code('FULL_ACCESS_REQUIRED'));
+  const pending = presentValue(f.store.reopens.get(f.source.header.id)); f.modes.set(pending.sessionId, 'danger-full-access');
+  await assert.rejects(f.reopen('topic', HEAD, { takeover: true }), code('LOCAL_BUSY'));
+  assert.equal(f.localClaims, 1);
+  assert.equal(f.trace.some(([kind]) => kind === 'release-managed' || kind === 'switch-local-takeover'), false);
 });

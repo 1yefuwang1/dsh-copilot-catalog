@@ -6,6 +6,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import type { Agent } from '@deepseek-ai/dsh-agent';
 import { SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session';
 import { GitOperations } from './git.js';
+import { releaseManagedBranch } from './branch-release.js';
 import { WorktreeError, abortIfRequested, failureOf } from './errors.js';
 import { capability, required, createExecutor, localProjectPath, planBlocksMutation, requireFullAccess } from './runtime.js';
 import { fullAccessActions, mutationActions, hashValue, parseRequest } from './schema.js';
@@ -13,7 +14,7 @@ import { SessionBootstrap, type SessionSettings } from './sessions.js';
 import { fallbackName, generateWorktreeName, NAMING_DEFAULTS, NAMING_INPUT_CHARS, namingConfig } from './naming.js';
 import type { WorktreeStore } from './store.js';
 import type { ProjectController } from './projects.js';
-import type { CheckoutState, CreateCheckoutInput, LocalBranches, OperationRecord, RemoteBranches, RepositoryInfo, SessionResult, WorktreeCleanupSummary, WorktreeConfig, WorktreePreview, WorktreeRecord, WorktreeRequest, WorktreeReopenInfo, WorktreeReopenResult, WorktreeSetupProgress } from './types.js';
+import type { CheckoutState, CreateCheckoutInput, LocalBranches, OperationRecord, RemoteBranches, ReleasedBranchHolder, RepositoryInfo, SessionResult, WorktreeCleanupSummary, WorktreeConfig, WorktreePreview, WorktreeRecord, WorktreeReleaseResult, WorktreeRequest, WorktreeReopenInfo, WorktreeReopenResult, WorktreeSetupProgress } from './types.js';
 
 export interface Invocation {
   agent: Agent; origin: 'tool' | 'command' | 'ui'; signal: AbortSignal;
@@ -22,7 +23,7 @@ export interface Invocation {
   /** Internal admission snapshot only; execute always replaces caller-supplied values. */
   capturedRoot?: string;
 }
-type GitApi = Pick<GitOperations, 'discover' | 'remotes' | 'branches' | 'localBranches' | 'create' | 'verify' | 'status' | 'createBranch' | 'renameBranch' | 'fingerprint' | 'snapshot' | 'apply'>;
+type GitApi = Pick<GitOperations, 'discover' | 'remotes' | 'branches' | 'localBranches' | 'create' | 'verify' | 'status' | 'createBranch' | 'renameBranch' | 'fingerprint' | 'snapshot' | 'apply' | 'branchHolders' | 'releaseCheckout'>;
 type BootstrapApi = Pick<SessionBootstrap, 'actor' | 'isLive' | 'settings' | 'assertBlank' | 'create' | 'close'>;
 export interface RecoveryInvocation { agent?: Agent; origin: Invocation['origin']; signal: AbortSignal }
 export interface WorktreeLifecycle {
@@ -160,6 +161,8 @@ export class WorktreeController {
       && (operation.worktreeId === record.id || (operation.targetRoot !== null && contained(record.checkoutRoot, operation.targetRoot))));
   }
   cachedStatus(id: string): CheckoutState | undefined { const state = this.statuses.get(id); return state === undefined ? undefined : clone(state); }
+  /** Publish one already-verified checkout observation without another Git read. */
+  noteStatus(id: string, state: CheckoutState): void { this.statuses.set(id, clone(state)); }
   execute(request: WorktreeRequest, invocation: Invocation): Promise<unknown> {
     if (this.closed) return Promise.reject(new WorktreeError('CLOSED', 'The worktree controller is closing.'));
     const signal = AbortSignal.any([invocation.signal, this.shutdown.signal, AbortSignal.timeout(this.config.operationTimeoutMs)]);
@@ -426,6 +429,7 @@ export class WorktreeController {
       return this.branches(request, invocation, git, repository);
     }
     if (request.action === 'export') return this.exportPatch(request, invocation);
+    if (request.action === 'release') return this.release(request, invocation);
     const record = this.record(request.id);
     return this.queued(record.commonDir, invocation.signal, async () => {
       this.guard(request, invocation);
@@ -504,6 +508,53 @@ export class WorktreeController {
     const items = generation.value.branches.filter(branch => branch.name.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
     const key = hashValue({ generation: generation.id, query }); const offset = this.cursor(key, request.cursor); const limit = request.limit ?? 50;
     return { remote, remoteIdentity: identity, defaultBranch: generation.value.defaultBranch, items: items.slice(offset, offset + limit), observedAt: generation.value.observedAt, ...(offset + limit < items.length ? { nextCursor: this.nextCursor(key, offset + limit) } : {}) };
+  }
+  /** Refuse a holder that is not a ready managed record. */
+  private releaseReady(record: WorktreeRecord): void {
+    if (record.state !== 'ready') throw new WorktreeError('RECOVERY_REQUIRED', 'The managed checkout is not ready. Inspect its operation status before releasing its branch.');
+  }
+  /**
+   * Shared orchestration for the release action and the recovery takeover path.
+   * The caller supplies the guarded engine, the request for authorization and the
+   * exact invocation whose runtimes must be idle while a holder changes HEAD.
+   */
+  async releaseManagedBranchFor(repository: RepositoryInfo, branch: string, request: WorktreeRequest, invocation: Invocation, git: GitApi): Promise<ReleasedBranchHolder[]> {
+    this.guard(request, invocation);
+    return releaseManagedBranch({
+      git,
+      recordFor: checkoutRoot => this.records().find(record => record.commonDir === repository.commonDir && record.checkoutRoot === checkoutRoot),
+      ready: record => this.releaseReady(record),
+      putRecord: async record => { this.guard(request, invocation); await this.store.worktrees.put(record.id, clone(record)); },
+      noteStatus: (id, state) => this.noteStatus(id, state),
+      withClaims: (roots, task) => this.withLocalClaims(roots, invocation, signal => task(signal)),
+    }, { repository, branch, signal: invocation.signal });
+  }
+  private async release(request: WorktreeRequest, invocation: Invocation): Promise<WorktreeReleaseResult> {
+    const git = this.git(request, invocation);
+    if (request.id !== undefined) {
+      const record = this.record(request.id);
+      return this.queued(record.commonDir, invocation.signal, async () => {
+        this.guard(request, invocation);
+        const current = this.record(record.id);
+        this.releaseReady(current);
+        const repository = await git.discover(current.repoRoot, invocation.signal);
+        const holder = (await git.branchHolders(repository.root, invocation.signal)).find(item => (item.canonical ?? item.root) === current.checkoutRoot);
+        if (holder === undefined || holder.canonical === null) throw new WorktreeError('HOLDER_NOT_READY', 'The managed checkout is no longer registered or is unavailable; inspect it before releasing its branch.');
+        if (holder.branch === null) throw new WorktreeError('BRANCH_NOT_HELD', 'This managed checkout has no attached local branch to release.');
+        const released = await this.releaseManagedBranchFor(repository, holder.branch, request, invocation, git);
+        return { branch: holder.branch, released };
+      });
+    }
+    const branch = requiredText(request.localBranch, 'localBranch');
+    if (branch === 'HEAD' || branch.startsWith('-')) throw new WorktreeError('INVALID_REF', 'Select an exact local branch name.');
+    const path = await this.local(invocation.agent, request.repoPath, invocation.signal);
+    const repository = await git.discover(path, invocation.signal);
+    return this.queued(repository.commonDir, invocation.signal, async () => {
+      this.guard(request, invocation);
+      if (!(await git.localBranches(repository.root, invocation.signal)).branches.some(item => item.name === branch)) throw new WorktreeError('LOCAL_BRANCH_NOT_FOUND', 'The selected local branch does not exist. Reload its branch list.');
+      const released = await this.releaseManagedBranchFor(repository, branch, request, invocation, git);
+      return { branch, released };
+    });
   }
   private normalizedCreate(request: WorktreeRequest, actor: Agent, path: string): unknown {
     return { ...request, repoPath: path, sourceSessionId: request.sourceSessionId ?? actor.id, sessionMode: request.sessionMode ?? 'new', requireBlankSource: request.requireBlankSource ?? false };

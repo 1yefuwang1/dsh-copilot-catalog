@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { WorktreeError } from './errors.js';
 import type { WorktreeAction, WorktreeRequest } from './types.js';
 
-export const ACTIONS = ['list', 'status', 'branches', 'create', 'start', 'branch', 'protect', 'preview', 'export', 'handoff', 'archive', 'reopen-info', 'reopen'] as const;
+export const ACTIONS = ['list', 'status', 'branches', 'create', 'start', 'branch', 'protect', 'preview', 'export', 'handoff', 'archive', 'reopen-info', 'reopen', 'release'] as const;
 const text = z.string().min(1).max(4096);
 const id = z.string().uuid();
 export const requestSchema = z.object({
@@ -20,6 +20,7 @@ export const requestSchema = z.object({
   name: text.optional(), protected: z.boolean().optional(), archived: z.boolean().optional(),
   previewId: id.optional(), targetPath: text.optional(), query: z.string().max(256).optional(),
   cursor: z.string().max(512).optional(), limit: z.number().int().min(1).max(100).optional(), includeArchived: z.boolean().optional(),
+  takeover: z.boolean().describe('Reopen only: transfer a branch held by a plugin-managed checkout before switching.').optional(),
 }).strict();
 const fields: Record<WorktreeAction, readonly string[]> = {
   list: ['repoPath', 'cursor', 'limit', 'includeArchived'],
@@ -30,7 +31,8 @@ const fields: Record<WorktreeAction, readonly string[]> = {
   branch: ['id', 'name'], protect: ['id', 'protected'],
   preview: ['id', 'sourceSessionId', 'targetPath'], export: ['previewId'],
   handoff: ['id', 'previewId', 'operationId'], archive: ['id', 'archived'],
-  'reopen-info': ['sourceSessionId', 'cursor', 'limit'], reopen: ['sourceSessionId', 'localBranch', 'localOid'],
+  'reopen-info': ['sourceSessionId', 'cursor', 'limit'], reopen: ['sourceSessionId', 'localBranch', 'localOid', 'takeover'],
+  release: ['id', 'localBranch', 'repoPath'],
 };
 export function parseRequest(value: unknown): WorktreeRequest {
   const parsed = requestSchema.safeParse(value);
@@ -51,6 +53,10 @@ export function parseRequest(value: unknown): WorktreeRequest {
     if (local && request.localBranch === 'HEAD' && request.localOid === undefined) throw new WorktreeError('INVALID_REQUEST', 'Detached HEAD creation requires localOid.');
   }
   if (request.action === 'status' && request.id !== undefined && request.operationId !== undefined) throw new WorktreeError('INVALID_REQUEST', 'Status accepts either id or operationId, not both.');
+  if (request.action === 'release') {
+    if ((request.id === undefined) === (request.localBranch === undefined)) throw new WorktreeError('INVALID_REQUEST', 'Release accepts exactly one of id or localBranch.');
+    if (request.repoPath !== undefined && request.localBranch === undefined) throw new WorktreeError('INVALID_REQUEST', 'Release accepts repoPath only with localBranch.');
+  }
   if ((request.projectId === undefined) !== (request.folderId === undefined)) throw new WorktreeError('INVALID_REQUEST', 'Supply projectId and folderId together on create.');
   return request;
 }
@@ -78,8 +84,8 @@ export function hashValue(value: unknown): string {
   };
   return createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
 }
-export const mutationActions = new Set<WorktreeAction>(['create', 'start', 'branch', 'protect', 'handoff', 'archive', 'reopen']);
-export const fullAccessActions = new Set<WorktreeAction>(['create', 'start', 'branch', 'preview', 'export', 'handoff']);
+export const mutationActions = new Set<WorktreeAction>(['create', 'start', 'branch', 'protect', 'handoff', 'archive', 'reopen', 'release']);
+export const fullAccessActions = new Set<WorktreeAction>(['create', 'start', 'branch', 'preview', 'export', 'handoff', 'release']);
 const TOOL_SCHEMA_HINTS = new Set(['$schema', '$id', 'format', 'minLength', 'maxLength', 'pattern', 'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'minItems', 'maxItems']);
 /** Schema keywords whose value maps names to subschemas. */
 const SCHEMA_MAPS = new Set(['properties', '$defs', 'definitions', 'dependentSchemas']);

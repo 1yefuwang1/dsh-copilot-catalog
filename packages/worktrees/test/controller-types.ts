@@ -2,7 +2,7 @@ import { WorktreeController } from '../dist/service.js';
 import type { Invocation } from '../dist/service.js';
 import { ProjectController } from '../dist/projects.js';
 import type { ProjectInvocation, ProjectRequest, ProjectRecord, ProjectSnapshot, ProjectStartResult, ProjectRemoveResult, ProjectThreadBinding } from '../dist/projects.js';
-import type { CheckoutState, LocalBranches, RemoteBranches, OperationRecord, RepositoryInfo, RemoteInfo, SessionResult, WorktreePreview, WorktreeRecord, WorktreeRequest } from '../dist/types.js';
+import type { CheckoutState, LocalBranches, RemoteBranches, OperationRecord, RepositoryInfo, RemoteInfo, SessionResult, WorktreePreview, WorktreeRecord, WorktreeReleaseResult, WorktreeRequest } from '../dist/types.js';
 import type { NamingConfig } from '../dist/naming.js';
 
 type Page<T> = { items: T[]; nextCursor?: string };
@@ -16,6 +16,7 @@ type WorktreeResponse<R extends WorktreeRequest> =
   R['action'] extends 'branches' ? BranchPage :
   R['action'] extends 'protect' | 'branch' ? { worktree: WorktreeRecord; status?: CheckoutState } :
   R['action'] extends 'archive' ? { worktree: WorktreeRecord; scope: string; retained: string[] } :
+  R['action'] extends 'release' ? WorktreeReleaseResult :
   R['action'] extends 'status' ? R extends { operationId: string } ? { operation: OperationRecord; worktree?: WorktreeRecord; sessionId?: string; settingsHash: string } : R extends { id: string } ? { worktree: WorktreeRecord; status: CheckoutState; settingsHash: string } : RepositoryStatus : unknown;
 
 /** execute deliberately returns unknown publicly. This test-only overload records

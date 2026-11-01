@@ -28,6 +28,11 @@ interface FixtureOptions {
   branchesFailure?: boolean;
   verifyFailure?: boolean;
   actualBranch?: string;
+  /** Per-checkout actual branch binding; defaults to the recorded branch. */
+  actualBranches?: Record<string, string | null>;
+  /** Registrations the plugin does not manage. */
+  extraHolders?: { root: string; branch: string | null; canonical?: string | null }[];
+  releaseFailure?: boolean;
   flush?: (session: HostDouble) => Promise<boolean>;
   beforeSession?: (input: CreateSessionInput) => void | Promise<void>;
   afterSession?: (input: CreateSessionInput, result: Awaited<ReturnType<BootstrapApi['create']>>) => void | Promise<void>;
@@ -138,6 +143,19 @@ async function fixture(t: TestContext, options: FixtureOptions = {}) {
       return { id, worktreeId: input.worktreeId, sourceSessionId: input.sourceSessionId, sourceHead: state.head, sourceFingerprint: 'fingerprint', sourceRoot: input.checkoutRoot, sourceCommonDir: repository.commonDir, targetCommonDir: repository.commonDir, finalTree: 'b'.repeat(40), snapshotRoot, targetRoot: input.targetRoot, targetHead: state.head, baseOid: input.baseOid, patchPath, patchHash: createHash('sha256').update(patch).digest('hex'), bytes: Buffer.byteLength(patch), files: [{ path: 'file', status: 'M', binary: false }], createdAt: 42 };
     },
     async apply(preview, record) { calls.push(['apply', preview.id, record.id]); applyCount++; if (options.apply) return options.apply(preview, record); return { head: state.head, files: preview.files.length }; },
+    async branchHolders(root) {
+      calls.push(['branchHolders', root]);
+      const rows: { root: string; canonical: string | null; branch: string | null; locked: boolean }[] = [{ root: repo, canonical: repo, branch: null, locked: false }];
+      for (const record of store.worktrees.map.values()) rows.push({ root: record.checkoutRoot, canonical: record.checkoutRoot, branch: options.actualBranches !== undefined && Object.hasOwn(options.actualBranches, record.checkoutRoot) ? options.actualBranches[record.checkoutRoot]! : record.branch, locked: false });
+      for (const extra of options.extraHolders ?? []) rows.push({ root: extra.root, canonical: extra.canonical === undefined ? extra.root : extra.canonical, branch: extra.branch, locked: false });
+      return rows;
+    },
+    async releaseCheckout(input) {
+      calls.push(['releaseCheckout', input.checkoutRoot, input.branch, input.preferred]);
+      if (options.releaseFailure) throw new WorktreeError('RELEASE_RECOVERY_REQUIRED', 'uncertain', { targetMayHaveChanged: true });
+      if (![...store.worktrees.map.values()].some(record => record.checkoutRoot === input.checkoutRoot)) throw new WorktreeError('BRANCH_HELD_OUTSIDE_PLUGIN', 'unmanaged');
+      return { ...state, branch: input.preferred ?? null };
+    },
   };
   const store = { worktrees: table(events, 'record'), operations: table(events, 'operation'), async close() {} };
   const dependencies: ControllerDependencies & { bootstrap: BootstrapApi } = { bootstrap, git: (_actor, _signal, guard) => {
@@ -1142,4 +1160,96 @@ test('subagents and compact/clear replacement lifecycle cannot claim the naming 
   const created = await f.controller.execute(f.request(), f.invocation), id = created.worktree.id, child = f.agents.get(created.sessionId);
   child.session.header.origin = 'subagent'; const namer = new FirstMessageNamer(f.ctx, f.controller); namer.attach(child); message(child, 'Subagent'); await namer.close(); assert.equal(llm.calls.length, 0);
   delete child.session.header.origin; const replaced = new FirstMessageNamer(f.ctx, f.controller); replaced.attach(child, 'compact'); await namingPhase(f, id, 'skipped'); await replaced.close(); assert.equal(llm.calls.length, 0);
+});
+
+test('release request shape is exact, requires one target, and takeover is reopen-only', async t => {
+  const f = await fixture(t); const id = randomUUID();
+  for (const invalid of [
+    { action: 'release' as const },
+    { action: 'release' as const, id, localBranch: 'branch-000' },
+    { action: 'release' as const, id, repoPath: f.repo },
+    { action: 'release' as const, id, takeover: true },
+  ]) await assert.rejects(f.controller.execute(invalid, f.invocation), errorCode('INVALID_REQUEST'));
+  assert.equal(f.calls.length, 0);
+  // A well-formed reopen request with takeover reaches composition checks instead of the parser.
+  await assert.rejects(f.controller.execute({ action: 'reopen' as const, sourceSessionId: 'source', localBranch: 'branch-000', localOid: 'a'.repeat(40), takeover: true }, f.invocation), errorCode('MISSING_CLEANUP'));
+  await assert.rejects(f.controller.execute({ action: 'reopen' as const, sourceSessionId: 'source', localBranch: 'branch-000', localOid: 'a'.repeat(40), takeover: 'yes' as unknown as boolean }, f.invocation), errorCode('INVALID_REQUEST'));
+});
+
+test('release requires full access and is unavailable while plan mode is active', async t => {
+  const options: FixtureOptions = {}; const f = await fixture(t, options);
+  const created = await f.controller.execute(f.request(), f.invocation);
+  options.actualBranches = { [created.worktree.checkoutRoot]: 'branch-000' };
+  f.policy.set(f.actor.id, 'workspace-write');
+  await assert.rejects(f.controller.execute({ action: 'release' as const, localBranch: 'branch-000' }, f.invocation), errorCode('FULL_ACCESS_REQUIRED'));
+  f.policy.set(f.actor.id, 'danger-full-access');
+  f.plans.set(f.actor.id, { active: true, pending: false });
+  await assert.rejects(f.controller.execute({ action: 'release' as const, localBranch: 'branch-000' }, { ...f.invocation, origin: 'tool' }), errorCode('PLAN_MODE'));
+  assert.equal(f.calls.filter(([kind]) => kind === 'releaseCheckout').length, 0);
+});
+
+test('release transfers a managed holder to its recorded branch and updates the record and cached status', async t => {
+  const options: FixtureOptions = {}; const f = await fixture(t, options);
+  const created = await f.controller.execute(f.request(), f.invocation), holderRoot = created.worktree.checkoutRoot, managedBranch = created.worktree.branch!;
+  options.actualBranches = { [holderRoot]: 'branch-000' };
+  const result = await f.controller.execute({ action: 'release' as const, localBranch: 'branch-000' }, f.invocation);
+  assert.equal(result.branch, 'branch-000'); assert.equal(result.released.length, 1);
+  const released = result.released[0]!;
+  assert.equal(released.worktreeId, created.worktree.id); assert.equal(released.checkoutRoot, holderRoot);
+  assert.equal(released.previousBranch, 'branch-000'); assert.equal(released.branch, managedBranch);
+  assert.deepEqual(f.calls.find(([kind]) => kind === 'releaseCheckout')!.slice(1), [holderRoot, 'branch-000', managedBranch]);
+  assert.equal(f.store.worktrees.get(created.worktree.id)!.branch, managedBranch);
+  assert.deepEqual(f.controller.cachedStatus(created.worktree.id), { ...state, branch: managedBranch });
+});
+
+test('release by id detaches a managed checkout that holds its own recorded branch', async t => {
+  const options: FixtureOptions = {}; const f = await fixture(t, options);
+  const created = await f.controller.execute(f.request(), f.invocation), holderRoot = created.worktree.checkoutRoot, managedBranch = created.worktree.branch!;
+  options.actualBranches = { [holderRoot]: managedBranch };
+  const result = await f.controller.execute({ action: 'release' as const, id: created.worktree.id }, f.invocation);
+  assert.equal(result.branch, managedBranch); assert.equal(result.released[0]!.branch, null);
+  assert.deepEqual(f.calls.find(([kind]) => kind === 'releaseCheckout')!.slice(1), [holderRoot, managedBranch, null]);
+  assert.equal(f.store.worktrees.get(created.worktree.id)!.branch, null);
+  assert.equal(f.controller.cachedStatus(created.worktree.id)!.branch, null);
+});
+
+test('release refuses foreign, unavailable, busy and unready holders without mutating any checkout', async t => {
+  const options: FixtureOptions = {}; const f = await fixture(t, options);
+  const created = await f.controller.execute(f.request(), f.invocation), holderRoot = created.worktree.checkoutRoot, id = created.worktree.id;
+  options.actualBranches = { [holderRoot]: 'branch-000' };
+  assert.deepEqual(await f.controller.execute({ action: 'release' as const, localBranch: 'branch-001' }, f.invocation), { branch: 'branch-001', released: [] });
+  const foreign = resolve(f.directory, 'foreign'); await mkdir(foreign);
+  options.extraHolders = [{ root: foreign, branch: 'branch-000' }];
+  await assert.rejects(f.controller.execute({ action: 'release' as const, localBranch: 'branch-000' }, f.invocation), errorCode('BRANCH_HELD_OUTSIDE_PLUGIN'));
+  options.extraHolders = [{ root: foreign, branch: 'branch-000', canonical: null }];
+  await assert.rejects(f.controller.execute({ action: 'release' as const, localBranch: 'branch-000' }, f.invocation), errorCode('HOLDER_NOT_READY'));
+  options.extraHolders = [];
+  const busy = f.agent(randomUUID(), holderRoot); busy.status = 'running';
+  await assert.rejects(f.controller.execute({ action: 'release' as const, localBranch: 'branch-000' }, f.invocation), errorCode('BUSY'));
+  busy.status = 'idle';
+  await f.store.worktrees.put(id, { ...f.store.worktrees.get(id)!, state: 'recovery-required' });
+  await assert.rejects(f.controller.execute({ action: 'release' as const, localBranch: 'branch-000' }, f.invocation), errorCode('RECOVERY_REQUIRED'));
+  assert.equal(f.calls.filter(([kind]) => kind === 'releaseCheckout').length, 0);
+  assert.equal(f.store.worktrees.get(id)!.branch, created.worktree.branch);
+});
+
+test('release reports missing branches, detached holders and uncertain completion', async t => {
+  const options: FixtureOptions = {}; const f = await fixture(t, options);
+  const created = await f.controller.execute(f.request(), f.invocation), holderRoot = created.worktree.checkoutRoot, id = created.worktree.id;
+  await assert.rejects(f.controller.execute({ action: 'release' as const, localBranch: 'absent-branch' }, f.invocation), errorCode('LOCAL_BRANCH_NOT_FOUND'));
+  options.actualBranches = { [holderRoot]: null };
+  await assert.rejects(f.controller.execute({ action: 'release' as const, id }, f.invocation), errorCode('BRANCH_NOT_HELD'));
+  options.actualBranches = { [holderRoot]: 'branch-000' }; options.releaseFailure = true;
+  await assert.rejects(f.controller.execute({ action: 'release' as const, localBranch: 'branch-000' }, f.invocation), errorCode('RELEASE_RECOVERY_REQUIRED'));
+  assert.equal(f.store.worktrees.get(id)!.branch, created.worktree.branch);
+});
+
+test('release keeps archived holders releasable and refuses an unknown id', async t => {
+  const options: FixtureOptions = {}; const f = await fixture(t, options);
+  const created = await f.controller.execute(f.request(), f.invocation), holderRoot = created.worktree.checkoutRoot, id = created.worktree.id;
+  await f.controller.execute({ action: 'archive' as const, id, archived: true }, f.invocation);
+  options.actualBranches = { [holderRoot]: 'branch-000' };
+  const result = await f.controller.execute({ action: 'release' as const, localBranch: 'branch-000' }, f.invocation);
+  assert.equal(result.released[0]!.worktreeId, id);
+  await assert.rejects(f.controller.execute({ action: 'release' as const, id: randomUUID() }, f.invocation), errorCode('NOT_FOUND'));
 });

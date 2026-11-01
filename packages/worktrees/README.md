@@ -345,8 +345,12 @@ explicit choice, not a fallback.
   project main/default. Missing, moved, or repointed sources are refused visibly.
 - Selecting its already-current branch is a verified no-op, even with Local
   unsaved files. A different branch needs existing Full access, a clean/idle Local
-  checkout, an unused branch, and an unchanged commit selection. No force, reset,
-  stash, merge, or automatic application of old worktree changes is performed.
+  checkout, an unchanged commit selection, and no branch held by another checkout —
+  or an explicit **take over the held branch** confirmation, which transfers the
+  branch from a plugin-managed checkout first (see *Branch ownership and release*).
+  A branch held by an unmanaged worktree is shown but cannot be taken over. No
+  force, reset, stash, merge, or automatic application of old worktree changes is
+  performed.
 - Recovery creates one **new internal session ID**, with the complete validated
   history (including post-turn title/settings/goal events), normal preset/model/
   permission/approval/plan semantics, and truthful Local backing. Goals remain
@@ -392,6 +396,44 @@ removed files or an older branch; verify current Local files before writing.
 Generic headless `--session-id` cannot transparently adopt these forked
 continuations in the pinned runtime. Use the Web recovery flow, or explicit
 `/worktree reopen-info` / `git_worktree` from another ordinary live conversation.
+
+## Branch ownership and release
+
+Git allows a local branch to be checked out in **one worktree at a time**. The plugin
+never weakens that rule: each managed checkout is created detached and given its own
+`worktree/<id>` branch, so a shared branch such as `main` normally stays in the
+original Local checkout. The rule still becomes visible when a managed checkout is
+moved onto a shared branch — for example after merging inside it — because the
+original Local checkout can no longer switch to that branch.
+
+`release` transfers that ownership back without changing any file, commit or ref:
+
+```text
+/worktree release {"localBranch":"main"}
+/worktree release {"id":"<worktree uuid>"}
+git_worktree { "action": "release", "localBranch": "main" }
+```
+
+- **Managed only.** Only checkouts recorded by this plugin can be released. A branch
+  held by a foreign or manually created worktree is refused with its path; that
+  owner must detach it. The primary checkout is never a release target.
+- **No file change.** The managed checkout's HEAD commit is re-homed to its own
+  recorded branch when that branch is at the same commit and free, otherwise the
+  checkout is detached at the same HEAD. Files, index state, ignored files and every
+  ref are verified unchanged before and after.
+- **Explicit and idle.** Release requires existing Full access, a ready record, and
+  idle holder runtimes; every holder is validated before any is changed. There is no
+  automatic background release.
+- **Same action in recovery.** The Local recovery chooser lists the branch holders,
+  warns, and requires the same confirmation before it takes a branch over.
+- **No shared-branch mode.** `git switch --ignore-other-worktrees` is deliberately
+  not used: two live checkouts on one branch would let a commit in either silently
+  invalidate the other's files.
+
+The manager shows the branch Git actually reports next to the recorded branch and
+offers **Release branch** when they differ. After a release, the ordinary
+`git switch main` works in the original Local checkout; the plugin never switches
+that checkout itself.
 
 ## Manager, reminders and guarded Local handoff
 
@@ -632,10 +674,14 @@ means `list`. IDs and operation/preview IDs are UUIDs. Example read operations:
 ```
 
 Actions: `list`, `status`, `branches`, `create`, `start`, `branch`, `protect`,
-`archive`, `preview`, `export`, `handoff`, `reopen-info`, `reopen`. Recovery inspection
+`archive`, `preview`, `export`, `handoff`, `reopen-info`, `reopen`, `release`.
+`release` accepts exactly one of `id` (free the branch that managed checkout holds)
+or `localBranch` (free it from every plugin-managed holder; `repoPath` defaults to
+the caller's Local folder), and returns the verified transfers. Recovery inspection
 requires the historical `sourceSessionId`; optional `cursor`/`limit` page one
 cached Local branch generation. `reopen` requires that ID and an explicitly
-user-selected `localBranch`/`localOid`. It returns the exact Local continuation
+user-selected `localBranch`/`localOid`; add `takeover: true` only after the user
+confirms transferring that branch from a plugin-managed checkout. It returns the exact Local continuation
 and GC warning facts, not an applied patch or recreated checkout. `repoPath` defaults to the caller's
 execution directory where supported. `create` requires a new `operationId` and
 either `branchSource: "local"` with `localBranch` (plus `localOid` to refuse a

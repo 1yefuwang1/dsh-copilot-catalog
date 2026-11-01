@@ -1,8 +1,8 @@
 import { Config, apply, GitOperations as RootGitOperations, WorktreeError, ProjectController as RootProjectController, type WorktreeConfig as RootConfig, type CommandEnvelope, type ProjectRecord as RootProjectRecord } from '@1yefuwang1/dsh-worktrees';
 import { ProjectController, parseProjectRequest, projectParameterSchema, resolveMainFolder, type ProjectRequest, type ProjectThreadBinding, type ProjectSnapshot, type ProjectStartResult, type ProjectRemoveResult } from '@1yefuwang1/dsh-worktrees/projects';
-import { GitOperations, type RemovalIdentity, type RemovalState } from '@1yefuwang1/dsh-worktrees/git';
+import { GitOperations, type RemovalIdentity, type RemovalState, type ReleaseCheckoutInput, type WorktreeBranchHolder } from '@1yefuwang1/dsh-worktrees/git';
 import { NAMING_DEFAULTS, namingConfig, safeSlug } from '@1yefuwang1/dsh-worktrees/naming';
-import type { WorktreeConfig, GitExecutor, GitRunSpec, GitRunResult, RepositoryInfo, RemoteBranches, LocalBranches, BranchSource, CheckoutState, CreateCheckoutInput, CreatedCheckout, SnapshotInput, WorktreePreview, WorktreeRecord, SessionSettings, SessionResult, WorktreeRequest, WorktreeAction, OperationRecord, OperationPhase, WorktreeCleanupSummary, WorktreeReopenInfo, WorktreeReopenResult } from '@1yefuwang1/dsh-worktrees/types';
+import type { WorktreeConfig, GitExecutor, GitRunSpec, GitRunResult, RepositoryInfo, RemoteBranches, LocalBranches, BranchSource, CheckoutState, CreateCheckoutInput, CreatedCheckout, SnapshotInput, WorktreePreview, WorktreeRecord, SessionSettings, SessionResult, WorktreeRequest, WorktreeAction, OperationRecord, OperationPhase, WorktreeCleanupSummary, WorktreeReopenInfo, WorktreeReopenResult, BranchHolder, ReleasedBranchHolder, WorktreeReleaseResult } from '@1yefuwang1/dsh-worktrees/types';
 import type { Context } from '@deepseek-ai/cordis';
 
 // Compile-only consumer of the exported declarations, never executed against Git.
@@ -46,7 +46,21 @@ const reclaimState: Promise<RemovalState> = git.removalState(record, repository.
 const verifyLocal: Promise<CheckoutState> = git.switchLocalBranch(repository.root, repository.commonDir, 'main', repository.head, undefined, true);
 const recoveryQuery: WorktreeRequest = { action: 'reopen-info', sourceSessionId: operation.sourceSessionId, limit: 100 };
 const recoveryRequest: WorktreeRequest = { action: 'reopen', sourceSessionId: operation.sourceSessionId, localBranch: 'main', localOid: repository.head };
-void [cleanupConfig, cleanup.phase, reopenInfo.revision, reopenInfo.pendingSessionId, reopened.cwd, reclaimState, verifyLocal, recoveryQuery, recoveryRequest];
+const takeoverRequest: WorktreeRequest = { ...recoveryRequest, takeover: true };
+const releaseById: WorktreeRequest = { action: 'release', id: record.id };
+const releaseBranch: WorktreeRequest = { action: 'release', localBranch: 'main', repoPath: repository.root };
+const branchHolders: Promise<WorktreeBranchHolder[]> = git.branchHolders(repository.root);
+const releaseInput: ReleaseCheckoutInput = { repository, checkoutRoot: record.checkoutRoot, branch: 'main', preferred: 'worktree/one' };
+const released: Promise<CheckoutState> = git.releaseCheckout(releaseInput);
+const takeoverSwitch: Promise<CheckoutState> = git.switchLocalBranchTakingOver(repository.root, repository.commonDir, 'main', repository.head, undefined, async holders => { const first: WorktreeBranchHolder | undefined = holders[0]; void first; });
+declare const holder: BranchHolder;
+declare const releasedHolder: ReleasedBranchHolder;
+declare const releaseResult: WorktreeReleaseResult;
+const holderBranch: string = holder.branch;
+const releasedHead: string = releasedHolder.head;
+const releasedTotal: number = releaseResult.released.length;
+const infoHolders: BranchHolder[] | undefined = reopenInfo.holders;
+void [cleanupConfig, cleanup.phase, reopenInfo.revision, reopenInfo.pendingSessionId, reopened.cwd, reclaimState, verifyLocal, recoveryQuery, recoveryRequest, takeoverRequest, releaseById, releaseBranch, branchHolders, released, takeoverSwitch, holderBranch, releasedHead, releasedTotal, infoHolders];
 // @ts-expect-error source modes cannot silently mix local selection and remote fetch fields
 const mixedCreateInput: CreateCheckoutInput = { ...localCreateInput, remote: 'origin' };
 void [localBranches, localCreated, localRequest, mixedCreateInput];
@@ -87,6 +101,8 @@ const errorCode: string = error.code;
 
 // @ts-expect-error physical deletion is not an exposed action
 const invalidAction: WorktreeAction = 'delete';
+// Release target exclusivity is enforced by the runtime request parser, not the shape.
+const releaseShape: WorktreeRequest = { action: 'release', id: record.id };
 // @ts-expect-error continuation modes are explicit
 const invalidMode: WorktreeRequest = { action: 'start', sessionMode: 'reuse' };
 // @ts-expect-error unknown envelope versions are not accepted
@@ -95,4 +111,4 @@ const invalidEnvelope: CommandEnvelope = { v: 2, ok: true, data: {} };
 const invalidExecutor: GitExecutor = async () => ({ stdout: '', stderr: '', exitCode: '0' });
 // @ts-expect-error Git operations require both an executor and the typed config
 new GitOperations(executor);
-void [Config, typedApply, git, branches, status, created, preview, request, envelope, failure, errorCode, invalidAction, invalidMode, invalidEnvelope, invalidExecutor];
+void [Config, typedApply, git, branches, status, created, preview, request, envelope, failure, errorCode, invalidAction, releaseShape, invalidMode, invalidEnvelope, invalidExecutor];

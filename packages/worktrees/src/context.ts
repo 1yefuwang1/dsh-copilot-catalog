@@ -33,6 +33,7 @@ export function renderWorktreeContext(record: WorktreeRecord, state?: CheckoutSt
     record.branchSource === 'local'
       ? 'The base is a creation-time local commit snapshot pinned without fetching, not continuous synchronization. Git refs and repository metadata remain shared.'
       : 'The base is a creation-time fetched snapshot, not continuous synchronization. Git refs and repository metadata remain shared.',
+    'Git allows a local branch to be checked out in only one worktree. Keep this managed checkout on its own branch; switching it onto a shared branch blocks that branch in the original Local checkout. Use the worktree tool\'s release action to give the branch back without changing this checkout\'s files or commits.',
     'Work in the current session directory. Preserve the local checkout unless an explicit handoff is requested. Historical paths may refer to an earlier checkout; verify before writing.',
   ].join('\n');
 }

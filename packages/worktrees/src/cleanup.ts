@@ -9,6 +9,7 @@ import type { SessionHandle } from '@deepseek-ai/dsh-session-persistence';
 import type {} from '@deepseek-ai/dsh-workspace';
 import type { SessionObservation } from '@deepseek-ai/dsh-session-query';
 import { GitOperations } from './git.js';
+import { readBranchHolders } from './branch-release.js';
 import { SessionBootstrap, type ColdFactoryHold } from './sessions.js';
 import { cleanupSummary, type CleanupReceipt, type CleanupStore, type ReopenReceipt } from './cleanup-store.js';
 import { abortIfRequested, failureOf, WorktreeError } from './errors.js';
@@ -21,7 +22,7 @@ import type { LocalBranches, WorktreeCleanupSummary, WorktreeConfig, WorktreeRec
 
 const DAY = 86400000;
 export const CLEANUP_INTERVAL_MS = 3600000;
-type CleanupGit = Pick<GitOperations, 'discover' | 'localBranches' | 'inspectRemoval' | 'preserveRemovalHead' | 'removeManagedCheckout' | 'removalState' | 'switchLocalBranch'>;
+type CleanupGit = Pick<GitOperations, 'discover' | 'localBranches' | 'inspectRemoval' | 'preserveRemovalHead' | 'removeManagedCheckout' | 'removalState' | 'switchLocalBranch' | 'branchHolders' | 'releaseCheckout' | 'switchLocalBranchTakingOver'>;
 interface Agents { get(id: string): Agent | undefined; list(): Agent[] }
 interface Query { listSessions(signal?: AbortSignal): Promise<{ header: SessionHeader }[]>; observeSession(id: SessionId, options: { signal?: AbortSignal; projectionMode: 'all' }): Promise<SessionObservation> }
 interface Persistence { stat(id: SessionId, options?: { signal?: AbortSignal }): Promise<{ header: SessionHeader; revision: unknown } | undefined>; open(id: SessionId, access: 'write', options?: { signal?: AbortSignal }): Promise<SessionHandle> }
@@ -78,7 +79,7 @@ export class WorktreeCleanup {
   private revision = 0;
   private scheduled = false;
   private closed = false;
-  constructor(private readonly owner: Context, private readonly config: WorktreeConfig, private readonly worktrees: WorktreeStore, private readonly store: CleanupStore, private readonly controller: Pick<WorktreeController, 'withRepositoryMaintenance' | 'hasPendingEffects' | 'withLocalClaims'>, private readonly deps: CleanupDependencies = {}) {
+  constructor(private readonly owner: Context, private readonly config: WorktreeConfig, private readonly worktrees: WorktreeStore, private readonly store: CleanupStore, private readonly controller: Pick<WorktreeController, 'withRepositoryMaintenance' | 'hasPendingEffects' | 'withLocalClaims' | 'releaseManagedBranchFor'>, private readonly deps: CleanupDependencies = {}) {
     this.bootstrap = deps.bootstrap ?? new SessionBootstrap(owner);
     for (const [, row] of store.reopens.entries()) if (row.phase !== 'ready') this.pendingTargets.add(row.sessionId);
   }
@@ -89,6 +90,9 @@ export class WorktreeCleanup {
     return result;
   }
   summary(id: string): WorktreeCleanupSummary | undefined { const row = this.store.cleanup.get(id); return row === undefined ? undefined : cleanupSummary(row); }
+  private recordFor(checkoutRoot: string): WorktreeRecord | undefined {
+    return [...this.worktrees.worktrees.entries()].map(([, row]) => row).find(row => row.checkoutRoot === checkoutRoot);
+  }
   recoveryFor(sessionId: string): { cleanup: WorktreeCleanupSummary; oldCheckout: string } | undefined {
     const reopen = [...this.store.reopens.entries()].map(([, row]) => row).find(row => row.sessionId === sessionId);
     const cleanup = reopen === undefined ? undefined : this.store.cleanup.get(reopen.worktreeId);
@@ -429,6 +433,9 @@ export class WorktreeCleanup {
     const repository = await git.discover(source.cleanup.originalFolder, signal);
     if (repository.commonDir !== source.record.commonDir || repository.root !== source.cleanup.sourceRoot) throw new WorktreeError('SOURCE_CHANGED', 'The original Local checkout no longer identifies the saved repository.');
     info.repository = { root: repository.root, commonDir: repository.commonDir, head: repository.head, branch: repository.branch };
+    // Ownership facts let the chooser warn and take over instead of failing after a choice.
+    const holders = await readBranchHolders({ git, recordFor: checkoutRoot => this.recordFor(checkoutRoot) }, repository, signal);
+    if (holders.length > 0) info.holders = holders.slice(0, 100);
     let generation: { sourceId: string; value: LocalBranches }, generationId: string, offset = 0;
     if (options.cursor === undefined) {
       generationId = randomUUID(); generation = { sourceId: source.historicalId, value: await git.localBranches(repository.root, signal) };
@@ -516,7 +523,14 @@ export class WorktreeCleanup {
           const state = await this.controller.withLocalClaims([original.root], { agent: actor, origin: invocation.origin, signal }, async (maintenance, guardClaims) => {
             const authorize = () => { guard(); requireFullAccess(actor); guardClaims(); };
             const callerGit = new GitOperations(createExecutor(actor, this.config, this.shutdown.signal, authorize), this.config, authorize);
-            return callerGit.switchLocalBranch(receipt!.cwd, receipt!.commonDir, receipt!.localBranch, receipt!.localOid, maintenance);
+            // Takeover transfers the branch from managed holders only after every Local
+            // precondition passed, so a dirty or unsafe Local checkout never releases one.
+            const releaseHolders = request.takeover === true ? async (): Promise<void> => {
+              await this.controller.releaseManagedBranchFor(original, receipt!.localBranch, request, { agent: actor, origin: invocation.origin, signal: maintenance }, callerGit);
+            } : undefined;
+            return releaseHolders === undefined
+              ? callerGit.switchLocalBranch(receipt!.cwd, receipt!.commonDir, receipt!.localBranch, receipt!.localOid, maintenance)
+              : callerGit.switchLocalBranchTakingOver(receipt!.cwd, receipt!.commonDir, receipt!.localBranch, receipt!.localOid, maintenance, releaseHolders);
           }, [child.agent]);
           branch = state.branch;
         } else {

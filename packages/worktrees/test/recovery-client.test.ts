@@ -17,7 +17,7 @@ interface MockRequest {
   sessionId?: string; sourceSessionId?: string; branchSource?: string; remote?: string;
   remoteIdentity?: string; remoteBranch?: string; localBranch?: string; localOid?: string;
   repoPath?: string; cursor?: string; limit?: number; title?: string; folders?: string[];
-  mainFolder?: string; firstPrompt?: string; sessionMode?: string; requireBlankSource?: boolean;
+  mainFolder?: string; firstPrompt?: string; sessionMode?: string; requireBlankSource?: boolean; takeover?: boolean;
 }
 interface MockPayload { v: number; actorId?: string; request: MockRequest; after?: number; }
 type RpcArgs = [channel: string, endpoint: string, payload: MockPayload, signal: AbortSignal];
@@ -373,4 +373,32 @@ test('failed Refresh preserves persistent cleanup facts/block and refuses stale 
 test('malformed nonadvancing lifecycle revision fails once instead of creating a polling spin', async (t: import('node:test').TestContext) => {
   const f = fixture(t, { reply(_request: MockRequest, _signal: AbortSignal, after: number | undefined) { if (after !== undefined) return success(info); } }); await flush();
   assert.equal(f.calls.length, 2); assert.match(f.api.store.getSnapshot().error, /lifecycle-revision-not-advanced/);
+});
+
+test('branch holders and takeover are strictly validated and never invented', () => {
+  const holders = [{ branch: 'feature/retained', root: '/managed/tree', managed: true, worktreeId: '9c2b4e9a-1f3e-4b0e-8f4e-8b1a2c3d4e5f', displayName: 'Retained checkout' }];
+  assert.equal((p.recoveryData({ action: 'reopen-info', sourceSessionId: 'old' }, { ...info, holders })).holders.length, 1);
+  assert.equal((p.recoveryData({ action: 'reopen-info', sourceSessionId: 'old' }, { ...info, holders: [] })).holders.length, 0);
+  for (const bad of [
+    { ...info, holders: 'none' },
+    { ...info, holders: [{ branch: 'feature/retained', root: '/managed/tree', managed: 'yes' }] },
+    { ...info, holders: [{ branch: 'feature/retained', root: 'relative/path', managed: true }] },
+    { ...info, holders: [{ branch: 'feature/retained', root: '/managed/tree', managed: true, worktreeId: 'not-a-uuid' }] },
+    { ...info, holders: [{ branch: 'feature/retained', root: '/managed/tree', managed: true, displayName: 7 }] },
+  ]) assert.throws(() => p.recoveryData({ action: 'reopen-info', sourceSessionId: 'old' }, bad), (error: VmValue) => error.kind === 'decode');
+  assert.equal(p.recoveryRequest({ action: 'reopen', sourceSessionId: 'old', localBranch: 'main', localOid: A, takeover: true }).takeover, true);
+  assert.throws(() => p.recoveryRequest({ action: 'reopen', sourceSessionId: 'old', localBranch: 'main', localOid: A, takeover: 'yes' }), (error: VmValue) => error.kind === 'decode');
+});
+
+test('takeover is opt-in per selection and cleared by a query or branch change', async (t: import('node:test').TestContext) => {
+  const holders = [{ branch: 'feature/retained', root: '/managed/tree', managed: true }];
+  const f = fixture(t, { initial: { ...info, holders } }); await flush();
+  assert.equal(f.api.store.getSnapshot().takeover, false);
+  assert.equal(f.api.choose('feature/retained'), true);
+  f.api.setTakeover(true); assert.equal(f.api.store.getSnapshot().takeover, true);
+  f.api.setQuery('feat'); assert.equal(f.api.store.getSnapshot().takeover, false, 'a query change clears the confirmation');
+  f.api.setTakeover(true); assert.equal(f.api.choose('main'), true); assert.equal(f.api.store.getSnapshot().takeover, false, 'a branch change clears the confirmation');
+  f.api.choose('feature/retained'); f.api.setTakeover(true);
+  await f.api.resume(); await flush();
+  assert.equal(f.calls.find(call => call.request.action === 'reopen')!.request.takeover, true);
 });

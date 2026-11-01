@@ -50,6 +50,17 @@ export interface RemovalIdentity {
 export type RemovalState = 'present' | 'absent' | 'partial' | 'replaced';
 type MetadataIdentity = { data: string; identity: string; hash: string };
 type Registration = { root: string; locked: boolean; branch: string | null };
+/** Read-only observation of one registered checkout's branch binding. */
+export interface WorktreeBranchHolder { root: string; canonical: string | null; branch: string | null; locked: boolean }
+export interface ReleaseCheckoutInput {
+  repository: RepositoryInfo;
+  checkoutRoot: string;
+  /** The branch the checkout currently holds; the caller has already verified it. */
+  branch: string;
+  /** Give the branch back to this exact local branch when it is at HEAD and free; otherwise detach. */
+  preferred: string | null;
+  signal?: AbortSignal;
+}
 
 function checkoutProgress(input: CreateCheckoutInput, stage: 'fetching' | 'creating'): void {
   // Observation is not admission. Also absorb rejected promises from JS listeners.
@@ -71,6 +82,10 @@ function validPath(value: string): void {
   if (!value || value.includes('\0') || (path.sep === '\\' && value.includes('\\')) || path.posix.isAbsolute(value) || value.split('/').some(part => !part || part === '.' || part === '..' || part.toLowerCase() === '.git')) fail('UNSAFE_PATH', 'An unsupported or unsafe repository path was encountered.');
 }
 function hash(data: string | Buffer): string { return createHash('sha256').update(data).digest('hex'); }
+function holderMessage(holders: readonly WorktreeBranchHolder[]): string {
+  const shown = holders.slice(0, 3).map(holder => holder.canonical ?? holder.root);
+  return `The selected branch is already checked out elsewhere: ${shown.join(', ')}${holders.length > shown.length ? ` (+${holders.length - shown.length} more)` : ''}.`;
+}
 function line(data: Buffer): string { const value = text(data); if (!value.endsWith('\n')) fail('TRUNCATED_OUTPUT', 'Git returned an incomplete result.'); return value.slice(0, -1); }
 
 /** Strict Git engine. Its executor must enforce byte bounds, deadlines and caller sandbox access. */
@@ -259,6 +274,16 @@ export class GitOperations {
 
   /** Safe Local reopening; verifyOnly structurally prohibits every switch path. */
   async switchLocalBranch(sourcePath: string, expectedCommon: string, localBranch: string, localOid: string, signal?: AbortSignal, verifyOnly = false): Promise<CheckoutState> {
+    return this.switchLocal(sourcePath, expectedCommon, localBranch, localOid, signal, { verifyOnly });
+  }
+
+  /** Reopen the Local checkout, transferring a held branch from managed checkouts first. */
+  async switchLocalBranchTakingOver(sourcePath: string, expectedCommon: string, localBranch: string, localOid: string, signal: AbortSignal | undefined, releaseHolders: (holders: readonly WorktreeBranchHolder[]) => Promise<void>): Promise<CheckoutState> {
+    return this.switchLocal(sourcePath, expectedCommon, localBranch, localOid, signal, { releaseHolders });
+  }
+
+  private async switchLocal(sourcePath: string, expectedCommon: string, localBranch: string, localOid: string, signal: AbortSignal | undefined, options: { verifyOnly?: boolean; releaseHolders?: (holders: readonly WorktreeBranchHolder[]) => Promise<void> } = {}): Promise<CheckoutState> {
+    const verifyOnly = options.verifyOnly === true;
     if (!localBranch || localBranch.startsWith('-') || !oidPattern.test(localOid)) fail('INVALID_REF', 'An exact local branch and commit selection are required.');
     const selectedPath = await this.directoryIdentity(sourcePath);
     const source = await this.discover(sourcePath, signal);
@@ -294,6 +319,11 @@ export class GitOperations {
       return result.state;
     }
     if (verifyOnly) fail('LOCAL_BRANCH_CHANGED', 'Verification cannot mutate the Local checkout.');
+    // The release runs once even though this guard is evaluated repeatedly and again
+    // as the spawn preflight; later evaluations only re-read the holders.
+    let released = false;
+    const currentHolders = async (): Promise<WorktreeBranchHolder[]> => (await this.branchHolders(source.root, signal)).filter(holder =>
+      holder.branch === (selectedRef === null ? null : localBranch) && (holder.canonical ?? holder.root) !== source.root);
     const ensureSwitchable = async (): Promise<void> => {
       const current = await validateIdentity();
       if (current.head !== source.head || current.branch !== source.branch) fail('BRANCH_CHANGED', 'Local HEAD changed before branch selection.');
@@ -309,7 +339,12 @@ export class GitOperations {
         const target = text((await this.run(source.root, ['cat-file', 'blob', entry.oid], signal)).stdout);
         if (!target || path.isAbsolute(target) || !inside(source.root, path.resolve(source.root, path.dirname(entry.path), target))) fail('UNSAFE_SYMLINK', 'The selected Local tree contains an escaping symlink.');
       }
-      for (const registration of await this.registrations(source.root, signal)) if (registration.branch === selectedRef && path.resolve(registration.root) !== source.root) fail('BRANCH_IN_USE', 'The selected branch is already checked out elsewhere.');
+      const held = await currentHolders();
+      if (held.length === 0) return;
+      if (verifyOnly || options.releaseHolders === undefined) fail('BRANCH_IN_USE', holderMessage(held));
+      if (!released) { released = true; await options.releaseHolders(held); }
+      const remaining = await currentHolders();
+      if (remaining.length > 0) fail('BRANCH_IN_USE', 'The selected branch is still checked out elsewhere after the release attempt.');
     };
     await ensureSwitchable();
     await ensureSwitchable();
@@ -328,6 +363,72 @@ export class GitOperations {
     }
   }
 
+  /** Read-only branch ownership; canonical roots and short branch names. */
+  async branchHolders(repoRoot: string, signal?: AbortSignal): Promise<WorktreeBranchHolder[]> {
+    const registrations = await this.registrations(repoRoot, signal);
+    return Promise.all(registrations.map(async registration => ({
+      root: registration.root,
+      // Same canonical matching as registered(): an unresolvable root stays raw.
+      canonical: await realpath(registration.root).catch(() => null),
+      branch: registration.branch === null ? null : registration.branch.slice(11),
+      locked: registration.locked,
+    })));
+  }
+
+  /**
+   * Transfer a held branch out of one managed linked checkout without changing its
+   * files, index, HEAD commit or refs. The caller has already established ownership,
+   * readiness and idle claims; this method re-verifies the checkout identity itself.
+   */
+  async releaseCheckout(input: ReleaseCheckoutInput): Promise<CheckoutState> {
+    const { repository, checkoutRoot, branch, signal } = input;
+    if (!branch || branch === 'HEAD' || branch.startsWith('-')) fail('INVALID_REF', 'An exact held local branch is required.');
+    if (path.resolve(checkoutRoot) !== checkoutRoot || await realpath(checkoutRoot).catch(() => null) !== checkoutRoot) fail('CHECKOUT_IDENTITY_CHANGED', 'The managed checkout path is not canonical.');
+    if (checkoutRoot === repository.root) fail('INVALID_TARGET', 'The primary checkout cannot release a branch from itself.');
+    if (!(await lstat(path.join(checkoutRoot, '.git'))).isFile()) fail('CHECKOUT_IDENTITY_CHANGED', 'The managed checkout must have a Git admin pointer file.');
+    const info = await this.identity(checkoutRoot, repository.commonDir, signal);
+    await this.registered(info, repository.root, signal);
+    const before = await this.statusRaw(checkoutRoot, signal);
+    if (before.state.branch !== branch) fail('HEAD_CHANGED', 'The managed checkout no longer holds the branch being released.');
+    const head = before.state.head;
+    const indexBefore = (await this.run(checkoutRoot, ['ls-files', '--stage', '-z'], signal)).stdout;
+    const holders = await this.branchHolders(repository.root, signal);
+    const heldElsewhere = (name: string): boolean => holders.some(holder => holder.branch === name && (holder.canonical ?? holder.root) !== checkoutRoot);
+    // Re-homing must be a same-commit, free, exact local branch; otherwise detach at HEAD.
+    // Both outcomes leave every file and the index exactly as they are.
+    const preferred = input.preferred !== null && input.preferred !== branch && !input.preferred.startsWith('-') && input.preferred !== 'HEAD'
+      && await this.directCommit(repository.root, `refs/heads/${input.preferred}`, signal) === head
+      && !heldElsewhere(input.preferred) ? input.preferred : null;
+    const preflight = async (): Promise<void> => {
+      const current = await this.identity(checkoutRoot, repository.commonDir, signal);
+      if (current.head !== head || current.branch !== branch) fail('HEAD_CHANGED', 'The managed checkout branch changed before release.');
+      await this.registered(current, repository.root, signal);
+      if (preferred === null) return;
+      const live = await this.branchHolders(repository.root, signal);
+      if (live.some(holder => holder.branch === preferred && (holder.canonical ?? holder.root) !== checkoutRoot)) fail('BRANCH_IN_USE', 'The preferred branch became checked out elsewhere before release.');
+      if (await this.directCommit(repository.root, `refs/heads/${preferred}`, signal) !== head) fail('BRANCH_CHANGED', 'The preferred branch moved before release.');
+    };
+    await preflight();
+    abortIfRequested(signal);
+    this.authorize();
+    try {
+      await this.run(checkoutRoot, preferred === null ? ['switch', '--detach', '--no-guess', '--', head] : ['switch', '--no-guess', '--no-overwrite-ignore', '--', preferred], signal, { preflight });
+      const after = await this.statusRaw(checkoutRoot, signal);
+      const indexAfter = (await this.run(checkoutRoot, ['ls-files', '--stage', '-z'], signal)).stdout;
+      if (after.state.head !== head || after.state.branch !== preferred || !indexAfter.equals(indexBefore) || !after.raw.equals(before.raw)) fail('RELEASE_RECOVERY_REQUIRED', 'The branch release result changed; inspect the managed checkout before continuing.');
+      return after.state;
+    } catch (error) {
+      // The spawn preflight runs before the process starts; those refusals prove no effect began.
+      if (error instanceof WorktreeError && ['HEAD_CHANGED', 'BRANCH_CHANGED', 'BRANCH_IN_USE', 'CHECKOUT_IDENTITY_CHANGED'].includes(error.code)) throw error;
+      throw new WorktreeError('RELEASE_RECOVERY_REQUIRED', 'Branch release may have begun; inspect the managed checkout before recovery. No reset, stash or rollback was attempted.', { targetMayHaveChanged: true, causeCode: error instanceof WorktreeError ? error.code : 'GIT_FAILED' });
+    }
+  }
+
+  async objectFormat(root: string, signal?: AbortSignal): Promise<'sha1' | 'sha256'> {
+    const format = line((await this.run(root, ['rev-parse', '--show-object-format'], signal)).stdout);
+    if (format !== 'sha1' && format !== 'sha256') fail('UNSUPPORTED_REPOSITORY', 'The repository object format is unsupported.');
+    return format;
+  }
   private async localBase(repository: RepositoryInfo, input: Extract<CreateCheckoutInput, { branchSource: 'local' }>): Promise<string> {
     const { signal, localBranch, localOid } = input;
     if (!localBranch || localBranch.startsWith('-')) fail('INVALID_REF', 'The selected local branch name is invalid.');

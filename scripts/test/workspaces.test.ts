@@ -125,13 +125,13 @@ test('publication allowlists and bounds preserve every existing leaf and explici
     'dsh-copilot-catalog': ['index', 'catalog', 'discovery', 'identity', 'plugin', 'runtime', 'types'],
     'dsh-copilot-search': ['index', 'auth', 'endpoint', 'errors', 'plugin', 'provider', 'refresh', 'responses', 'runtime', 'types'],
     'dsh-copilot-tool-schema': ['index', 'plugin', 'schema', 'types'],
-    '@1yefuwang1/dsh-worktrees': ['index', 'types', 'errors', 'runtime', 'schema', 'store', 'sessions', 'context', 'service', 'git', 'naming', 'rpc', 'projects', 'project-store', 'project-rpc', 'project-context', 'quiet-rpc', 'first-message', 'cleanup-store', 'cleanup', 'recovery-rpc'],
+    '@1yefuwang1/dsh-worktrees': ['index', 'types', 'errors', 'runtime', 'schema', 'store', 'sessions', 'context', 'service', 'branch-release', 'git', 'naming', 'rpc', 'projects', 'project-store', 'project-rpc', 'project-context', 'quiet-rpc', 'first-message', 'cleanup-store', 'cleanup', 'recovery-rpc'],
   };
   for (const [name, names] of Object.entries(modules)) {
     const policy = publicationPolicy(name);
     const extras = name === '@1yefuwang1/dsh-worktrees' ? ['dist/client.js', 'locale/en.json', 'icon.svg'] : [];
     assert.deepEqual(policy.files, [...common, ...names.flatMap(module => [`dist/${module}.js`, `dist/${module}.d.ts`]), ...extras].sort());
-    assert.equal(policy.maxBytes, name === '@1yefuwang1/dsh-worktrees' ? 850_000 : 150_000);
+    assert.equal(policy.maxBytes, name === '@1yefuwang1/dsh-worktrees' ? 875_000 : 150_000);
     assert.doesNotThrow(() => validatePublicationSize(name, policy.maxBytes - 1));
     assert.throws(() => validatePublicationSize(name, policy.maxBytes), /Unexpectedly large/u);
     assert.throws(() => validatePublicationSize(name, -1), /Unexpectedly large/u);
@@ -147,7 +147,7 @@ test('worktree tarball metadata rejects extra/missing files, wrong identity and 
   assert.equal(manifest.name, '@1yefuwang1/dsh-worktrees');
   assert.deepEqual(manifest.publishConfig, { access: 'public', registry: 'https://registry.npmjs.org/' });
   const files = publicationPolicy(manifest.name).files;
-  assert.equal(files.length, 50);
+  assert.equal(files.length, 52);
   const packed = { name: manifest.name, version: manifest.version, files: files.map(path => ({ path })) };
   assert.deepEqual(validatePublicationMetadata(manifest, packed), files);
   assert.throws(() => validatePublicationMetadata(manifest, { ...packed, files: [...packed.files, { path: 'src/service.ts' }] }), /Unexpected published files/u);

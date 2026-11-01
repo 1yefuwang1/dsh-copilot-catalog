@@ -971,6 +971,114 @@ test('Local branch-in-use, stale branch/HEAD selections and canonical repo ident
   assert.equal((await f.engine.status(f.local)).branch, 'topic/full/name');
 });
 
+async function heldBranchFixture(t: TestContext, id: string) {
+  const f = await localSwitchFixture(t), record = await f.create(id);
+  await f.git(record.checkoutRoot, 'switch', '--no-track', '-c', `worktree/${id}`);
+  // The managed checkout takes the shared branch after the Local checkout leaves it.
+  await f.git(f.local, 'switch', '-c', 'local/side');
+  await f.git(record.checkoutRoot, 'switch', 'reopen/selected');
+  const head = (await f.git(record.checkoutRoot, 'rev-parse', 'HEAD')).toString().trim();
+  // Mirror a completed merge: the recorded branch is fast-forwarded to the shared commit.
+  await f.git(f.local, 'branch', '-f', `worktree/${id}`, head);
+  return { ...f, record, head, managedBranch: `worktree/${id}` };
+}
+
+test('branchHolders reports canonical ownership for the primary and managed linked checkouts', async t => {
+  const f = await heldBranchFixture(t, 'holders');
+  const holders = await f.engine.branchHolders(f.local);
+  assert.deepEqual(holders.map(holder => holder.canonical).sort(), [f.local, f.record.checkoutRoot].sort());
+  assert.equal(holders.find(holder => holder.canonical === f.local)?.branch, 'local/side');
+  assert.equal(holders.find(holder => holder.canonical === f.record.checkoutRoot)?.branch, 'reopen/selected');
+  assert.equal(holders.every(holder => holder.locked === false && holder.canonical !== null), true);
+});
+
+test('releaseCheckout re-homes a held branch at the same commit without touching files, index, refs or history', async t => {
+  const f = await heldBranchFixture(t, 'release-self');
+  const status = await f.git(f.record.checkoutRoot, 'status', '--porcelain=v1', '-z');
+  const index = (await f.git(f.record.checkoutRoot, 'ls-files', '--stage', '-z')).toString();
+  const refs = await f.git(f.local, 'show-ref'); const start = f.calls.length;
+  const state = await f.engine.releaseCheckout({ repository: f.repository, checkoutRoot: f.record.checkoutRoot, branch: 'reopen/selected', preferred: f.managedBranch });
+  assert.equal(state.branch, f.managedBranch); assert.equal(state.head, f.head); assert.equal(state.dirty, false);
+  assert.deepEqual(await f.git(f.record.checkoutRoot, 'status', '--porcelain=v1', '-z'), status);
+  assert.equal((await f.git(f.record.checkoutRoot, 'ls-files', '--stage', '-z')).toString(), index);
+  assert.deepEqual(await f.git(f.local, 'show-ref'), refs);
+  assert.equal(await readFile(path.join(f.record.checkoutRoot, 'project/file.txt'), 'utf8'), 'selected branch bytes\n');
+  const switch_ = f.calls.slice(start).find(call => call.args.includes('switch'));
+  assert.deepEqual(switch_!.args.slice(-2), ['--', f.managedBranch]);
+  assert.equal(switch_!.args.includes('--no-guess'), true); assert.equal(switch_!.args.includes('--no-overwrite-ignore'), true);
+  for (const forbidden of ['--force', 'reset', 'stash', 'merge', 'checkout', 'update-ref', 'branch']) assert.equal(f.calls.slice(start).some(call => call.args.includes(forbidden)), false);
+  // Acceptance: the original Local checkout can now take the released branch with ordinary Git.
+  await f.git(f.local, 'switch', 'reopen/selected');
+  assert.equal((await f.engine.status(f.local)).branch, 'reopen/selected');
+  assert.equal((await f.engine.status(f.local)).head, f.selectedOid);
+  assert.equal((await f.engine.status(f.record.checkoutRoot)).branch, f.managedBranch);
+});
+
+test('releaseCheckout detaches at the exact HEAD when the managed branch is absent, moved or held elsewhere', async t => {
+  const f = await heldBranchFixture(t, 'release-detach');
+  // Held elsewhere: a second managed checkout takes the recorded branch.
+  const other = await f.create('release-detach-other');
+  await f.git(other.checkoutRoot, 'switch', f.managedBranch);
+  const elsewhere = await f.engine.releaseCheckout({ repository: f.repository, checkoutRoot: f.record.checkoutRoot, branch: 'reopen/selected', preferred: f.managedBranch });
+  assert.equal(elsewhere.branch, null); assert.equal(elsewhere.head, f.head);
+  // Moved: the recorded branch no longer points at the holder's HEAD.
+  await f.git(other.checkoutRoot, 'switch', '--detach');
+  await f.git(f.record.checkoutRoot, 'switch', 'reopen/selected');
+  const base = (await f.git(f.local, 'rev-parse', 'HEAD')).toString().trim();
+  assert.notEqual(base, f.head);
+  await f.git(f.local, 'update-ref', `refs/heads/${f.managedBranch}`, base);
+  const moved = await f.engine.releaseCheckout({ repository: f.repository, checkoutRoot: f.record.checkoutRoot, branch: 'reopen/selected', preferred: f.managedBranch });
+  assert.equal(moved.branch, null); assert.equal(moved.head, f.head);
+  // Absent: the recorded branch is gone.
+  await f.git(f.record.checkoutRoot, 'switch', 'reopen/selected');
+  await f.git(f.local, 'branch', '-D', f.managedBranch);
+  const absent = await f.engine.releaseCheckout({ repository: f.repository, checkoutRoot: f.record.checkoutRoot, branch: 'reopen/selected', preferred: f.managedBranch });
+  assert.equal(absent.branch, null); assert.equal(absent.head, f.head);
+  assert.equal((await f.git(f.record.checkoutRoot, 'rev-parse', 'HEAD')).toString().trim(), f.head);
+});
+
+test('releaseCheckout refuses the primary checkout, non-canonical paths and foreign repository identity', async t => {
+  const f = await heldBranchFixture(t, 'release-guard'); const start = f.calls.length;
+  await assert.rejects(f.engine.releaseCheckout({ repository: f.repository, checkoutRoot: f.local, branch: 'reopen/selected', preferred: null }), code('INVALID_TARGET'));
+  await symlink(f.record.checkoutRoot, path.join(f.root, 'holder-alias'));
+  await assert.rejects(f.engine.releaseCheckout({ repository: f.repository, checkoutRoot: path.join(f.root, 'holder-alias'), branch: 'reopen/selected', preferred: null }), code('CHECKOUT_IDENTITY_CHANGED'));
+  await assert.rejects(f.engine.releaseCheckout({ repository: { ...f.repository, commonDir: f.remote }, checkoutRoot: f.record.checkoutRoot, branch: 'reopen/selected', preferred: null }), code('CHECKOUT_IDENTITY_CHANGED'));
+  await assert.rejects(f.engine.releaseCheckout({ repository: f.repository, checkoutRoot: f.record.checkoutRoot, branch: 'HEAD', preferred: null }), code('INVALID_REF'));
+  assert.equal(f.calls.slice(start).some(call => call.args.includes('switch')), false);
+  assert.equal((await f.engine.status(f.record.checkoutRoot)).branch, 'reopen/selected');
+});
+
+test('releaseCheckout reports uncertain completion instead of retrying or rolling back', async t => {
+  const f = await heldBranchFixture(t, 'release-uncertain');
+  const ambiguous = new GitOperations(async spec => { const result = await f.exec(spec); if (spec.args.includes('switch')) throw Error('fixture timeout after successful switch'); return result; }, f.config);
+  await assert.rejects(ambiguous.releaseCheckout({ repository: f.repository, checkoutRoot: f.record.checkoutRoot, branch: 'reopen/selected', preferred: null }), error => error instanceof WorktreeError && error.code === 'RELEASE_RECOVERY_REQUIRED' && error.details?.targetMayHaveChanged);
+  assert.equal((await f.engine.status(f.record.checkoutRoot)).head, f.head);
+  assert.equal((await f.engine.status(f.record.checkoutRoot)).branch, null, 'the exact one switch already completed');
+});
+
+test('Local takeover releases the held branch exactly once before switching', async t => {
+  const f = await heldBranchFixture(t, 'takeover'); const observed: string[][] = [];
+  const state = await f.engine.switchLocalBranchTakingOver(f.local, f.repository.commonDir, 'reopen/selected', f.selectedOid, undefined, async holders => {
+    observed.push(holders.map(holder => holder.branch ?? 'HEAD'));
+    for (const holder of holders) await f.engine.releaseCheckout({ repository: f.repository, checkoutRoot: holder.canonical!, branch: holder.branch!, preferred: null });
+  });
+  assert.equal(state.branch, 'reopen/selected'); assert.equal(state.head, f.selectedOid);
+  assert.deepEqual(observed, [['reopen/selected']]);
+  const holder = await f.engine.status(f.record.checkoutRoot);
+  assert.equal(holder.branch, null); assert.equal(holder.head, f.head);
+});
+
+test('Local takeover refuses a dirty Local checkout or a no-op release before any holder changes', async t => {
+  const f = await heldBranchFixture(t, 'takeover-dirty'); let released = 0;
+  await writeFile(path.join(f.local, 'project/file.txt'), 'keep Local edits\n');
+  await assert.rejects(f.engine.switchLocalBranchTakingOver(f.local, f.repository.commonDir, 'reopen/selected', f.selectedOid, undefined, async () => { released++; }), code('LOCAL_DIRTY'));
+  assert.equal(released, 0); assert.equal((await f.engine.status(f.record.checkoutRoot)).branch, 'reopen/selected');
+  await f.git(f.local, 'checkout', '--', '.');
+  await assert.rejects(f.engine.switchLocalBranchTakingOver(f.local, f.repository.commonDir, 'reopen/selected', f.selectedOid, undefined, async () => { released++; }), code('BRANCH_IN_USE'));
+  assert.equal(released, 1); assert.equal((await f.engine.status(f.local)).branch, 'local/side');
+  assert.equal((await f.engine.status(f.record.checkoutRoot)).branch, 'reopen/selected');
+});
+
 test('Local selected branch movement at final preflight refuses mutation; ambiguous completion reports recovery', async t => {
   const f = await localSwitchFixture(t); let counts = 0; let raced = false;
   const moved = (await f.git(f.local, 'commit-tree', `${f.selectedOid}^{tree}`, '-p', f.selectedOid, '-m', 'selection moved')).toString().trim();

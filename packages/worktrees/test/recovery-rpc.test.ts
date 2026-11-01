@@ -77,7 +77,7 @@ test('only strict bounded lossless v1 recovery requests are accepted; extra auth
   const cycle = f.payload(); (cycle as HostDouble).self = cycle;
   const invalid = [null, [], {}, { ...f.payload(), v: 2 }, { v: 1 }, { ...f.payload(), request: new Date() }, { ...f.payload(), request: Object.create({ action: 'reopen-info' as const }) }, accessor, cycle,
     ...['actorId', 'agent', 'origin', 'permissions', 'fullAccess', 'sessionId', 'holdInput'].map(key => ({ ...f.payload(), [key]: 'forged' })),
-    ...['list', 'status', 'create', 'start', 'branch', 'archive', 'handoff', 'protect'].map(action => f.payload({ action })),
+    ...['list', 'status', 'create', 'start', 'branch', 'archive', 'handoff', 'protect', 'release'].map(action => f.payload({ action })),
     f.payload({ sourceSessionId: '' }), f.payload({ sourceSessionId: 'x'.repeat(257) }), f.payload({ extra: true }), f.payload({ limit: 0 }), f.payload({ limit: 101 }),
     f.payload({ limit: NaN }), f.payload({ limit: -0 }), f.payload({ limit: Infinity }), f.payload({ limit: 2n }), f.payload({ limit: undefined }),
     f.payload({ action: 'reopen' as const, localBranch: 'main' }), f.payload({ action: 'reopen' as const, localBranch: 'main', localOid: 'HEAD' }),
@@ -86,6 +86,8 @@ test('only strict bounded lossless v1 recovery requests are accepted; extra auth
   for (const payload of invalid) { const response = await f.connection.dispatch(payload); assert.equal(response.ok, true); assert.equal(response.value.ok, false); assert.ok(['INVALID_RPC_REQUEST', 'INVALID_REQUEST'].includes(response.value.error.code)); }
   assert.equal(accessorRead, false); assert.equal(f.calls.length, 0); assert.equal(f.lookups.length, 0); assert.equal(f.events.length, 0);
   const accepted = parseRecoveryPayload(f.payload({ action: 'reopen' as const, localBranch: 'topic/name', localOid: OID })); assert.equal(accepted.request.localBranch, 'topic/name');
+  assert.equal(parseRecoveryPayload(f.payload({ action: 'reopen' as const, localBranch: 'topic/name', localOid: OID, takeover: true })).request.takeover, true);
+  assert.throws(() => parseRecoveryPayload(f.payload({ action: 'reopen' as const, localBranch: 'topic/name', localOid: OID, takeover: 'yes' })), error => error instanceof Error && 'code' in error && error.code === 'INVALID_REQUEST');
 });
 
 test('after belongs only to bounded nonnegative read revisions, never reopen or branch paging', async t => {

@@ -199,12 +199,16 @@ async function fixture(t: TestContext) {
   const config = { root: managed, gitExecutable: 'git', defaultRemote: 'origin', defaultBranch: 'main', commandTimeoutMs: 1000, fetchTimeoutMs: 1000, operationTimeoutMs: 60000, maxSnapshotBytes: 1048576, maxFiles: 1000, maxRefBytes: 1048576 };
   let queue: Promise<unknown> = Promise.resolve(); const switchCalls: string[] = [];
   const controller: ConstructorParameters<typeof WorktreeCleanup>[4] = { withRepositoryMaintenance(_common, signal, task) { const flight = queue.then(() => task(signal)); queue = flight.catch(() => undefined); return flight; }, hasPendingEffects: () => false,
-    async withLocalClaims(_roots, _invocation, _task, held) { assert.equal(required(held).length, 1); throw Object.assign(Error('Independent Local activity cannot be ruled out in this fixture'), { code: 'LOCAL_BUSY' }); } };
+    async withLocalClaims(_roots, _invocation, _task, held) { assert.equal(required(held).length, 1); throw Object.assign(Error('Independent Local activity cannot be ruled out in this fixture'), { code: 'LOCAL_BUSY' }); },
+    async releaseManagedBranchFor() { throw Object.assign(Error('Recovery must not transfer a branch in this fixture'), { code: 'INVALID_TARGET' }); } };
   const git: NonNullable<CleanupDependencies['git']> = (_record, guard) => ({
     async inspectRemoval() { assert.fail('Absent reclaimed checkout cannot be inspected'); },
     async preserveRemovalHead() { assert.fail('Recovery must not rewrite preservation refs'); },
     async removeManagedCheckout() { assert.fail('Recovery must not delete a checkout'); }, async removalState() { guard(); return 'absent'; }, async discover() { guard(); return { root: local, commonDir, projectSubdir: 'project', head: OID, branch: 'main' }; }, async localBranches() { guard(); return { branchSource: 'local', currentBranch: 'main', defaultBranch: 'main', branches: [{ name: 'main', oid: OID }, { name: 'topic', oid: TOPIC }], observedAt: Date.now() }; },
-    async switchLocalBranch(path, common, branch, oid, signal, verifyOnly) { guard(); assert.equal(required(signal).aborted, false); assert.equal(path, cwd); assert.equal(common, commonDir); assert.equal(verifyOnly, true); assert.equal(branch, 'main'); assert.equal(oid, OID); switchCalls.push(branch); return { head: OID, branch: 'main', dirty: true, changes: 2, untracked: 1 }; } });
+    async switchLocalBranch(path, common, branch, oid, signal, verifyOnly) { guard(); assert.equal(required(signal).aborted, false); assert.equal(path, cwd); assert.equal(common, commonDir); assert.equal(verifyOnly, true); assert.equal(branch, 'main'); assert.equal(oid, OID); switchCalls.push(branch); return { head: OID, branch: 'main', dirty: true, changes: 2, untracked: 1 }; },
+    async switchLocalBranchTakingOver() { assert.fail('This fixture only selects the current branch'); },
+    async branchHolders() { guard(); return []; },
+    async releaseCheckout() { assert.fail('This fixture only selects the current branch'); } });
   function newCleanup() { const bootstrap = new SessionBootstrap(owner); bootstraps.push(bootstrap); const cleanup = new WorktreeCleanup(owner, config, worktrees, store, controller, { bootstrap, git }); cleanups.push(cleanup); cleanup.start(false); return { cleanup, bootstrap }; }
   const current = newCleanup();
   const prompt = (id: string, mode: 'queue' | 'steer' = 'queue', text = 'Input arriving at factory handover.') => owner.sessionController.prompt({ sessionId: SessionId(id), requestId: requestId(), mode, content: [{ type: 'text', text }] }, new AbortController().signal);

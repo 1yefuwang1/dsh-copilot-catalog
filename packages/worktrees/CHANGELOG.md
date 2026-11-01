@@ -1,5 +1,27 @@
 # @1yefuwang1/dsh-worktrees changelog
 
+## Unreleased
+
+### Branch ownership and release
+
+- Add a `release` action to `git_worktree`, `/worktree` and the authenticated UI RPC. Git permits one
+  checkout per local branch; release transfers a branch away from a plugin-managed checkout so the
+  original Local checkout can switch to it. It accepts exactly one of a worktree `id` or a
+  `localBranch` (plus optional `repoPath`) and returns the verified transfers.
+- Re-home the holder to its own recorded branch when that branch is at the same commit and free;
+  otherwise detach it at the same HEAD. Files, index state, ignored files and refs are verified
+  unchanged; a holder's HEAD commit never moves, and no reset, stash, merge, force or ref deletion is
+  performed. `--ignore-other-worktrees` is deliberately not used because sharing one branch between
+  two live checkouts can silently invalidate the other's files.
+- Require existing Full access, a ready record and idle holder runtimes; validate every holder before
+  changing any. Foreign or manually created worktrees are refused with their path, and the primary
+  checkout is never a release target. The manager now shows the branch Git reports beside the
+  recorded branch and offers **Release branch** when they differ.
+- `reopen-info` reports branch `holders`, and `reopen` accepts an explicit `takeover: true` that
+  transfers the selected branch from a managed checkout before switching, after the same Local
+  cleanliness and idle-claim checks. The recovery chooser warns, disables unmanaged holders and
+  requires a confirmation checkbox before Continue. Existing same-branch recovery stays verify-only.
+
 ## 0.2.25 — DSH 0.2.1-rc.5 compatibility
 
 - Retarget the exact engine and DSH peers to `0.2.1-rc.5` and the guarded native
