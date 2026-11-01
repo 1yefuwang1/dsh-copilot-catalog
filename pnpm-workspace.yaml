@@ -1,7 +1,5 @@
 packages:
-  - packages/catalog
-  - packages/search
-  - packages/tool-schema
+  - packages/better-copilot
   - packages/worktrees
 
 minimumReleaseAgeExclude:

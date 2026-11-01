@@ -37,7 +37,8 @@ export function findCredentialIssues(path: string, source: string): CredentialIs
   for (const [label, regex] of rules) {
     for (const match of source.matchAll(regex)) {
       // This exact intentionally invalid endpoint is a rejection fixture, not a credential.
-      if (label === 'credential-bearing URL' && (path === 'test/discovery.test.ts' || path === 'packages/catalog/test/discovery.test.ts') &&
+      if (label === 'credential-bearing URL' && (path === 'test/discovery.test.ts' ||
+          path === 'packages/better-copilot/test/discovery.test.ts') &&
           match[0] === ['https://', 'user:secret@'].join('')) continue;
       report(match.index, label);
     }
@@ -46,7 +47,7 @@ export function findCredentialIssues(path: string, source: string): CredentialIs
     const value = match[1];
     if (value === undefined) continue;
     if (value.includes('${') || /^[A-Z][A-Z0-9_]*_(?:KEY|TOKEN|SECRET|PASSWORD)$/.test(value)) continue;
-    if (/^(?:test\/|packages\/(?:catalog|search)\/test\/)/.test(path) && syntheticLiterals.has(value)) continue;
+    if (/^(?:test\/|packages\/(?:catalog|search|better-copilot)\/test\/)/.test(path) && syntheticLiterals.has(value)) continue;
     report(match.index, 'hard-coded credential-like literal');
   }
   return issues;

@@ -1,5 +1,30 @@
 # Monorepo changelog
 
+## Better Copilot 0.1.0 — three Copilot plugins merged into one
+
+- Add `dsh-better-copilot@0.1.0`, consolidating `dsh-copilot-catalog@0.2.9`,
+  `dsh-copilot-search@0.1.5` and `dsh-copilot-tool-schema@0.1.3` into one package,
+  one bundle row (`better-copilot`) and one configuration object:
+  `providers` (the pi-ai adapter's own schema), `search` (the former search row
+  settings) and `toolSchema` (the former guard settings).
+- Preserve behavior: adapter replacement with the discovered Enterprise endpoint as
+  a runtime default, the refcounted Copilot `fetch` identity interceptor, the
+  `github-copilot-search` provider with its guarded refresh transport and
+  cancellation handling, and the additive Gemini tool-declaration guard.
+- Contain capability failures: a missing web service, a throwing guard
+  registration, a throwing search registration and a throwing identity installer
+  each degrade only their capability; the adapter still mounts.
+- Pipeline: fold `./catalog`, `./discovery`, `./identity`, `./search` and `./guard`
+  into the merged package, keep the root `syncCopilotCatalog()` convenience
+  wrapper, and export the colliding `CopilotAuthOptions` type as
+  `CatalogAuthOptions`/`SearchAuthOptions`. The predecessor subpaths are removed.
+- Remove the three predecessor workspaces, their bundle patches, publish policies,
+  release identities and credential-audit exemptions; the merged leaf has its own
+  exact 43-file publication allowlist and a 220,000-byte bound.
+- Their published npm versions are unchanged and are not deprecated by this
+  repository; the migration table lives in the package README.
+
+
 ## Worktrees 0.2.27 — no branch selection in Local mode
 
 - Render the starting-branch picker only for New worktree. A Local thread runs in

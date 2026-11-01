@@ -8,17 +8,11 @@ interface Policy { modules: string[]; extras: string[]; maxBytes: number }
 export interface PackedPackage { name: string; version: string; files: { path: string }[] }
 
 const policies: Record<string, Policy> = {
-  'dsh-copilot-catalog': {
-    modules: ['index', 'catalog', 'discovery', 'identity', 'plugin', 'runtime', 'types'],
-    extras: [], maxBytes: 150_000,
-  },
-  'dsh-copilot-search': {
-    modules: ['index', 'auth', 'endpoint', 'errors', 'plugin', 'provider', 'refresh', 'responses', 'runtime', 'types'],
-    extras: [], maxBytes: 150_000,
-  },
-  'dsh-copilot-tool-schema': {
-    modules: ['index', 'plugin', 'schema', 'types'],
-    extras: [], maxBytes: 150_000,
+  'dsh-better-copilot': {
+    modules: ['index', 'plugin', 'config', 'runtime', 'catalog', 'discovery', 'identity', 'catalog-types', 'auth', 'endpoint', 'errors', 'provider', 'refresh', 'responses', 'search', 'search-types', 'schema', 'guard', 'guard-types'],
+    // The three predecessor allowlists total 196,755 bytes; the merged leaf keeps
+    // bounded headroom below their combined 450,000-byte bound.
+    extras: [], maxBytes: 220_000,
   },
   '@1yefuwang1/dsh-worktrees': {
     modules: ['index', 'types', 'errors', 'runtime', 'schema', 'store', 'sessions', 'context', 'service', 'branch-release', 'git', 'naming', 'rpc', 'projects', 'project-store', 'project-rpc', 'project-context', 'quiet-rpc', 'first-message', 'cleanup-store', 'cleanup', 'recovery-rpc'],
