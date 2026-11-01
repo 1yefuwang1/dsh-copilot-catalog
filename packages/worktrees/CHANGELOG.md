@@ -1,5 +1,14 @@
 # @1yefuwang1/dsh-worktrees changelog
 
+## 0.2.27 — Local mode has no branch selection
+
+- Render the starting-branch picker only for **New worktree**. A Local thread runs in
+  the current checkout and never chooses, switches or creates a branch, so Local mode
+  now shows that checkout's actual current branch read-only instead of an interactive
+  picker. Switching back to Local therefore no longer displays a previously chosen New
+  starting branch as if the Local thread would use it; the New intent is retained for a
+  later New worktree send.
+
 ## 0.2.26 — Branch ownership and release
 
 - Add a `release` action to `git_worktree`, `/worktree` and the authenticated UI RPC. Git permits one

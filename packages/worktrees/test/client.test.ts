@@ -1313,7 +1313,9 @@ test('themed worktree mode and branch pickers require positive target availabili
   assert.match(staticSource(controls), /canWorktree = repositories.enabled\(sessionId\), blockedNew = selected && state.mode === 'new' && \(!canWorktree \|\| state.sourceChanged\)/);
   assert.match(staticSource(controls), /h\(ChoicePicker, \{[^\n]+label: t\('threadMode'\)/);
   assert.match(staticSource(controls), /blockedNew \|\| canWorktree \? \[\{ value: 'new', label: t\('new'\), disabled: blockedNew/);
-  assert.match(staticSource(controls), /!blockedNew && canWorktree && !worktree && h\(BranchPicker/);
+  assert.match(staticSource(controls), /!worktree && canWorktree && newMode && !blockedNew && h\(BranchPicker/);
+  // Local mode never renders the picker; it shows the checkout branch read-only.
+  assert.match(staticSource(controls), /!worktree && canWorktree && !newMode && h\('span', \{ className: 'dsh-wt-muted', title: t\('localBranchOnly'\) \}/);
   assert.match(staticSource(controls), /\{ value: 'local', label: t\('local'\)/);
   assert.match(staticSource(controls), /onChange: mode => flow.select\(sessionId, mode\)/);
   assert.match(staticSource(controls), /DismissRecoveryButton/);

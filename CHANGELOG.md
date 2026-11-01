@@ -1,5 +1,16 @@
 # Monorepo changelog
 
+## Worktrees 0.2.27 — no branch selection in Local mode
+
+- Render the starting-branch picker only for New worktree. A Local thread runs in
+  the current checkout and never chooses, switches or creates a branch, so Local
+  mode now shows that checkout's actual current branch read-only instead of an
+  interactive picker, and switching back to Local no longer displays a previously
+  chosen New starting branch as if the Local thread would use it.
+- Keep the New worktree picker, its Local/Remote source switch, search, paging and
+  refresh behavior unchanged; retain the 0.2.26 branch `release` action and the
+  DSH `0.2.1-rc.5` compatibility surface.
+
 ## Worktrees 0.2.26 — branch ownership and release
 
 - Add a `release` action to `git_worktree`, `/worktree` and the authenticated UI
@@ -261,4 +272,4 @@ Package history and versions are independent:
 - [Catalog changelog](<packages/catalog/CHANGELOG.md>) — `0.2.9`, DSH 0.2.1-rc.5 compatibility with exact pi-ai behavior headers.
 - [Search changelog](<packages/search/CHANGELOG.md>) — `0.1.5`, DSH 0.2.1-rc.5 compatibility with cancellation-safe credential refresh.
 - [Tool schema changelog](<packages/tool-schema/CHANGELOG.md>) — `0.1.3`, DSH 0.2.1-rc.5 compatibility with the Copilot Gemini properties-bucket guard.
-- [Worktrees changelog](<packages/worktrees/CHANGELOG.md>) — `@1yefuwang1/dsh-worktrees@0.2.26`, branch ownership and release on top of DSH 0.2.1-rc.5 compatibility; npm availability still requires staged-release approval.
+- [Worktrees changelog](<packages/worktrees/CHANGELOG.md>) — `@1yefuwang1/dsh-worktrees@0.2.27`, no branch selection in Local mode on top of the 0.2.26 branch release and DSH 0.2.1-rc.5 compatibility; npm availability still requires staged-release approval.

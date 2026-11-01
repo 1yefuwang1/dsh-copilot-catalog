@@ -4,7 +4,7 @@ A **pnpm monorepo with four independently installable DeepSeek Harness plugins**
 All maintained code—including Host implementations, the Web Client, tests and
 repository tooling—uses strict TypeScript. Published Host modules are ESM with
 declarations; the worktree Web Client is compiled to a persistent browser factory. The worktree plugin is packaged as
-`@1yefuwang1/dsh-worktrees@0.2.26`; npm availability follows maintainer approval
+`@1yefuwang1/dsh-worktrees@0.2.27`; npm availability follows maintainer approval
 of the staged release.
 
 | Package | Purpose | DSH behavior |
@@ -193,10 +193,14 @@ DSH `0.2.1-rc.5` (adapter-relative pi-ai resolution and cancellation-safe
 credential refresh respectively); published versions cannot be republished. Tool schema is `dsh-copilot-tool-schema@0.1.3`, a
 DSH `0.2.1-rc.5` retarget with no behavior change. These compatibility versions
 are local source updates, not evidence of an npm publication. Worktrees is
-`@1yefuwang1/dsh-worktrees@0.2.26`, adding `release`: a managed worktree can give a
-taken branch back to its own branch, or detach at the same commit, so the original
-Local checkout can switch to that branch again; the recovery chooser can take the
-same branch over only after an explicit `takeover` confirmation. It retains DSH
+`@1yefuwang1/dsh-worktrees@0.2.27`, which hides the starting-branch picker while a
+thread is Local: a Local send runs in the current checkout and never chooses,
+switches or creates a branch, so Local mode shows that checkout's current branch
+read-only while New worktree keeps the picker. It retains `release`: a managed
+worktree can give a taken branch back to its own branch, or detach at the same
+commit, so the original Local checkout can switch to that branch again; the
+recovery chooser can take the same branch over only after an explicit `takeover`
+confirmation. It also retains DSH
 `0.2.1-rc.5` compatibility, exact-session discovery/non-creating Open, and
 thread-switch-safe first Send with source-keyed recovery and prepared-target
 revalidation, factory staging, held-target resource checks, Local runtime

@@ -100,6 +100,7 @@ async function search(input: HTMLInputElement | null, value: string) {
     input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
   });
 }
+async function flush() { await act(async () => { for (let round = 0; round < 20; round++) await Promise.resolve(); }); }
 function button(container: ParentNode | null, label: string) { return [...container!.querySelectorAll!('button')].find((item) => item.textContent === label || item.getAttribute('aria-label') === label); }
 function branchItems(container: ParentNode) { return [...container.querySelectorAll<HTMLButtonElement>('.dsh-wt-branch-list [role=menuitemradio]')]; }
 function branchNames(container: ParentNode) { return branchItems(container).map((item) => item.querySelector('.dsh-wt-branch-name')!.textContent); }
@@ -111,7 +112,7 @@ async function mount(t: import('node:test').TestContext, element: React.ReactNod
   await act(async () => root.render(element));
   return { container, outside, root };
 }
-async function controls(t: import('node:test').TestContext, { git = true, repository = status, localGeneration = local, branchReply, statusReply, draft = empty, context: initialContext }: { git?: boolean; repository?: RepositoryStatus; localGeneration?: BranchGeneration; branchReply?: (request: MockRequest) => unknown; statusReply?: (request: MockRequest, signal: AbortSignal) => unknown; draft?: ComposerSnapshot; context?: ProjectContext } = {}) {
+async function controls(t: import('node:test').TestContext, { git = true, repository = status, localGeneration = local, branchReply, statusReply, draft = empty, context: initialContext, newMode = false }: { git?: boolean; repository?: RepositoryStatus; localGeneration?: BranchGeneration; branchReply?: (request: MockRequest) => unknown; statusReply?: (request: MockRequest, signal: AbortSignal) => unknown; draft?: ComposerSnapshot; context?: ProjectContext; newMode?: boolean } = {}) {
   const calls: { request: MockRequest; signal: AbortSignal }[] = [], cleanups = new Set<Cleanup>();
   function effect(factory: () => Cleanup) { const cleanup = factory(); let live = true; const stop = () => { if (live) { live = false; cleanups.delete(stop); return cleanup(); } }; cleanups.add(stop); return stop; }
   const session = observable<SessionSnapshot>(blank), state = observable(draft), panel = observable<{ activePanelId: string | undefined }>({ activePanelId: undefined }), list = observable<SessionList>({ byId: { source: { retainedBy: { mainView: 1 } } } });
@@ -141,6 +142,7 @@ async function controls(t: import('node:test').TestContext, { git = true, reposi
     useSession: (selector: Selector) => selector(session.getSnapshot()), useInput: (selector: Selector) => selector(state.getSnapshot()),
     usePanelInfo: (selector: Selector) => selector(React.useSyncExternalStore(panel.subscribe, panel.getSnapshot)), useWorkspaces: (selector: Selector) => selector(workspaces),
   }), React.createElement(real.SetupProgress, { sessionId: 'source', flow, t: (key: string) => real.en[key] || key })));
+  if (newMode) { await flush(); await act(async () => { flow.select('source', 'new'); }); await flush(); }
   t.after(async () => { await act(async () => { await flow.dispose(); repositories.dispose(); await Promise.allSettled([...cleanups].map(stop => stop())); }); assert.equal(input.deps.defaultSink, nativeSink); assert.equal(input.deps.submissionState, submissionState); });
   return { ...mounted, calls, flow, repositories, panel, runtime, input, block,
     contextChanged(next: ProjectContext | undefined) { context = next; metadata.publish({ ...metadata.getSnapshot(), revision: calls.length }); },
@@ -265,7 +267,7 @@ test('SetupProgress ignores configuration-only errors but retains actual submitt
 });
 
 test('real BranchPicker loads local cursor pages, marks current branch and auto-closes a choice without a close button', async (t: import('node:test').TestContext) => {
-  const fixture = await controls(t); const initial = fixture.calls.length;
+  const fixture = await controls(t, { newMode: true }); const initial = fixture.calls.length;
   assert.equal(fixture.branch()!.textContent, 'develop'); await click(fixture.branch());
   assert.equal(fixture.calls.length, initial + 3, 'one status and two local branch cursor pages'); assert.equal(document.activeElement, fixture.search());
   assert.deepEqual(branchNames(fixture.container), ['develop', 'main', 'feature/local', 'release']);
@@ -278,7 +280,7 @@ test('real BranchPicker loads local cursor pages, marks current branch and auto-
 });
 
 test('picker uses native menu fill/elevation and one non-wrapping borderless search input', async (t: import('node:test').TestContext) => {
-  const fixture = await controls(t); await click(fixture.branch());
+  const fixture = await controls(t, { newMode: true }); await click(fixture.branch());
   const popup = fixture.popup(), input = fixture.search(), wrap = input!.closest('label')!;
   const css = fixture.container.querySelector('style')!.textContent;
   assert.match(css, /\.dsh-wt-choice-menu,\.dsh-wt-base-options\{[^}]*background:var\(--dsw-specific-menu,var\(--dsw-alias-bg-layer-2\)\)/);
@@ -299,7 +301,7 @@ test('picker uses native menu fill/elevation and one non-wrapping borderless sea
 });
 
 test('search filters cached cursor branches without network and preserves the selected branch/OID', async (t: import('node:test').TestContext) => {
-  const fixture = await controls(t); await click(fixture.branch()); await click(branchItems(fixture.container)[2]); await click(fixture.branch()); const count = fixture.calls.length;
+  const fixture = await controls(t, { newMode: true }); await click(fixture.branch()); await click(branchItems(fixture.container)[2]); await click(fixture.branch()); const count = fixture.calls.length;
   await search(fixture.search(), 'MAIN'); assert.deepEqual(branchNames(fixture.container), ['main']);
   assert.equal(fixture.flow.store.getSnapshot().query, 'MAIN'); assert.equal(fixture.branch()!.textContent, 'feature/local');
   assert.equal(fixture.flow.store.getSnapshot().branchOid, 'feature-oid');
@@ -309,7 +311,7 @@ test('search filters cached cursor branches without network and preserves the se
 });
 
 test('remote source and nested remote ChoicePicker reuse source caches; remote search never contacts network', async (t: import('node:test').TestContext) => {
-  const fixture = await controls(t); await click(fixture.branch()); const localCount = fixture.calls.length;
+  const fixture = await controls(t, { newMode: true }); await click(fixture.branch()); const localCount = fixture.calls.length;
   await click(button(fixture.popup(), 'Remote branches')); assert.ok(fixture.popup()); assert.equal(fixture.calls.length, localCount + 1);
   assert.deepEqual(branchNames(fixture.container), ['main', 'feature/remote']); assert.equal(fixture.branch()!.textContent, 'upstream/main');
   assert.equal(fixture.popup()!.querySelector('.dsh-wt-branch-badge')!, null); assert.match(fixture.popup()!.textContent, /Fetches when the worktree is created/);
@@ -323,7 +325,7 @@ test('remote source and nested remote ChoicePicker reuse source caches; remote s
 });
 
 test('detached local HEAD renders its current-branch badge and retains the exact local OID', async (t: import('node:test').TestContext) => {
-  const fixture = await controls(t, { repository: { ...status, repository: { ...status.repository, branch: null, head: 'detached-oid' }, remotes: [] }, localGeneration: { branchSource: 'local', currentBranch: null, defaultBranch: 'HEAD', observedAt: 3, items: [{ name: 'HEAD', oid: 'detached-oid' }, { name: 'main', oid: 'main-oid' }] } });
+  const fixture = await controls(t, { newMode: true, repository: { ...status, repository: { ...status.repository, branch: null, head: 'detached-oid' }, remotes: [] }, localGeneration: { branchSource: 'local', currentBranch: null, defaultBranch: 'HEAD', observedAt: 3, items: [{ name: 'HEAD', oid: 'detached-oid' }, { name: 'main', oid: 'main-oid' }] } });
   assert.equal(fixture.branch()!.textContent, 'HEAD'); await click(fixture.branch());
   assert.deepEqual(branchNames(fixture.container), ['Detached · HEAD', 'main']);
   assert.equal(branchItems(fixture.container)[0]!.querySelector('.dsh-wt-branch-badge')!.textContent, 'Current branch');
@@ -331,7 +333,7 @@ test('detached local HEAD renders its current-branch badge and retains the exact
 });
 
 test('a no-remote Git repository retains the local picker and disables only its remote source', async (t: import('node:test').TestContext) => {
-  const fixture = await controls(t, { repository: { ...status, remotes: [] } }); assert.ok(fixture.branch());
+  const fixture = await controls(t, { newMode: true, repository: { ...status, remotes: [] } }); assert.ok(fixture.branch());
   await click(fixture.branch()); assert.equal(button(fixture.popup(), 'Remote branches')!.disabled, true); assert.equal(button(fixture.popup(), 'Local branches')!.disabled, false);
   assert.deepEqual(branchNames(fixture.container), ['develop', 'main', 'feature/local', 'release']);
   assert.ok(fixture.calls.filter(call => call.request.action === 'branches').every(call => call.request.branchSource === 'local' && !Object.hasOwn(call.request, 'remote')));
@@ -340,7 +342,7 @@ test('a no-remote Git repository retains the local picker and disables only its 
 test('Refresh survives focus loss while loading, preserves search/selection, and only a branch choice closes it', async (t: import('node:test').TestContext) => {
   for (const branchSource of ['local', 'remote']) {
     let delayed = false, complete!: (value: unknown) => void;
-    const fixture = await controls(t, { branchReply(_request: MockRequest) {
+    const fixture = await controls(t, { newMode: true, branchReply(_request: MockRequest) {
       if (!delayed) return;
       delayed = false;
       return new Promise(resolve => { complete = (data: unknown) => resolve(success(data)); });
@@ -368,13 +370,13 @@ test('Refresh survives focus loss while loading, preserves search/selection, and
 });
 
 test('BranchPicker Escape returns focus and focus dismissal leaves focus outside without another request', async (t: import('node:test').TestContext) => {
-  const fixture = await controls(t); await click(fixture.branch()); const count = fixture.calls.length;
+  const fixture = await controls(t, { newMode: true }); await click(fixture.branch()); const count = fixture.calls.length;
   await key(fixture.search(), 'Escape'); assert.equal(fixture.popup(), null); assert.equal(document.activeElement, fixture.branch());
   await click(fixture.branch()); await act(async () => fixture.outside.focus()); assert.equal(fixture.popup(), null); assert.equal(document.activeElement, fixture.outside); assert.equal(fixture.calls.length, count);
 });
 
 test('BranchPicker keyboard navigation reaches cached choices and supports Home/End/wraparound', async (t: import('node:test').TestContext) => {
-  const fixture = await controls(t); await click(fixture.branch()); const items = branchItems(fixture.container), count = fixture.calls.length;
+  const fixture = await controls(t, { newMode: true }); await click(fixture.branch()); const items = branchItems(fixture.container), count = fixture.calls.length;
   await key(fixture.search(), 'ArrowDown'); assert.equal(document.activeElement, items[0]);
   await key(items[0], 'ArrowDown'); assert.equal(document.activeElement, items[1]);
   await key(items[1], 'End'); assert.equal(document.activeElement, items[3]);
@@ -399,4 +401,23 @@ test('real ChoicePicker keyboard navigation skips disabled choices and dismisses
   await key(items[0], 'Escape'); assert.equal(fixture.container.querySelector('[role=menu]'), null); assert.equal(document.activeElement, trigger); assert.deepEqual(selections, []);
   await click(trigger); items = [...fixture.container.querySelectorAll<HTMLButtonElement>('[role=menuitemradio]')]; await click(items[2]); assert.equal(trigger!.textContent, 'New worktree'); assert.deepEqual(selections, ['new']);
   await click(trigger); assert.equal(document.activeElement.textContent, '✓New worktree'); await act(async () => fixture.outside.focus()); assert.equal(fixture.container.querySelector('[role=menu]'), null); assert.equal(document.activeElement, fixture.outside);
+});
+
+test('Local mode offers no branch selection and shows the checkout branch read-only', async (t: import('node:test').TestContext) => {
+  const fixture = await controls(t);
+  const readOnly = () => [...fixture.container.querySelectorAll('span')].find(item => item.textContent === 'Current branch: develop');
+  assert.equal(fixture.branch(), null, 'Local mode never renders the branch picker');
+  assert.ok(readOnly(), 'the current checkout branch is shown instead');
+  assert.equal(readOnly()!.getAttribute('title'), real.en.localBranchOnly);
+  await click(fixture.mode()); await click(button(fixture.container, 'New worktree'));
+  assert.ok(fixture.branch(), 'New worktree mode reveals the picker'); assert.equal(readOnly(), undefined);
+});
+
+test('switching back to Local hides the picker and shows the checkout branch, not the New choice', async (t: import('node:test').TestContext) => {
+  const fixture = await controls(t, { newMode: true });
+  await click(fixture.branch()); await click(branchItems(fixture.container)[2]);
+  assert.equal(fixture.branch()!.textContent, 'feature/local');
+  await click(fixture.mode()); await click(button(fixture.container, 'Local'));
+  assert.equal(fixture.branch(), null, 'the picker disappears with Local selected');
+  assert.ok([...fixture.container.querySelectorAll('span')].some(item => item.textContent === 'Current branch: develop'), 'read-only label reports the checkout branch, not the picked one');
 });

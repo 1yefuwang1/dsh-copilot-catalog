@@ -1,7 +1,7 @@
 # @1yefuwang1/dsh-worktrees
 
 Multi-folder projects with Local and isolated Git worktree threads for DeepSeek
-Harness. This experimental Host + Web Client package is **`0.2.26`**; new releases
+Harness. This experimental Host + Web Client package is **`0.2.27`**; new releases
 use staged npm publishing with maintainer review/2FA. It does not require Copilot, the
 catalog plugin, or the search plugin. The scoped name avoids collision with the
 unrelated npm package `dsh-worktrees`; stable tool, command and metadata names are
@@ -186,8 +186,11 @@ of the normal conversation model. The foreground naming deadline is at most
 15 seconds (or a shorter configured deadline); unavailable or invalid output
 uses a deterministic safe fallback, never another-model retry.
 
-The **Starting branch** control displays the current local branch by default,
-not an ambiguous “Base branch” placeholder. Open it to choose **Local branches**
+The **Starting branch** control belongs to **New worktree**, not **Local**. A Local
+thread always runs in the current checkout and never chooses, switches or creates a
+branch, so Local mode shows that checkout's current branch read-only instead of a
+picker. In New worktree mode the control displays the current local branch by
+default, not an ambiguous “Base branch” placeholder. Open it to choose **Local branches**
 (no remote access) or **Remote branches**. A detached checkout defaults to its
 current `HEAD` commit. The search filters the complete loaded branch generation
 locally: keystrokes never refetch, change selection or lose its pinned commit.
@@ -595,7 +598,7 @@ After the staged release is approved and appears on npm, install the scoped
 package (the similarly named unscoped package is unrelated):
 
 ```sh
-dsh plugin --profile <profile> add @1yefuwang1/dsh-worktrees@0.2.26
+dsh plugin --profile <profile> add @1yefuwang1/dsh-worktrees@0.2.27
 ```
 
 For local development or while release approval is pending, build explicitly from
