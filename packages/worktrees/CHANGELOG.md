@@ -1,8 +1,6 @@
 # @1yefuwang1/dsh-worktrees changelog
 
-## Unreleased
-
-### Branch ownership and release
+## 0.2.26 — Branch ownership and release
 
 - Add a `release` action to `git_worktree`, `/worktree` and the authenticated UI RPC. Git permits one
   checkout per local branch; release transfers a branch away from a plugin-managed checkout so the

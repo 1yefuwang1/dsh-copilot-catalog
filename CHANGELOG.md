@@ -1,5 +1,20 @@
 # Monorepo changelog
 
+## Worktrees 0.2.26 — branch ownership and release
+
+- Add a `release` action to `git_worktree`, `/worktree` and the authenticated UI
+  RPC. Git permits one checkout per local branch; release transfers a branch away
+  from a plugin-managed checkout, re-homing it to that checkout's own branch or
+  detaching it at the same commit, so the original Local checkout can switch to the
+  branch again. Files, index state and every ref are verified unchanged.
+- Report branch `holders` in `reopen-info` and accept an explicit
+  `reopen` `takeover` that performs the same transfer before switching; the manager
+  shows the branch Git reports beside the recorded branch and offers release when
+  they differ. Requires Full access, a ready record and idle holder runtimes, and
+  never touches a worktree the plugin does not manage.
+- Raise the worktrees publication size bound to 875000 bytes for the rc.5 client
+  bundle; the exact 52-file allowlist still governs the tarball.
+
 ## DSH 0.2.1-rc.5 compatibility
 
 - Retarget all four plugin engines, DSH peers and development SDK pins to
@@ -246,4 +261,4 @@ Package history and versions are independent:
 - [Catalog changelog](<packages/catalog/CHANGELOG.md>) — `0.2.9`, DSH 0.2.1-rc.5 compatibility with exact pi-ai behavior headers.
 - [Search changelog](<packages/search/CHANGELOG.md>) — `0.1.5`, DSH 0.2.1-rc.5 compatibility with cancellation-safe credential refresh.
 - [Tool schema changelog](<packages/tool-schema/CHANGELOG.md>) — `0.1.3`, DSH 0.2.1-rc.5 compatibility with the Copilot Gemini properties-bucket guard.
-- [Worktrees changelog](<packages/worktrees/CHANGELOG.md>) — `@1yefuwang1/dsh-worktrees@0.2.25`, DSH 0.2.1-rc.5 compatibility; npm availability still requires staged-release approval.
+- [Worktrees changelog](<packages/worktrees/CHANGELOG.md>) — `@1yefuwang1/dsh-worktrees@0.2.26`, branch ownership and release on top of DSH 0.2.1-rc.5 compatibility; npm availability still requires staged-release approval.
