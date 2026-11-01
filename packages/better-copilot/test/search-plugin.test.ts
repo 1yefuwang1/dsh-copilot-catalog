@@ -83,14 +83,29 @@ test('search metadata, defaults and registration keep credential writes and requ
   const fixture = credentialFixture(grant());
   const registrations: WebSearchProvider[] = [];
   const calls: (CapturedRequest & { body?: SearchBody })[] = [];
-  await createPlugin(dependencies({ fetcher: dualFetcher(calls) }))
-    .apply(registrationContext(fixture.service, registrations), Config({}));
-  assert.equal(registrations.length, 1);
+  // Capability-local proof: a credential store that refuses reads cannot prevent
+  // or precede search registration. Only the separate discovery step may read.
+  const strictService: CopilotCredentialService = {
+    ...fixture.service,
+    readRecord: () => { throw new Error('search registration must not read credentials'); },
+  };
+  const mounting = createPlugin(dependencies({ fetcher: dualFetcher(calls) }))
+    .apply(registrationContext(strictService, registrations), Config({}));
+  assert.equal(registrations.length, 1, 'registered without any credential read');
   assert.equal(registrations[0]!.id, COPILOT_SEARCH_PROVIDER_ID);
   assert.equal(registrations[0]!.available(), true);
-  // Mount performs exactly one read-only discovery request and never a search.
-  assert.deepEqual(calls.map((call) => new URL(call.url).pathname), ['/models']);
+  await mounting;
+  // Discovery fails open on the refused read: no request, no write, no throw.
+  assert.deepEqual(calls, []);
   assert.equal(fixture.stats.writes, 0);
+
+  // The healthy path performs exactly one mount-time catalog request and no search.
+  const healthy: (CapturedRequest & { body?: SearchBody })[] = [];
+  const healthyFixture = credentialFixture(grant());
+  await createPlugin(dependencies({ fetcher: dualFetcher(healthy) }))
+    .apply(registrationContext(healthyFixture.service, []), Config({}));
+  assert.deepEqual(healthy.map((call) => new URL(call.url).pathname), ['/models']);
+  assert.equal(healthyFixture.stats.writes, 0);
 });
 
 test('configured plugin performs a single native auxiliary request using existing OAuth credentials', async () => {
@@ -126,7 +141,7 @@ test('volatile settings are snapshotted once per call and update only the next r
     search,
     toolSchema: { providers: { get: () => ['github-copilot'] }, families: { get: () => ['gemini'] }, logFixes: { get: () => false } },
   };
-  void createPlugin(dependencies({ fetcher: mockFetch(async (url, init) => {
+  await createPlugin(dependencies({ fetcher: mockFetch(async (url, init) => {
     if (String(url).endsWith('/models')) return Response.json({ data: [accountItem('gpt-6-sol')] });
     calls.push({ url, init, body: JSON.parse(init.body) });
     values.model = 'next-synthetic-model';

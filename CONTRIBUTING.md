@@ -68,7 +68,7 @@ A public package's tarball must work independently of the private root.
 reviewed synthetic literals under known package test trees are exempt. Never
 print suspected values or expand exemptions merely to silence a finding.
 
-CI verifies all four packages and root release targeting. Maintainers release one
+CI verifies both packages and root release targeting. Maintainers release one
 package using `<package-name>-v<version>` tags after updating that leaf's changelog
 and manifest. Catalog 0.2.0 has already been published; do not republish it.
 The workflow stages only the selected leaf and preserves explicit npm review/2FA

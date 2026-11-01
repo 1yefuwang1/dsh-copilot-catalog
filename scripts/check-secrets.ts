@@ -47,7 +47,7 @@ export function findCredentialIssues(path: string, source: string): CredentialIs
     const value = match[1];
     if (value === undefined) continue;
     if (value.includes('${') || /^[A-Z][A-Z0-9_]*_(?:KEY|TOKEN|SECRET|PASSWORD)$/.test(value)) continue;
-    if (/^(?:test\/|packages\/(?:catalog|search|better-copilot)\/test\/)/.test(path) && syntheticLiterals.has(value)) continue;
+    if (/^(?:test\/|packages\/better-copilot\/test\/)/.test(path) && syntheticLiterals.has(value)) continue;
     report(match.index, 'hard-coded credential-like literal');
   }
   return issues;

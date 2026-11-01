@@ -11,6 +11,8 @@ import {
   TOOL_SCHEMA_SKIPPED,
   type AccountSelection,
   type BetterCopilotConfig,
+  type CatalogAuthOptions,
+  type SearchAuthOptions,
   type ModelCatalog,
   type NormalizeResult,
   type SyncResult,
@@ -22,6 +24,7 @@ import { createCopilotWireIdentity, type CopilotWireIdentity } from 'dsh-better-
 import {
   COPILOT_SEARCH_PROVIDER_ID,
   CopilotSearchProvider,
+  createCopilotCredentialStore,
   normalizeResponsesResponse,
   parseResponsesSSE,
   type CopilotSearchOptions,
@@ -49,6 +52,10 @@ const typedApply: (ctx: Parameters<typeof apply>[0], config: BetterCopilotConfig
 const pending: Promise<SyncResult> = syncCopilotCatalog();
 const configuredSync: Promise<SyncResult> = syncCopilotCatalog(undefined, { baseUrl: 'https://api.enterprise.githubcopilot.com' });
 const lowLevel = (options: Parameters<typeof discoverySync>[1]): Promise<SyncResult> => discoverySync(undefined, options);
+
+// The colliding predecessor auth types are importable under area-qualified names.
+const catalogAuth: CatalogAuthOptions = { baseUrl: 'https://api.enterprise.githubcopilot.com' };
+const searchAuth: SearchAuthOptions = { apiKeyEnv: 'COPILOT_ACCESS_TOKEN', baseURL: 'https://api.enterprise.githubcopilot.com' };
 
 // Area subpaths keep their per-capability surfaces.
 const selection: AccountSelection = selectAccountModels({ data: [] }, catalog);
@@ -83,10 +90,15 @@ void discoverySync(undefined);
 const invalidMode: SearchMode = 'unknown';
 // @ts-expect-error a provider requires an injected options resolver
 new CopilotSearchProvider();
+// @ts-expect-error authentication must return a typed credential or undefined
+const invalidResolver: CopilotSearchOptions['resolveAuth'] = async () => 'invalid';
+// @ts-expect-error credential storage requires a scoped key and service
+createCopilotCredentialStore();
 
 async function usePlugin(): Promise<void> {
   await typedApply(context, configured);
 }
 
-void [pluginName, pluginInject, searchModel, guardFamilies, pending, configuredSync, lowLevel, selection, sameSelection, cost,
-  normalized, skipped, matched, wireIdentity, providerId, providerType, provider, nativeResult, sse, invalidMode, usePlugin];
+void [pluginName, pluginInject, searchModel, guardFamilies, pending, configuredSync, lowLevel, catalogAuth, searchAuth, selection,
+  sameSelection, cost, normalized, skipped, matched, wireIdentity, providerId, providerType, provider, nativeResult, sse,
+  invalidMode, invalidResolver, usePlugin];

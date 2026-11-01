@@ -56,7 +56,7 @@ function fixture() {
 
 function fakeContext(options: {
   credentials?: unknown;
-  web?: 'missing' | 'throwing' | { registerSearchProvider(): unknown };
+  web?: 'missing' | 'throwing' | { registerSearchProvider(provider?: unknown): unknown };
   onThrows?: boolean;
 } = {}) {
   const listeners: unknown[] = [];
@@ -189,22 +189,30 @@ test('a missing web service is a silent skip and a throwing guard registration i
   assert.ok(!JSON.stringify(warning).includes('test-access-token'));
 });
 
-test('a throwing search registration and a throwing identity installer cannot block the adapter', async () => {
-  for (const overrides of [
-    { web: 'throwing' as const },
-    {},
-  ]) {
-    const { calls, dependencies } = fixture();
-    const { ctx, logs, listeners } = fakeContext(overrides);
-    const config = Config({ providers: {} }) as BetterCopilotConfig;
-    const installIdentity = () => { throw new Error('identity unavailable'); };
-    const plugin = createPlugin({ ...dependencies, installIdentity });
-    const result = await plugin.apply(asContext(ctx), config);
-    assert.equal(result, undefined);
-    assert.equal(calls.length, 1);
-    assert.equal(listeners.length, 1, 'the guard registers even when identity installation throws');
-    assert.ok(logs.some(([level, ...rest]) => level === 'warn' && rest.some((value) => String(value) === 'wire identity')));
-  }
+test('a throwing identity installer still registers the guard and one search provider', async () => {
+  const { calls, dependencies } = fixture();
+  const registrations: unknown[] = [];
+  const { ctx, logs, listeners } = fakeContext({
+    web: { registerSearchProvider(provider: unknown) { registrations.push(provider); return () => {}; } },
+  });
+  const installIdentity = () => { throw new Error('identity unavailable'); };
+  const plugin = createPlugin({ ...dependencies, installIdentity });
+  const result = await plugin.apply(asContext(ctx), Config({ providers: {} }) as BetterCopilotConfig);
+  assert.equal(result, undefined);
+  assert.equal(calls.length, 1, 'the adapter still mounts');
+  assert.equal(listeners.length, 1, 'the guard registers even when identity installation throws');
+  assert.equal(registrations.length, 1, 'search registers even when identity installation throws');
+  assert.ok(logs.some(([level, ...rest]) => level === 'warn' && rest.some((value) => String(value) === 'wire identity')));
+});
+
+test('a throwing search registration cannot block the adapter', async () => {
+  const { calls, dependencies } = fixture();
+  const { ctx, logs, listeners } = fakeContext({ web: 'throwing' });
+  const result = await createPlugin(dependencies).apply(asContext(ctx), Config({ providers: {} }) as BetterCopilotConfig);
+  assert.equal(result, undefined);
+  assert.equal(calls.length, 1, 'the adapter mounts despite the web seam failing');
+  assert.equal(listeners.length, 1, 'the guard is unaffected');
+  assert.ok(logs.some(([level, ...rest]) => level === 'warn' && rest.some((value) => String(value) === 'search provider')));
 });
 
 test('discovery failure logs only a controlled reason code and still delegates', async () => {

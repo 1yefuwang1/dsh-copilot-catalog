@@ -216,6 +216,11 @@ test('synthetic-secret exemptions remain confined to each package test tree', ()
     assert.deepEqual(findCredentialIssues(`packages/${name}/test/example.test.ts`, fixture), []);
     assert.ok(findCredentialIssues(`packages/${name}/src/example.ts`, fixture).length > 0);
   }
+  // The deleted predecessor test trees no longer have an exemption.
+  for (const legacy of ['catalog', 'search', 'tool-schema']) {
+    assert.ok(findCredentialIssues(`packages/${legacy}/test/example.test.ts`, fixture).length > 0,
+      `packages/${legacy}/test must not exempt synthetic credential literals`);
+  }
   assert.ok(findCredentialIssues('packages/unrelated/test/example.test.js', fixture).length > 0);
   assert.ok(findCredentialIssues('packages/better-copilot/dist/index.js', '').length > 0);
   assert.ok(findCredentialIssues('.pnpm-store/example.json', '').length > 0);

@@ -294,7 +294,10 @@
 
 Package history and versions are independent:
 
-- [Catalog changelog](<packages/catalog/CHANGELOG.md>) — `0.2.9`, DSH 0.2.1-rc.5 compatibility with exact pi-ai behavior headers.
-- [Search changelog](<packages/search/CHANGELOG.md>) — `0.1.5`, DSH 0.2.1-rc.5 compatibility with cancellation-safe credential refresh.
-- [Tool schema changelog](<packages/tool-schema/CHANGELOG.md>) — `0.1.3`, DSH 0.2.1-rc.5 compatibility with the Copilot Gemini properties-bucket guard.
+- [Better Copilot changelog](<packages/better-copilot/CHANGELOG.md>) — `0.1.0`, consolidating
+  catalog `0.2.9` (exact pi-ai behavior headers), search `0.1.5` (cancellation-safe
+  credential refresh) and tool schema `0.1.3` (the Copilot Gemini properties-bucket
+  guard) against DSH 0.2.1-rc.5.
+- The predecessor packages no longer exist in this repository; their release notes
+  remain readable in Git history at `35ff48e`.
 - [Worktrees changelog](<packages/worktrees/CHANGELOG.md>) — `@1yefuwang1/dsh-worktrees@0.2.27`, no branch selection in Local mode on top of the 0.2.26 branch release and DSH 0.2.1-rc.5 compatibility; npm availability still requires staged-release approval.

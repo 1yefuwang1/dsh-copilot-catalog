@@ -50,9 +50,9 @@ function harness() {
   return { ctx, listeners, logs };
 }
 
-function mount(overrides: Record<string, unknown> = {}) {
+async function mount(overrides: Record<string, unknown> = {}) {
   const state = harness();
-  void createPlugin(dependencies()).apply(state.ctx as unknown as Context, Config({ toolSchema: overrides }));
+  await createPlugin(dependencies()).apply(state.ctx as unknown as Context, Config({ toolSchema: overrides }));
   return state;
 }
 
@@ -60,7 +60,7 @@ const run = (state: ReturnType<typeof harness>, assembly: PromptAssembly, next?:
   state.listeners[0]!.handler(assembly, {}, next ?? (async () => assembly));
 
 test('registers one outer global waterfall listener and fixes only nonconformant tools', async () => {
-  const state = mount();
+  const state = await mount();
   assert.equal(state.listeners.length, 1);
   assert.equal(state.listeners[0]!.event, 'system-prompt/assemble');
   assert.deepEqual(state.listeners[0]!.options, { global: true, prepend: true });
@@ -72,25 +72,26 @@ test('registers one outer global waterfall listener and fixes only nonconformant
   assert.equal(result.sections, downstream.sections);
   assert.equal(result.contexts, downstream.contexts);
   assert.equal(result.variables, downstream.variables);
-  assert.equal(state.logs.info.length, 0);
+  // Discovery may log its own status line; the guard must stay silent here.
+  assert.equal(state.logs.info.filter((line) => line.includes('added a properties bucket')).length, 0);
 });
 
 test('returns the downstream assembly identity when the route or declarations are out of scope', async () => {
-  const state = mount();
+  const state = await mount();
   for (const route of [fixtures.assembly([fixtures.missingBucketTool], 'deepseek-account', 'deepseek-flash'), fixtures.assembly([fixtures.missingBucketTool], 'github-copilot', 'gpt-6.1-sol'), fixtures.assembly([fixtures.conformantTool])]) {
     assert.equal(await run(state, route), route);
   }
 });
 
 test('awaits the downstream chain first, so selected-route variables are visible', async () => {
-  const state = mount();
+  const state = await mount();
   const downstream = fixtures.assembly([fixtures.missingBucketTool], '', '');
   const result = await run(state, downstream, async () => ({ ...downstream, variables: { provider: 'github-copilot', model: 'gemini-4-argon' } }));
   assert.deepEqual(fixtures.parameters(result.tools[0]!).properties, {});
 });
 
 test('propagates downstream failures unchanged and contains only its own failures', async () => {
-  const state = mount();
+  const state = await mount();
   await assert.rejects(run(state, fixtures.assembly([]), async () => { throw new Error('downstream failed'); }), /downstream failed/u);
   const downstream = fixtures.assembly([]);
   Object.defineProperty(downstream, 'tools', { get() { throw new Error('boom'); } });
@@ -100,19 +101,20 @@ test('propagates downstream failures unchanged and contains only its own failure
 });
 
 test('logs a summary only when logFixes is enabled, without tool arguments', async () => {
-  const quiet = mount();
+  const quiet = await mount();
   await run(quiet, fixtures.assembly([fixtures.missingBucketTool]));
-  assert.equal(quiet.logs.info.length, 0);
-  const loud = mount({ logFixes: true });
+  const guardInfo = (state: ReturnType<typeof harness>) => state.logs.info.filter((line) => line.includes('added a properties bucket'));
+  assert.equal(guardInfo(quiet).length, 0);
+  const loud = await mount({ logFixes: true });
   await run(loud, fixtures.assembly([fixtures.missingBucketTool]));
-  assert.equal(loud.logs.info.length, 1);
-  assert.match(loud.logs.info[0] ?? '', /added a properties bucket/u);
+  assert.equal(guardInfo(loud).length, 1);
+  assert.match(guardInfo(loud)[0] ?? '', /added a properties bucket/u);
   assert.equal(JSON.stringify(loud.logs.info).includes('projectId'), false);
   await run(loud, fixtures.assembly([fixtures.referenceTool]));
   assert.match(loud.logs.warn.at(-1) ?? '', /left 1 tool schema/u);
   assert.match(loud.logs.warn.at(-1) ?? '', /TOOL_SCHEMA_SKIPPED/u);
   const mixed = await run(loud, fixtures.assembly([fixtures.missingBucketTool, fixtures.referenceTool, fixtures.noParametersTool]));
-  assert.match(loud.logs.info.at(-1) ?? '', /added a properties bucket to 1 tool schema/u);
+  assert.match(guardInfo(loud).at(-1) ?? '', /added a properties bucket to 1 tool schema/u);
   assert.match(loud.logs.warn.at(-1) ?? '', /left 2 tool schema\(s\) unchanged/u);
   assert.match(loud.logs.warn.at(-1) ?? '', /SKIPPED_REFERENCE/u);
   assert.match(loud.logs.warn.at(-1) ?? '', /SKIPPED_MISSING_PARAMETERS/u);
@@ -122,7 +124,7 @@ test('logs a summary only when logFixes is enabled, without tool arguments', asy
 test('volatile settings are re-read for every assembly', async () => {
   const state = harness();
   const values = { providers: ['github-copilot'], families: ['gemini'], logFixes: false };
-  void createPlugin(dependencies()).apply(state.ctx as unknown as Context, {
+  await createPlugin(dependencies()).apply(state.ctx as unknown as Context, {
     providers: { get: () => ({}) },
     search: {},
     toolSchema: {
@@ -143,13 +145,13 @@ test('volatile settings are re-read for every assembly', async () => {
 test('a throwing logger cannot change the assembly', async () => {
   const state = harness();
   state.ctx.logger = { info() { throw new Error('exporter down'); }, warn() { throw new Error('exporter down'); } };
-  void createPlugin(dependencies()).apply(state.ctx as unknown as Context, Config({ toolSchema: { logFixes: true } }) as never);
+  await createPlugin(dependencies()).apply(state.ctx as unknown as Context, Config({ toolSchema: { logFixes: true } }) as never);
   const result = await run(state, fixtures.assembly([fixtures.missingBucketTool]));
   assert.deepEqual(fixtures.parameters(result.tools[0]!).properties, {});
 });
 
 test('duplicate installation is idempotent', async () => {
-  const state = mount();
+  const state = await mount();
   void createPlugin(dependencies()).apply(state.ctx as unknown as Context, Config({ toolSchema: {} }) as never);
   assert.equal(state.listeners.length, 2);
   const downstream = fixtures.assembly([fixtures.missingBucketTool]);
