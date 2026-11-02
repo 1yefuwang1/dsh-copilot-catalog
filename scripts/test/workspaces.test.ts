@@ -9,9 +9,11 @@ import { publicationPolicy, validatePublicationMetadata, validatePublicationSize
 import { evaluatePluginCompatibility, getDshRuntimeVersion } from '@deepseek-ai/dsh-app-boot';
 
 const repository = '1yefuwang1/dsh-copilot-catalog';
-const candidates = ['catalog', 'search', 'tool-schema', 'worktrees'].map((name) => ({ path: `packages/${name}`, manifest: {
-  name: name === 'worktrees' ? '@1yefuwang1/dsh-worktrees' : `dsh-copilot-${name}`, version: name === 'catalog' ? '0.2.0' : '0.1.0',
-  repository: { url: `git+https://github.com/${repository}.git`, directory: `packages/${name}` },
+const candidates = [
+  { path: 'packages/better-copilot', name: 'dsh-better-copilot', version: '0.1.0' },
+  { path: 'packages/worktrees', name: '@1yefuwang1/dsh-worktrees', version: '0.1.0' },
+].map(({ path, name, version }) => ({ path, manifest: {
+  name, version, repository: { url: `git+https://github.com/${repository}.git`, directory: path },
 } }));
 
 test('pnpm launcher distinguishes JavaScript and native executables without splitting arguments', () => {
@@ -47,7 +49,10 @@ test('workspace validation accepts LF, CRLF, CR, mixed endings and no final newl
     assert.doesNotThrow(() => assertWorkspaceDefinition(rows.join(ending)));
     assert.doesNotThrow(() => assertWorkspaceDefinition(rows.join(ending) + ending));
   }
-  assert.doesNotThrow(() => assertWorkspaceDefinition('packages:\r\n  - packages/catalog\n  - packages/search\r  - packages/tool-schema\n  - packages/worktrees'));
+  const endings = ['\r\n', '\n', '\r'];
+  const mixed = ['packages:', ...workspacePaths.map((path) => `  - ${path}`)]
+    .map((line, index) => index === 0 ? line : endings[(index - 1) % endings.length]! + line).join('');
+  assert.doesNotThrow(() => assertWorkspaceDefinition(mixed));
 });
 
 test('workspace validation rejects every missing, substring-only or commented package row', () => {
@@ -59,10 +64,10 @@ test('workspace validation rejects every missing, substring-only or commented pa
   }
 });
 
-test('the private root is not a publication target and all four leaves resolve portably', async () => {
-  assert.deepEqual(workspacePaths, ['packages/catalog', 'packages/search', 'packages/tool-schema', 'packages/worktrees']);
+test('the private root is not a publication target and both leaves resolve portably', async () => {
+  assert.deepEqual(workspacePaths, ['packages/better-copilot', 'packages/worktrees']);
   const leaves = await packages();
-  assert.deepEqual(leaves.map(({ manifest }) => manifest.name), ['dsh-copilot-catalog', 'dsh-copilot-search', 'dsh-copilot-tool-schema', '@1yefuwang1/dsh-worktrees']);
+  assert.deepEqual(leaves.map(({ manifest }) => manifest.name), ['dsh-better-copilot', '@1yefuwang1/dsh-worktrees']);
   for (const path of workspacePaths) {
     const selected = await packages(resolve(root, path));
     assert.equal(selected.length, 1);
@@ -73,41 +78,39 @@ test('the private root is not a publication target and all four leaves resolve p
 });
 
 test('publication content paths cannot escape their selected package', () => {
-  const directory = resolve(root, 'packages/catalog');
+  const directory = resolve(root, 'packages/better-copilot');
   assert.equal(containedPath(directory, 'dist/index.js'), resolve(directory, 'dist/index.js'));
   for (const path of ['../../outside', '/outside']) assert.throws(() => containedPath(directory, path), /escaping/u);
 });
 
-test('versioned package tags select exactly one package, never the legacy root tag', () => {
-  assert.equal(releasePackage('dsh-copilot-catalog-v0.2.0', candidates), candidates[0]);
-  assert.equal(releasePackage('dsh-copilot-search-v0.1.0', candidates), candidates[1]);
-  assert.equal(releasePackage('dsh-copilot-tool-schema-v0.1.0', candidates), candidates[2]);
-  assert.equal(releasePackage('@1yefuwang1/dsh-worktrees-v0.1.0', candidates), candidates[3]);
-  for (const tag of ['v0.2.0', 'dsh-worktrees-v0.1.0', '1yefuwang1-dsh-worktrees-v0.1.0', 'dsh-copilot-search-v0.2.0', 'dsh-copilot-search-v0.1.0\n', '@1yefuwang1/dsh-worktrees-v0.2.0', '@1yefuwang1/dsh-worktrees-v0.1.0\n', 'dsh-copilot-worktrees-v0.1.0', undefined]) {
+test('versioned package tags select exactly one package, never a bare version tag', () => {
+  assert.equal(releasePackage('dsh-better-copilot-v0.1.0', candidates), candidates[0]);
+  assert.equal(releasePackage('@1yefuwang1/dsh-worktrees-v0.1.0', candidates), candidates[1]);
+  for (const tag of ['v0.2.0', 'dsh-worktrees-v0.1.0', '1yefuwang1-dsh-worktrees-v0.1.0', 'dsh-better-copilot-v0.2.0', 'dsh-better-copilot-v0.1.0\n', '@1yefuwang1/dsh-worktrees-v0.2.0', '@1yefuwang1/dsh-worktrees-v0.1.0\n', 'dsh-copilot-worktrees-v0.1.0', undefined]) {
     assert.throws(() => releasePackage(tag, candidates), /Release tag/u);
   }
-  assert.throws(() => releasePackage('dsh-copilot-search-v0.1.0', [candidates[1]!, candidates[1]!]), /ambiguously/u);
+  assert.throws(() => releasePackage('dsh-better-copilot-v0.1.0', [candidates[0]!, candidates[0]!]), /ambiguously/u);
 });
 
 test('release metadata must match its actual GitHub repository and package directory', () => {
-  assert.deepEqual(releaseIdentity('dsh-copilot-search-v0.1.0', repository, candidates), {
-    package: 'dsh-copilot-search', version: '0.1.0', directory: 'packages/search',
-  });
-  assert.deepEqual(releaseIdentity('dsh-copilot-tool-schema-v0.1.0', repository, candidates), {
-    package: 'dsh-copilot-tool-schema', version: '0.1.0', directory: 'packages/tool-schema',
+  assert.deepEqual(releaseIdentity('dsh-better-copilot-v0.1.0', repository, candidates), {
+    package: 'dsh-better-copilot', version: '0.1.0', directory: 'packages/better-copilot',
   });
   assert.deepEqual(releaseIdentity('@1yefuwang1/dsh-worktrees-v0.1.0', repository, candidates), {
     package: '@1yefuwang1/dsh-worktrees', version: '0.1.0', directory: 'packages/worktrees',
   });
-  assert.throws(() => releaseIdentity('dsh-copilot-search-v0.1.0', 'someone/else', candidates), /repository/u);
+  assert.throws(() => releaseIdentity('dsh-better-copilot-v0.1.0', 'someone/else', candidates), /repository/u);
   assert.throws(() => releaseIdentity('@1yefuwang1/dsh-worktrees-v0.1.0', 'someone/else', candidates), /repository/u);
-  const unknown = structuredClone(candidates[3]!);
+  const unknown = structuredClone(candidates[0]!);
   unknown.manifest.name = '@1yefuwang1/dsh-worktrees-extra';
   assert.throws(() => releaseIdentity('@1yefuwang1/dsh-worktrees-extra-v0.1.0', repository, [unknown]), /Invalid release package identity/u);
-  assert.throws(() => releaseIdentity('dsh-copilot-search-v0.1.0', `${repository}\n`, candidates), /repository/u);
+  const unrecognized = structuredClone(candidates[0]!);
+  unrecognized.manifest.name = 'dsh-some-other-plugin';
+  assert.throws(() => releaseIdentity('dsh-some-other-plugin-v0.1.0', repository, [unrecognized]), /Invalid release package identity/u);
+  assert.throws(() => releaseIdentity('dsh-better-copilot-v0.1.0', `${repository}\n`, candidates), /repository/u);
   const incorrect = structuredClone(candidates);
-  incorrect[1]!.manifest.repository.directory = 'packages/catalog';
-  assert.throws(() => releaseIdentity('dsh-copilot-search-v0.1.0', repository, incorrect), /repository/u);
+  incorrect[0]!.manifest.repository.directory = 'packages/worktrees';
+  assert.throws(() => releaseIdentity('dsh-better-copilot-v0.1.0', repository, incorrect), /repository/u);
 });
 
 test('release workflow stages one pnpm package with provenance and no stored token', async () => {
@@ -122,16 +125,18 @@ test('release workflow stages one pnpm package with provenance and no stored tok
 test('publication allowlists and bounds preserve every existing leaf and explicitly add worktree Client assets', () => {
   const common = ['CHANGELOG.md', 'LICENSE', 'README.md', 'cordis.patch.yml', 'package.json'];
   const modules = {
-    'dsh-copilot-catalog': ['index', 'catalog', 'discovery', 'identity', 'plugin', 'runtime', 'types'],
-    'dsh-copilot-search': ['index', 'auth', 'endpoint', 'errors', 'plugin', 'provider', 'refresh', 'responses', 'runtime', 'types'],
-    'dsh-copilot-tool-schema': ['index', 'plugin', 'schema', 'types'],
+    'dsh-better-copilot': ['index', 'plugin', 'config', 'runtime', 'catalog', 'discovery', 'identity', 'catalog-types', 'auth', 'endpoint', 'errors', 'provider', 'refresh', 'responses', 'search', 'search-types', 'schema', 'guard', 'guard-types'],
     '@1yefuwang1/dsh-worktrees': ['index', 'types', 'errors', 'runtime', 'schema', 'store', 'sessions', 'context', 'service', 'branch-release', 'git', 'naming', 'rpc', 'projects', 'project-store', 'project-rpc', 'project-context', 'quiet-rpc', 'first-message', 'cleanup-store', 'cleanup', 'recovery-rpc'],
+  };
+  const bounds: Record<string, number> = {
+    'dsh-better-copilot': 220_000,
+    '@1yefuwang1/dsh-worktrees': 875_000,
   };
   for (const [name, names] of Object.entries(modules)) {
     const policy = publicationPolicy(name);
     const extras = name === '@1yefuwang1/dsh-worktrees' ? ['dist/client.js', 'locale/en.json', 'icon.svg'] : [];
     assert.deepEqual(policy.files, [...common, ...names.flatMap(module => [`dist/${module}.js`, `dist/${module}.d.ts`]), ...extras].sort());
-    assert.equal(policy.maxBytes, name === '@1yefuwang1/dsh-worktrees' ? 875_000 : 150_000);
+    assert.equal(policy.maxBytes, bounds[name] ?? 150_000);
     assert.doesNotThrow(() => validatePublicationSize(name, policy.maxBytes - 1));
     assert.throws(() => validatePublicationSize(name, policy.maxBytes), /Unexpectedly large/u);
     assert.throws(() => validatePublicationSize(name, -1), /Unexpectedly large/u);
@@ -198,21 +203,26 @@ test('credential audit catches Copilot tokens, JWTs and static backtick credenti
   const jwt = ['eyJ' + 'A'.repeat(24), 'B'.repeat(24), 'C'.repeat(24)].join('.');
   const backtick = ['const', 'access', '=', String.fromCharCode(96) + 'not-a-reviewed-credential' + String.fromCharCode(96), ';'].join(' ');
   for (const source of [copilot, jwt, backtick]) {
-    const issues = findCredentialIssues('packages/search/src/example.ts', source);
+    const issues = findCredentialIssues('packages/better-copilot/src/example.ts', source);
     assert.ok(issues.length > 0);
     assert.ok(!JSON.stringify(issues).includes(source));
   }
-  assert.deepEqual(findCredentialIssues('packages/search/src/example.ts', 'const authorization = `Bearer ${resolved}`;'), []);
+  assert.deepEqual(findCredentialIssues('packages/better-copilot/src/example.ts', 'const authorization = `Bearer ${resolved}`;'), []);
 });
 
 test('synthetic-secret exemptions remain confined to each package test tree', () => {
   const fixture = ['const', 'access', '=', "'test-access-token';"].join(' ');
-  for (const name of ['catalog', 'search']) {
+  for (const name of ['better-copilot']) {
     assert.deepEqual(findCredentialIssues(`packages/${name}/test/example.test.ts`, fixture), []);
     assert.ok(findCredentialIssues(`packages/${name}/src/example.ts`, fixture).length > 0);
   }
+  // The deleted predecessor test trees no longer have an exemption.
+  for (const legacy of ['catalog', 'search', 'tool-schema']) {
+    assert.ok(findCredentialIssues(`packages/${legacy}/test/example.test.ts`, fixture).length > 0,
+      `packages/${legacy}/test must not exempt synthetic credential literals`);
+  }
   assert.ok(findCredentialIssues('packages/unrelated/test/example.test.js', fixture).length > 0);
-  assert.ok(findCredentialIssues('packages/search/dist/index.js', '').length > 0);
+  assert.ok(findCredentialIssues('packages/better-copilot/dist/index.js', '').length > 0);
   assert.ok(findCredentialIssues('.pnpm-store/example.json', '').length > 0);
-  assert.ok(findCredentialIssues('packages/search/.pnpm-store/example.json', '').length > 0);
+  assert.ok(findCredentialIssues('packages/better-copilot/.pnpm-store/example.json', '').length > 0);
 });

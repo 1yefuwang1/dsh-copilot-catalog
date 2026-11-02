@@ -8,10 +8,12 @@ pnpm run verify
 ```
 
 The root is private tooling. Runtime source/tests live in
-[catalog](packages/catalog/README.md), [search](packages/search/README.md),
-[tool schema](packages/tool-schema/README.md) and
+[better-copilot](<packages/better-copilot/README.md>) and
 [worktrees](packages/worktrees/README.md), each with its own manifest, bundle,
-declarations, output and release version. Keep
+declarations, output and release version. `better-copilot` is one plugin for all
+Copilot behaviour; keep its three capabilities isolated (one failing registration
+must not block the adapter) and keep the single config shape (`providers`,
+`search`, `toolSchema`). Keep
 [pnpm-lock.yaml](pnpm-lock.yaml) committed. Do not add npm lockfiles, run installs
 from a leaf, or add a dependency on an unpublished/private workspace package.
 
@@ -21,9 +23,9 @@ from a leaf, or add a dependency on an unpublished/private workspace package.
   build/test/install preparation. Synthetic tests must not make live account calls.
 - Resolve DSH/pi-ai public peers from the adapter's installation. Do not use
   machine-specific application paths or import private OAuth modules.
-- Preserve catalog's public schema/exports and original credential record key.
-  Catalog discovery remains read-only and bounded; it must not enable model policy
-  or persist refreshes.
+- Preserve the merged plugin's public schema/exports and the pi-ai adapter's own
+  provider schema and credential record key. Discovery remains read-only and
+  bounded; it must not enable model policy or persist refreshes.
 - Treat model IDs as opaque. Catalog protocol mappings use advertised endpoints,
   positive limits and conservative feature metadata, not model-name allowlists.
 - Search uses its own provider and native Responses parser, not a replacement
@@ -66,7 +68,7 @@ A public package's tarball must work independently of the private root.
 reviewed synthetic literals under known package test trees are exempt. Never
 print suspected values or expand exemptions merely to silence a finding.
 
-CI verifies all four packages and root release targeting. Maintainers release one
+CI verifies both packages and root release targeting. Maintainers release one
 package using `<package-name>-v<version>` tags after updating that leaf's changelog
 and manifest. Catalog 0.2.0 has already been published; do not republish it.
 The workflow stages only the selected leaf and preserves explicit npm review/2FA

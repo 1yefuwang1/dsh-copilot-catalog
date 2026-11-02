@@ -1,0 +1,97 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { loadRuntime } from '../../dist/runtime.js';
+import { replaceCatalog, selectAccountModels } from '../../dist/catalog.js';
+import { syncCopilotCatalog } from '../../dist/discovery.js';
+import { accountItem, grantFixture } from '../catalog-helpers.js';
+import { GITHUB_COPILOT_MODELS } from '@earendil-works/pi-ai/providers/github-copilot.models';
+import { builtinProviders, getBuiltinModels } from '@earendil-works/pi-ai/providers/all';
+import { supportedProtocols } from '@deepseek-ai/dsh-llm-pi-ai';
+
+test('npm peers load a real DSH adapter and its public Copilot OAuth hooks', async () => {
+  const runtime = await loadRuntime();
+  assert.equal(runtime.original.name, 'llm-pi-ai');
+  assert.equal(typeof runtime.original.Config, 'function');
+  assert.equal(typeof runtime.original.apply, 'function');
+  assert.equal(typeof runtime.oauth.refresh, 'function');
+  assert.equal(typeof runtime.oauth.toAuth, 'function');
+  assert.ok(Object.keys(runtime.catalog).length > 0);
+  const auth = await runtime.oauth.toAuth({ type: 'oauth', access: 'synthetic-token', refresh: 'synthetic', expires: 0 });
+  assert.equal(auth.baseUrl, 'https://api.individual.githubcopilot.com');
+});
+
+test('discovery mutates the catalog visible to the real adapter catalog APIs', async () => {
+  const { catalog, original } = await loadRuntime();
+  assert.equal(catalog, GITHUB_COPILOT_MODELS);
+  const snapshot = { ...catalog };
+  // Every catalog other than the Copilot chat one must be untouched by discovery.
+  const others = () => builtinProviders().filter((value) => value.id !== 'github-copilot')
+    .map((value) => value.id + ':' + value.getModels().map((model) => model.id).join(','));
+  const othersBefore = others();
+  try {
+    const result = await syncCopilotCatalog({ readRecord: async () => grantFixture() }, {
+      catalog,
+      recordKey: original.recordKeyFor('github-copilot'),
+      oauth: {
+        refresh: async (value) => value,
+        toAuth: async () => ({ apiKey: 'synthetic', baseUrl: 'https://api.individual.githubcopilot.com' }),
+      },
+      fetcher: async () => Response.json({ data: [accountItem('future-responses-model')] }),
+    });
+    assert.equal(result.status, 'synced');
+    assert.deepEqual(getBuiltinModels('github-copilot').map((model) => model.id), ['future-responses-model']);
+    const provider = builtinProviders().find((value) => value.id === 'github-copilot');
+    assert.ok(provider);
+    assert.deepEqual(provider.getModels().map((model) => model.id), ['future-responses-model']);
+    // A discovered descriptor must behave as a chat model; the API does not require
+    // an explicit type, and absent still means chat in the supported pi-ai range.
+    for (const model of provider.getModels()) {
+      assert.ok(model.type === undefined || model.type === 'chat', 'discovered descriptors stay chat models');
+      assert.equal(model.provider, 'github-copilot');
+    }
+    // Discovery must not touch any other provider catalog (image/classifier included).
+    assert.deepEqual(others(), othersBefore, 'only the Copilot chat catalog is mutated');
+  } finally {
+    replaceCatalog(catalog, snapshot);
+  }
+});
+
+test('actual published provider supports every dynamically selected protocol', async () => {
+  const { catalog } = await loadRuntime();
+  const items = [
+    accountItem('future-responses-model'),
+    accountItem('future-chat-model', { supported_endpoints: ['/chat/completions'] }),
+    accountItem('future-messages-model', { supported_endpoints: ['/v1/messages'] }),
+  ];
+  const { models } = selectAccountModels({ data: items }, catalog);
+  for (const [id, api] of [
+    ['future-responses-model', 'openai-responses'],
+    ['future-chat-model', 'openai-completions'],
+    ['future-messages-model', 'anthropic-messages'],
+  ] as const) {
+    assert.ok(supportedProtocols().includes(api), `${api} remains serviceable by the published adapter`);
+    assert.equal(models[id]!.api, api);
+    assert.equal(models[id]!.provider, 'github-copilot');
+    assert.equal(models[id]!.contextWindow, 1000000);
+  }
+});
+
+test('public package entry exports Cordis metadata without doing credential/network I/O', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = () => { throw new Error('Import must not perform discovery'); };
+  try {
+    const plugin = await import('../../dist/index.js');
+    const { original } = await loadRuntime();
+    // The merged schema reuses the adapter's provider field schema instance.
+    assert.equal((plugin.Config as unknown as { dict: { providers: unknown } }).dict.providers,
+      (original.Config as unknown as { dict: { providers: unknown } }).dict.providers);
+    assert.equal(plugin.name, 'better-copilot');
+    assert.ok(plugin.inject.includes('llm'));
+    assert.ok(plugin.inject.includes('credentials'));
+    assert.deepEqual(plugin.inject, [...new Set([...original.inject, 'credentials'])], 'every adapter injection survives wrapping');
+    assert.equal(typeof plugin.apply, 'function');
+    assert.equal(typeof plugin.syncCopilotCatalog, 'function');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
