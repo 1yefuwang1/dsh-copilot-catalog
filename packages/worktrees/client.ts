@@ -863,7 +863,7 @@ window.__ModuleLoader__.load({
       if (await form.mutate(ops, expectedRevision) !== true) throw new WorktreeError('cleanupConflict', 'cleanup-setting-refused');
       return { enabled, days: value };
     }
-    const NATIVE_SUBMIT_ABI = '0.2.1-rc.5/default-sink-v2';
+    const NATIVE_SUBMIT_ABI = '0.2.2-rc.1/default-sink-v3';
     const later = (callback: () => void) => { void Promise.resolve().then(() => Promise.resolve()).then(callback); };
     function interrupted<T>(promise: T | PromiseLike<T>, signal: AbortSignal): Promise<T> {
       return new Promise((resolve, reject) => {
@@ -887,8 +887,8 @@ window.__ModuleLoader__.load({
       const actor = object(deps) ? own(deps, 'actx') : undefined;
       const submission = object(deps) ? own(deps, 'submissionState') : undefined;
       const sinkValue: unknown = sink?.value, triggerValue: unknown = triggers?.value, submissionValue: unknown = submission?.value;
-      if (!object(deps) || !actor || !('value' in actor) || actor.value !== binding.ctx || !sink || !('value' in sink) || !sink.writable || typeof sinkValue !== 'function' || sinkValue.length !== 4 || !triggers || !('value' in triggers) || !triggers.writable || typeof triggerValue !== 'function' || !submission || !('value' in submission) || !submission.writable || typeof submissionValue !== 'function' || submissionValue.length !== 0) throw new WorktreeError('unsupported', 'native-submit-abi', NATIVE_SUBMIT_ABI);
-      type NativeSink = (text: string, ids: readonly string[], mode: WT.SubmitMode, signal: AbortSignal) => Promise<WT.SubmitResult>;
+      if (!object(deps) || !actor || !('value' in actor) || actor.value !== binding.ctx || !sink || !('value' in sink) || !sink.writable || typeof sinkValue !== 'function' || sinkValue.length !== 5 || !triggers || !('value' in triggers) || !triggers.writable || typeof triggerValue !== 'function' || !submission || !('value' in submission) || !submission.writable || typeof submissionValue !== 'function' || submissionValue.length !== 0) throw new WorktreeError('unsupported', 'native-submit-abi', NATIVE_SUBMIT_ABI);
+      type NativeSink = (text: string, ids: readonly string[], mode: WT.SubmitMode, signal: AbortSignal, accept: () => void) => Promise<WT.SubmitResult>;
       // Parameter/return contracts belong to the explicitly versioned native ABI;
       // reflection cannot inspect a function's TypeScript signature at runtime.
       const original = sinkValue as NativeSink, originalTriggers = triggerValue as () => object | null | undefined;
@@ -899,8 +899,9 @@ window.__ModuleLoader__.load({
         captured.controller.abort();
         if (captured.choice) later(() => hooks.settled(captured.choice!, error));
       }
-      // rc.5 publishes attachment-only commitSend before calling defaultSink. Its
-      // submissionState thunk is the last synchronous pre-detachment boundary.
+      // The native submit transaction publishes submission facts before the
+      // machine dispatches, so its submissionState thunk is the last synchronous
+      // pre-detachment boundary for every send, attachment-only included.
       // Preserve native facts/analytics, but freeze intent before editor observers
       // can change mode, folder or navigation. Native swallows facts errors, so a
       // capture refusal must travel to the later codec/sink instead of falling Local.
@@ -953,7 +954,7 @@ window.__ModuleLoader__.load({
         if (nativeSignal.aborted) token.abort();
         return token;
       }
-      async function adapter(text: string, ids: readonly string[], mode: WT.SubmitMode, nativeSignal: AbortSignal): Promise<WT.SubmitResult> {
+      async function adapter(text: string, ids: readonly string[], mode: WT.SubmitMode, nativeSignal: AbortSignal, accept: () => void): Promise<WT.SubmitResult> {
         let token: WT.SinkToken | undefined;
         try {
           token = tokenFor(nativeSignal); token.entered = true;
@@ -962,7 +963,7 @@ window.__ModuleLoader__.load({
           if (token.choice.mode === 'local') {
             // Local work stays native work: its gesture abort must still stop it.
             const local = AbortSignal.any([nativeSignal, token.signal]);
-            await hooks.beforeLocal?.([...ids], local); return await track(interrupted(original.call(deps, text, ids, mode, local), local));
+            await hooks.beforeLocal?.([...ids], local); return await track(interrupted(original.call(deps, text, ids, mode, local, accept), local));
           }
           return await track(hooks.submit(token.choice, text, [...ids], mode, token.signal));
         } catch (error) { return { kind: 'error', text: hooks.error(error) }; }
@@ -1272,7 +1273,7 @@ window.__ModuleLoader__.load({
           op.reference = acquired.reference; const target = acquired.binding; check(op);
           if (!targetFree(target, result.sessionId)) throw new WorktreeError('targetBusy', 'target-not-empty');
           publishOp(op, { phase: 'attachments' });
-          if (ids.length) { conversation.rebindDraftFiles(result.sessionId, ids); op.staged = true; await waitForDraftFiles(conversation, ids, signal); }
+          if (ids.length) { conversation.rebindDraftFiles(result.sessionId, ids, true); op.staged = true; await waitForDraftFiles(conversation, ids, signal); }
           check(op);
           const settings = await requestHost(ctx, op.sessionId, { action: 'status', operationId: op.id }, signal); check(op);
           if (settings.settingsHash !== result.settingsHash) throw new WorktreeError('settings', 'settings-changed-before-send');
@@ -1297,7 +1298,7 @@ window.__ModuleLoader__.load({
           later(() => { if (!disposed && !op.navigation.aborted && projectActor(ctx.sessions.list.getSnapshot()) === op.sessionId) { op.cleanup(); ctx.uiWorkspace.openSession(result.sessionId); } });
           return outcome;
         } catch (error) {
-          if (op.staged && !op.accepted) { conversation.rebindDraftFiles(op.sessionId, ids); ids.forEach(id => restaged.add(id)); }
+          if (op.staged && !op.accepted) { conversation.rebindDraftFiles(op.sessionId, ids, true); ids.forEach(id => restaged.add(id)); }
           if (op.admission === 'none' && !op.request) op.retryable = true;
           const failedAt = sourceViews.get(op.sessionId)?.phase || state.phase, message = report(t, error);
           settleOp(op, { phase: 'failed', error: message, failedAt }, { phase: 'failed', failedAt, error: message, ...(op.retryable && !op.result ? { op: null } : {}) });

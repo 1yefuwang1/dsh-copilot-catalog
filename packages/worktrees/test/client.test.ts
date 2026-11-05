@@ -13,6 +13,8 @@ type Codec = (owner: string, ref: string, signal?: AbortSignal) => Promise<strin
 type Adjudicate = (text: string, signal?: AbortSignal, metadata?: { attachments: number }) => Promise<VmValue>;
 
 type Listener = () => void;
+/** The native v3 sink accepts an early-acceptance callback; fixtures settle by promise. */
+const accept = () => {};
 type Cleanup = () => void | Promise<void>;
 type ComposerBlock = { reason: string } | undefined;
 interface MockRequest {
@@ -348,16 +350,18 @@ test('lazy native mode preserves composer, commands and editor; no custom messag
 
 test('private adapter is explicitly pinned, fail-closed and paired with native SDK ABI checks', async () => {
   const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
-  assert.equal(manifest.engines.dsh, '0.2.1-rc.5'); assert.match(helpers.NATIVE_SUBMIT_ABI, /^0\.2\.1-rc\.5\//);
+  assert.equal(manifest.engines.dsh, '0.2.2-rc.1'); assert.match(helpers.NATIVE_SUBMIT_ABI, /^0\.2\.2-rc\.1\//);
   const native = await readFile(require.resolve('@deepseek-ai/dsh-client-ui-conversation/client'), 'utf8');
   assert.match(native, /this.deps = deps/);
-  assert.match(native, /this.deps.defaultSink\(draft.trim\(\), attachmentIds, mode, attempt.signal\)/);
-  assert.match(native, /this.deps.defaultSink\(out.trim\(\), attachmentIds, mode, attempt.signal\)/);
-  assert.match(native, /this.deps.defaultSink\("", attachmentIds, mode, controller.signal\)/);
+  // v3 hands the sink an acceptance callback and serializes every gesture, so the
+  // attachment-only pre-commit call the v2 lease special-cased no longer exists.
+  assert.match(native, /this\.deps\.defaultSink\(text, attachmentIds, mode, attempt\.signal, \(\) => \{/);
+  assert.doesNotMatch(native, /this\.deps\.defaultSink\("", attachmentIds/);
+  assert.match(native, /this\.phase === "adjudicating" \|\| this\.phase === "submitting" \|\| this\.phase === "sending"/);
   assert.match(native, /this.deps.inputTriggers\?\.\(\)/);
-  assert.match(native, /inputTriggers.serializeReference\(o.source, o.ref, attempt.signal\)/);
-  assert.match(native, /inputTriggers.adjudicate\(draft.trim\(\), attempt.signal/);
-  assert.match(native, /this.draftEditor.restoreDraft\(draft, occurrences\)/);
+  assert.match(native, /inputTriggers\.serializeReference\(source, ref, attempt\.signal\)/);
+  assert.match(native, /inputTriggers\.adjudicate\(draft\.trim\(\), attempt\.signal/);
+  assert.match(native, /this\.draftEditor\.restoreDraft\(draft\.text, draft\.references, draft\.quotes, \{ remove:/);
 });
 
 function observable<T>(initial: T) {
@@ -480,7 +484,7 @@ test('one absolute 30-second deadline covers discovery, stalled refresh and the 
 function leaseFixture({ mode = 'new', codec, adjudicate }: { mode?: string; codec?: Codec; adjudicate?: Adjudicate } = {}) {
   const calls: ['local' | 'target', string, string[], string, AbortSignal][] = [], finished: { captured: { mode: string }; error: unknown }[] = [], scope = {}, binding = { ctx: scope };
   const controller = { serializeReference: codec || (async (owner: string, ref: string) => `model:${owner}/${ref}`), adjudicate: adjudicate || (async () => undefined), other() { return this === controller; } };
-  const original = async (text: string, ids: string[], mode: string, signal: AbortSignal) => { calls.push(['local', text, [...ids], mode, signal]); return { kind: 'success' }; };
+  const original = async (text: string, ids: string[], mode: string, signal: AbortSignal, _accept: () => void) => { calls.push(['local', text, [...ids], mode, signal]); return { kind: 'success' }; };
   const input = { deps: { actx: scope, defaultSink: original, inputTriggers: () => controller, submissionState: () => undefined } };
   let choice = mode;
   const lease = helpers.leaseNativeSink(input, binding, { capture: () => ({ mode: choice }), async submit(_: { mode: string }, text: string, ids: string[], mode: string, signal: AbortSignal) { calls.push(['target', text, [...ids], mode, signal]); return { kind: 'success' }; }, settled(captured: { mode: string }, error: unknown) { finished.push({ captured, error }); }, error: (error: Error) => error.message });
@@ -489,9 +493,9 @@ function leaseFixture({ mode = 'new', codec, adjudicate }: { mode?: string; code
 
 test('sink lease redirects canonical messages and resolved mode only; Local remains native', async () => {
   const run = leaseFixture(); const signal = new AbortController().signal;
-  assert.equal((await run.input.deps.defaultSink('canonical refs', ['file', 'image'], 'steer', signal)).kind, 'success');
+  assert.equal((await run.input.deps.defaultSink('canonical refs', ['file', 'image'], 'steer', signal, accept)).kind, 'success');
   assert.equal(run.calls[0]![0], 'target'); assert.equal(run.calls[0]![1], 'canonical refs'); assert.deepEqual(run.calls[0]![2], ['file', 'image']); assert.equal(run.calls[0]![3], 'steer');
-  await settle(); run.setMode('local'); await run.input.deps.defaultSink('local', [], 'queue', new AbortController().signal);
+  await settle(); run.setMode('local'); await run.input.deps.defaultSink('local', [], 'queue', new AbortController().signal, accept);
   assert.equal(run.calls[1]![0], 'local'); await run.lease.close(); assert.equal(run.input.deps.defaultSink, run.original);
 });
 
@@ -503,7 +507,7 @@ test('native codec and adjudication are delegated exactly once with original thi
   assert.equal(await codec.serializeReference('reference', 'id', probe.signal), 'expanded:reference/id');
   const outcome = await codec.adjudicate('/command', new AbortController().signal, { attachments: 0 }); assert.equal(outcome.claim.name, 'command'); assert.equal(adjudicated, 1); assert.equal(serialized, 1); assert.equal(run.calls.length, 0);
   // Complete the ordinary serialization occurrence just as the native machine does.
-  const signal = new AbortController().signal; await codec.serializeReference('reference', 'second', signal); await run.input.deps.defaultSink('expanded second', [], 'queue', signal);
+  const signal = new AbortController().signal; await codec.serializeReference('reference', 'second', signal); await run.input.deps.defaultSink('expanded second', [], 'queue', signal, accept);
   // Abort the standalone codec probe, which intentionally had no native sink.
   probe.abort();
   await settle(); await run.lease.close();
@@ -511,21 +515,21 @@ test('native codec and adjudication are delegated exactly once with original thi
 
 test('slow native reference serialization plus Local choice cannot accidentally fall through to Local', async () => {
   const pending = deferred<string>(), run = leaseFixture({ codec: () => pending.promise }), native = new AbortController();
-  const send = run.input.deps.inputTriggers().serializeReference('reference', 'slow', native.signal).then((text: string) => run.input.deps.defaultSink(text, [], 'queue', native.signal));
+  const send = run.input.deps.inputTriggers().serializeReference('reference', 'slow', native.signal).then((text: string) => run.input.deps.defaultSink(text, [], 'queue', native.signal, accept));
   run.setMode('local'); run.lease.cancelNew(); await assert.rejects(send, (error: VmValue) => error.kind === 'cancelled');
   pending.resolve('late text'); await settle(); assert.equal(run.calls.length, 0); await run.lease.close(); assert.equal(run.input.deps.defaultSink, run.original);
 });
 
 test('slow native slash warmup plus plugin unload settles failure before descriptor restoration', async () => {
   const pending = deferred(), run = leaseFixture({ adjudicate: () => pending.promise }), native = new AbortController();
-  const send = run.input.deps.inputTriggers().adjudicate('/unknown', native.signal, { attachments: 0 }).then(() => run.input.deps.defaultSink('/unknown', [], 'queue', native.signal));
+  const send = run.input.deps.inputTriggers().adjudicate('/unknown', native.signal, { attachments: 0 }).then(() => run.input.deps.defaultSink('/unknown', [], 'queue', native.signal, accept));
   const closed = run.lease.close(); await assert.rejects(send, (error: VmValue) => error.kind === 'cancelled'); await closed;
   pending.resolve(undefined); await settle(); assert.equal(run.calls.length, 0); assert.equal(run.input.deps.defaultSink, run.original);
 });
 
 test('Local choice before slow serialization is frozen even if New worktree is selected meanwhile', async () => {
   const pending = deferred<string>(), run = leaseFixture({ mode: 'local', codec: () => pending.promise }), native = new AbortController();
-  const send = run.input.deps.inputTriggers().serializeReference('reference', 'slow', native.signal).then((text: string) => run.input.deps.defaultSink(text, [], 'queue', native.signal));
+  const send = run.input.deps.inputTriggers().serializeReference('reference', 'slow', native.signal).then((text: string) => run.input.deps.defaultSink(text, [], 'queue', native.signal, accept));
   run.setMode('new'); pending.resolve('native expanded'); await send; assert.equal(run.calls[0]![0], 'local'); await run.lease.close();
 });
 
@@ -542,13 +546,13 @@ test('a submission capture with no native codec or sink retires rather than leak
   assert.equal(run.input.deps.submissionState(), undefined);
   run.setMode('local'); await settle();
   assert.equal(run.finished.length, 1);
-  await run.input.deps.defaultSink('next native gesture', [], 'queue', new AbortController().signal);
+  await run.input.deps.defaultSink('next native gesture', [], 'queue', new AbortController().signal, accept);
   assert.equal(run.calls.length, 1); assert.equal(run.calls[0]![0], 'local');
   await run.lease.close();
 });
 
 test('rc.5 submission-state descriptor admission never invokes accessor traps or mutates callbacks', () => {
-  const binding = { ctx: {} }, defaultSink = async (_text: string, _ids: string[], _mode: string, _signal: AbortSignal) => ({ kind: 'success' });
+  const binding = { ctx: {} }, defaultSink = async (_text: string, _ids: string[], _mode: string, _signal: AbortSignal, _accept: () => void) => ({ kind: 'success' });
   const inputTriggers = () => undefined;
   for (const shape of ['missing', 'accessor', 'readonly', 'arity']) {
     let reads = 0; const deps = { actx: binding.ctx, defaultSink, inputTriggers };
@@ -576,8 +580,8 @@ function transaction({ deferredSetup = false, setupFailure, deferredUpload = fal
   const srcBinding = { ctx: { id: 'source', effect }, session: srcSession }, dstBinding = { ctx: { id: 'target', effect }, session: dstSession };
   const targetReady = deferred<typeof dstBinding>(), refreshReady = deferred<void>(), retainCalls: { id: string; signal?: AbortSignal }[] = [];
   function discoverTarget() { events.push('target-catalog'); list.publish({ byId: { ...list.getSnapshot().byId, target: { retainedBy: {} } } }); }
-  const nativeSink = async (text: string, ids: string[], mode: string, signal: AbortSignal) => { sourceAdmissions.push({ text, ids, mode, signal }); return { kind: 'success' }; };
-  const dstNativeSink = async (text: string, ids: string[], mode: string, signal: AbortSignal) => { dstAdmissions.push({ text, ids, mode, signal }); return { kind: 'success' }; };
+  const nativeSink = async (text: string, ids: string[], mode: string, signal: AbortSignal, _accept: () => void) => { sourceAdmissions.push({ text, ids, mode, signal }); return { kind: 'success' }; };
+  const dstNativeSink = async (text: string, ids: string[], mode: string, signal: AbortSignal, _accept: () => void) => { dstAdmissions.push({ text, ids, mode, signal }); return { kind: 'success' }; };
   const codec = { async serializeReference(owner: string, ref: string, _signal?: AbortSignal) { events.push('native-serialize'); return `native-model:${owner}/${ref}`; }, async adjudicate() { return undefined; } };
   const srcInput = { state: src, deps: { actx: srcBinding.ctx, defaultSink: nativeSink, inputTriggers: () => codec, submissionState: () => undefined }, setDraft() { assert.fail('native machine owns editor mutation'); } }, dstInput = { state: dst, deps: { actx: dstBinding.ctx, defaultSink: dstNativeSink, inputTriggers: () => codec, submissionState: () => undefined }, setDraft() { assert.fail('native machine owns editor mutation'); } };
   const blocks = new Map([['source', observable<ComposerBlock>(undefined)], ['target', observable<ComposerBlock>(undefined)], ['other', observable<ComposerBlock>(undefined)]]);
@@ -647,7 +651,7 @@ function transaction({ deferredSetup = false, setupFailure, deferredUpload = fal
       for (const key of Object.keys(byId)) byId[key] = { ...byId[key], retainedBy: key === id ? { mainView: 1 } : {} };
       list.publish({ byId });
     },
-    select(mode: string) { flow.select('source', mode); }, send(text = 'first task', ids = attachments, mode = 'queue', signal = new AbortController().signal) { return srcInput.deps.defaultSink(text, ids, mode, signal); },
+    select(mode: string) { flow.select('source', mode); }, send(text = 'first task', ids = attachments, mode = 'queue', signal = new AbortController().signal) { return srcInput.deps.defaultSink(text, ids, mode, signal, accept); },
     complete() { setupPending!.pending.resolve(completeSetup(setupPending!.request)); }, navigate() { navigation!.abort(); },
     uploaded() { const next = { ...fileUploads.getSnapshot() }; for (const [id, item] of Object.entries(next)) next[id] = { ...item, status: 'ready' }; fileUploads.publish(next); },
     async dispose() { await flow.dispose(); repositories.dispose?.(); await Promise.allSettled([...cleanups].map(cleanup => cleanup())); } };
@@ -848,7 +852,7 @@ test('a native Local send in another thread uses its own sink while the first Se
   try {
     run.select('new'); const sending = run.send('A background'); await settle();
     run.switchMainViewTo('other'); run.flow.select('other', 'local'); await settle();
-    const outcome = await run.dstInput.deps.defaultSink('B local', [], 'queue', new AbortController().signal); await settle();
+    const outcome = await run.dstInput.deps.defaultSink('B local', [], 'queue', new AbortController().signal, accept); await settle();
     assert.equal(outcome.kind, 'success'); assert.equal(run.dstAdmissions.length, 1); assert.equal(run.dstAdmissions[0]!.text, 'B local');
     assert.equal(run.flow.store.getSnapshot().busy, true);
     run.complete(); assert.equal((await sending).kind, 'success'); await settle();
@@ -1218,7 +1222,7 @@ test('revocation cancels already captured slow native codecs and discards delaye
   // InputTriggers is read on each native occurrence; preserve the same guarded thunk ownership.
   const original = run.srcInput.deps.inputTriggers;
   const returned = original(); returned.serializeReference = () => codec.promise;
-  const send = run.srcInput.deps.inputTriggers().serializeReference('ref', 'slow', native.signal).then((text: string) => run.srcInput.deps.defaultSink(text, [], 'queue', native.signal));
+  const send = run.srcInput.deps.inputTriggers().serializeReference('ref', 'slow', native.signal).then((text: string) => run.srcInput.deps.defaultSink(text, [], 'queue', native.signal, accept));
   run.revoke(); await assert.rejects(send, (error: VmValue) => error.kind === 'cancelled'); codec.resolve('late canonical text'); await settle(); assert.equal(run.sourceAdmissions.length, 0); assert.equal(run.admissions.length, 0); await run.dispose();
   const config = transaction(), pending = deferred(); config.select('new');
   config.ctx.connection.rpc.call = async (_channel: string, _endpoint: string, payload: MockPayload, signal: AbortSignal) => { config.calls.push({ payload, signal }); return pending.promise; };
@@ -1248,7 +1252,7 @@ test('project main/title edits do not invalidate New, but explicit re-add under 
 test('project removal cancels slow native serialization without admitting locally or changing draft/chips', async () => {
   const run = transaction({ context: ownedContext, draft: 'native chip draft', attachments: ['image-one'] }), codec = deferred<string>(), native = new AbortController(); run.select('new');
   const before = structuredClone(run.src.getSnapshot()); run.srcInput.deps.inputTriggers().serializeReference = () => codec.promise;
-  const sending = run.srcInput.deps.inputTriggers().serializeReference('ref', 'slow', native.signal).then((text: string) => run.srcInput.deps.defaultSink(text, ['image-one'], 'queue', native.signal));
+  const sending = run.srcInput.deps.inputTriggers().serializeReference('ref', 'slow', native.signal).then((text: string) => run.srcInput.deps.defaultSink(text, ['image-one'], 'queue', native.signal, accept));
   run.contextChanged(undefined); await assert.rejects(sending, (error: VmValue) => error.kind === 'cancelled'); codec.resolve('late canonical reference'); await settle();
   assert.equal(run.calls.length, 0); assert.equal(run.sourceAdmissions.length, 0); assert.equal(run.admissions.length, 0); assert.deepEqual(run.src.getSnapshot(), before); await run.dispose();
 });
@@ -1352,7 +1356,7 @@ test('first native Send defaults to the current local branch with no remote disc
 test('native-serialized reference output is reused verbatim and resolved gesture mode is preserved', async () => {
   const run = transaction(); run.select('new'); const signal = new AbortController().signal;
   const text = await run.srcInput.deps.inputTriggers().serializeReference('session', 'reference-id', signal);
-  await run.srcInput.deps.defaultSink('before ' + text + ' after', [], 'steer', signal); await settle();
+  await run.srcInput.deps.defaultSink('before ' + text + ' after', [], 'steer', signal, accept); await settle();
   assert.equal(run.admissions[0]!.text, 'before native-model:session/reference-id after'); assert.equal(run.admissions[0]!.mode, 'steer'); assert.equal(run.events.filter((value) => value === 'native-serialize').length, 1); await run.dispose();
 });
 
@@ -1413,17 +1417,17 @@ test('pipeline progress validates operation identity, revision and bounded stage
 
 test('exact native ABI requires all capture callback descriptors and rejects missing trigger capture', () => {
   const binding = { ctx: {} };
-  const defaultSink = async (_text: string, _ids: string[], _mode: string, _signal: AbortSignal) => ({ kind: 'success' });
+  const defaultSink = async (_text: string, _ids: string[], _mode: string, _signal: AbortSignal, _accept: () => void) => ({ kind: 'success' });
   const input = { deps: { actx: binding.ctx, defaultSink } };
   assert.throws(() => helpers.leaseNativeSink(input, binding, {}), (error: VmValue) => error.kind === 'unsupported');
   assert.equal(input.deps.defaultSink, defaultSink);
 });
 
 test('adapter native settlement callback runs after native promise reaction restores the source snapshot', async () => {
-  const binding = { ctx: {} }, input = { deps: { actx: binding.ctx, defaultSink: async (_text: string, _ids: string[], _mode: string, _signal: AbortSignal) => ({ kind: 'success' }), inputTriggers: () => undefined, submissionState: () => undefined } };
+  const binding = { ctx: {} }, input = { deps: { actx: binding.ctx, defaultSink: async (_text: string, _ids: string[], _mode: string, _signal: AbortSignal, _accept: () => void) => ({ kind: 'success' }), inputTriggers: () => undefined, submissionState: () => undefined } };
   let restored = false, retained = true;
   const lease = helpers.leaseNativeSink(input, binding, { capture: () => ({ mode: 'new' }), async submit() { return { kind: 'error', text: 'refused' }; }, settled() { assert.equal(restored, true); retained = false; }, error: (error: Error) => error.message });
-  const pending = input.deps.defaultSink('native snapshot', [], 'queue', new AbortController().signal);
+  const pending = input.deps.defaultSink('native snapshot', [], 'queue', new AbortController().signal, accept);
   await pending.then(outcome => { assert.equal(outcome.kind, 'error'); assert.equal(retained, true); restored = true; });
   await settle(); assert.equal(retained, false); await lease.close();
 });

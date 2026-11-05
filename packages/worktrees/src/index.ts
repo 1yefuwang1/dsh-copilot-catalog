@@ -11,11 +11,11 @@ import { registerRecoveryRpc } from './recovery-rpc.js';
 import { FirstMessageNamer } from './first-message.js';
 import { WorktreeReminders, RecoveryReminders } from './context.js';
 import { registerWorktreeRpc, registerWorktreeProgressRpc } from './rpc.js';
-import { ProjectController, parseProjectRequest, projectParameterSchema } from './projects.js';
+import { ProjectController, parseProjectRequest, parseProjectToolRequest, projectParameterSchema } from './projects.js';
 import { projectDomain, type ProjectStore } from './project-store.js';
 import { registerProjectRpc } from './project-rpc.js';
 import { ProjectReminders } from './project-context.js';
-import { parseCommand, parseRequest, parameterSchema } from './schema.js';
+import { parseCommand, parseToolRequest, parameterSchema } from './schema.js';
 import { failureOf, WorktreeError } from './errors.js';
 import type { CommandEnvelope, WorktreeConfig } from './types.js';
 
@@ -138,11 +138,11 @@ export async function apply(ctx: Context, config: PluginConfig): Promise<void> {
     parameters: parameterSchema,
     output: { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
     isConcurrencySafe: args => {
-      try { return ['list', 'status', 'branches', 'reopen-info'].includes(parseRequest(args).action); } catch { return false; }
+      try { return ['list', 'status', 'branches', 'reopen-info'].includes(parseToolRequest(args).action); } catch { return false; }
     },
     execute: async (args, execution) => {
       if (execution.agent === undefined) throw new WorktreeError('NO_CALLER', 'A receiving agent is required; no Host-default authority is used.');
-      const data = await controller.execute(parseRequest(args), { agent: execution.agent, origin: 'tool', signal: execution.signal });
+      const data = await controller.execute(parseToolRequest(args), { agent: execution.agent, origin: 'tool', signal: execution.signal });
       return { v: 1, ok: true, data };
     },
   });
@@ -164,10 +164,10 @@ export async function apply(ctx: Context, config: PluginConfig): Promise<void> {
     description: 'List and manage projects containing existing folders, bind threads by their actual execution directory, or start a blank Local thread. Membership does not move files, change existing thread directories or grant permissions. Cross-root thread creation requires existing full access.',
     parameters: projectParameterSchema,
     output: { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
-    isConcurrencySafe: args => { try { return parseProjectRequest(args).action === 'list'; } catch { return false; } },
+    isConcurrencySafe: args => { try { return parseProjectToolRequest(args).action === 'list'; } catch { return false; } },
     execute: async (args, execution) => {
       if (execution.agent === undefined) throw new WorktreeError('NO_CALLER', 'A receiving agent is required; no Host-default authority is used.');
-      const data = await projects.execute(parseProjectRequest(args), { agent: execution.agent, origin: 'tool', signal: execution.signal });
+      const data = await projects.execute(parseProjectToolRequest(args), { agent: execution.agent, origin: 'tool', signal: execution.signal });
       return { v: 1, ok: true, data };
     },
   });

@@ -1,6 +1,6 @@
 {
   "name": "dsh-better-copilot",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Account-aware GitHub Copilot model discovery, Copilot-compatible wire identity, native Responses web search and a Copilot Gemini tool-declaration guard in one DeepSeek Harness plugin.",
   "type": "module",
   "main": "./dist/index.js",
@@ -42,8 +42,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p test/tsconfig.json",
-    "test": "pnpm run build && node --import tsx --test test/catalog.test.ts test/discovery.test.ts test/identity.test.ts test/secrets.test.ts test/catalog-plugin.test.ts test/config.test.ts test/composition.test.ts test/auth.test.ts test/refresh.test.ts test/provider.test.ts test/responses.test.ts test/search-plugin.test.ts test/schema.test.ts test/guard-plugin.test.ts test/patch.test.ts",
-    "test:integration": "pnpm run build && node --import tsx --test test/integration/nested-layout.test.ts test/integration/catalog-runtime.test.ts test/integration/enterprise.test.ts test/integration/identity-wire.test.ts test/integration/search-runtime.test.ts test/integration/guard-runtime.test.ts test/integration/scoped.test.ts test/integration/wire.test.ts",
+    "test": "pnpm run build && node --import tsx --test test/catalog.test.ts test/discovery.test.ts test/identity.test.ts test/secrets.test.ts test/catalog-plugin.test.ts test/config.test.ts test/composition.test.ts test/auth.test.ts test/refresh.test.ts test/provider.test.ts test/responses.test.ts test/search-plugin.test.ts test/schema.test.ts test/guard.test.ts test/guard-plugin.test.ts test/patch.test.ts",
+    "test:integration": "pnpm run build && node --import tsx --test test/integration/nested-layout.test.ts test/integration/catalog-runtime.test.ts test/integration/enterprise.test.ts test/integration/identity-wire.test.ts test/integration/search-runtime.test.ts test/integration/guard-runtime.test.ts test/integration/wire.test.ts",
     "test:types": "pnpm run build && tsc -p test/types/tsconfig.json",
     "test:pack": "pnpm run build && tsx ../../scripts/check-pack.ts .",
     "check": "pnpm run typecheck && tsx ../../scripts/check.ts",
@@ -75,33 +75,33 @@
   },
   "engines": {
     "node": ">=22.19.0",
-    "dsh": "0.2.1-rc.5"
+    "dsh": "0.2.2-rc.1"
   },
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "~4.0.5",
-    "@deepseek-ai/dsh-credentials": "0.2.1-rc.5",
-    "@deepseek-ai/dsh-launch-environment": "0.2.1-rc.5",
-    "@deepseek-ai/dsh-llm-pi-ai": "0.2.1-rc.5",
-    "@deepseek-ai/dsh-system-prompt": "0.2.1-rc.5",
-    "@deepseek-ai/dsh-web": "0.2.1-rc.5",
-    "@deepseek-ai/schemastery": "~3.18.5",
+    "@deepseek-ai/cordis": "~4.1.0",
+    "@deepseek-ai/dsh-credentials": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-launch-environment": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-llm-pi-ai": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-system-prompt": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-web": "0.2.2-rc.1",
+    "@deepseek-ai/schemastery": "~3.19.0",
     "@earendil-works/pi-ai": "^1.1.0"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "4.0.5",
-    "@deepseek-ai/dsh-agent": "0.2.1-rc.5",
-    "@deepseek-ai/dsh-credentials": "0.2.1-rc.5",
-    "@deepseek-ai/dsh-launch-environment": "0.2.1-rc.5",
-    "@deepseek-ai/dsh-llm-pi-ai": "0.2.1-rc.5",
-    "@deepseek-ai/dsh-scope": "0.2.1-rc.5",
-    "@deepseek-ai/dsh-session": "0.2.1-rc.5",
-    "@deepseek-ai/dsh-system-prompt": "0.2.1-rc.5",
-    "@deepseek-ai/dsh-web": "0.2.1-rc.5",
-    "@deepseek-ai/schemastery": "3.18.5",
+    "@deepseek-ai/cordis": "4.1.0",
+    "@deepseek-ai/dsh-agent": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-credentials": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-launch-environment": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-llm-pi-ai": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-scope": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-session": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-system-prompt": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-web": "0.2.2-rc.1",
+    "@deepseek-ai/schemastery": "3.19.0",
     "@earendil-works/pi-ai": "1.3.0"
   },
   "dsh": {

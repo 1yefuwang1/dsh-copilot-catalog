@@ -20,11 +20,14 @@ export { DiscoveryError } from './discovery.js';
 export {
   createCopilotWireIdentity,
   installCopilotIdentityHeaders,
+  installCopilotRequestTransform,
   isCopilotRequestPath,
   isTrustedCopilotUrl,
   rewriteCopilotRequestHeaders,
   wireIdentityMode,
 } from './identity.js';
+export { guardCopilotRequestBody, MAX_GUARDED_BODY_BYTES } from './guard.js';
+export type { GuardedBody } from './guard.js';
 export { COPILOT_SEARCH_PROVIDER_ID, CopilotSearchProvider } from './provider.js';
 export { matchesRoute, normalizeToolSchemas, TOOL_SCHEMA_SKIPPED } from './schema.js';
 export { loadRuntime } from './runtime.js';
@@ -41,6 +44,7 @@ export type {
   SyncResult,
 } from './catalog-types.js';
 export type {
+  CopilotRequestTransform,
   CopilotWireIdentity,
   CopilotWireIdentityOverrides,
   WireIdentityMode,

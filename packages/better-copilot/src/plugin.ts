@@ -1,11 +1,11 @@
-import type { AssembleContext, PromptAssembly } from '@deepseek-ai/dsh-system-prompt';
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment';
 import { createCopilotAuthResolver } from './auth.js';
 import { createConfig, type BetterCopilotConfig, type BetterCopilotConfigSchema, type ProviderProfile, type ProvidersValue } from './config.js';
 import { DiscoveryError, syncCopilotCatalog } from './discovery.js';
-import { createCopilotWireIdentity, installCopilotIdentityHeaders, wireIdentityMode } from './identity.js';
+import { createCopilotWireIdentity, installCopilotIdentityHeaders, installCopilotRequestTransform, wireIdentityMode, type CopilotRequestTransform } from './identity.js';
 import { CopilotSearchProvider } from './provider.js';
-import { matchesRoute, normalizeToolSchemas, TOOL_SCHEMA_SKIPPED } from './schema.js';
+import { TOOL_SCHEMA_SKIPPED } from './schema.js';
+import { guardCopilotRequestBody } from './guard.js';
 import type { BetterCopilotRuntime } from './runtime.js';
 import type {
   CopilotAuthOptions,
@@ -140,30 +140,27 @@ export function createPlugin(dependencies: BetterCopilotDependencies): BetterCop
         });
       }
 
-      // 2. Gemini tool-declaration guard: an additive, contained global listener.
+      // 2. Gemini tool-declaration guard: one contained wire transform. The
+      //    assembly waterfall no longer sees provider-owned declarations, so the
+      //    guard rewrites the serialized request at the boundary that measures
+      //    the defect. It is installed even when wire identity is opted out.
       contain('tool-schema guard', 'Gemini tool-schema normalization', () => {
-        ctx.on('system-prompt/assemble', async (_assembly: PromptAssembly, _context: AssembleContext, next: () => Promise<PromptAssembly>): Promise<PromptAssembly> => {
-          // An upstream failure belongs to the downstream chain and propagates unchanged.
-          const downstream = await next();
+        const transform: CopilotRequestTransform = ({ body }) => {
           try {
             const settings = guardSettings(config.toolSchema);
-            if (!matchesRoute(downstream.variables.provider, downstream.variables.model, settings)) return downstream;
-            const result = normalizeToolSchemas(downstream.tools);
+            const result = guardCopilotRequestBody(body, settings);
             if (settings.logFixes) {
-              if (result.fixed.length > 0) {
-                log('info', 'better-copilot: added a properties bucket to %d tool schema(s) for %s/%s', result.fixed.length, String(downstream.variables.provider), String(downstream.variables.model));
-              }
-              if (result.skipped.length > 0) {
-                log('warn', 'better-copilot: %s left %d tool schema(s) unchanged: %s', TOOL_SCHEMA_SKIPPED, result.skipped.length, JSON.stringify(result.skipped));
-              }
+              if (result.fixed.length > 0) log('info', 'better-copilot: added a properties bucket to %d tool schema(s) on the Copilot wire', result.fixed.length);
+              if (result.skipped.length > 0) log('warn', 'better-copilot: %s left %d tool schema(s) unchanged: %s', TOOL_SCHEMA_SKIPPED, result.skipped.length, JSON.stringify(result.skipped));
             }
-            if (!result.changed) return downstream;
-            return { ...downstream, tools: result.tools };
+            return result.body;
           } catch {
-            log('warn', 'better-copilot: skipped one assembly after an internal error');
-            return downstream;
+            // The request is delegated byte-identical; a guard failure never fails a call.
+            log('warn', 'better-copilot: skipped one request after an internal error');
+            return undefined;
           }
-        }, { global: true, prepend: true });
+        };
+        ctx.effect(() => installCopilotRequestTransform(transform), 'copilot: tool-schema wire normalization');
       });
 
       // 3. Search provider: mounts only when the web service exists.

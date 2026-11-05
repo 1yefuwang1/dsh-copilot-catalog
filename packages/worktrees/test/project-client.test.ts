@@ -47,6 +47,26 @@ type VmValue = any;
 const peerRequire = createRequire(import.meta.resolve('@deepseek-ai/dsh-client-ui-workspace'));
 const nativeWorkspace = await readFile(resolve(dirname(peerRequire.resolve('@deepseek-ai/dsh-client-ui-workspace/package.json')), 'lib/client.js'), 'utf8');
 const nativePrimitives = await readFile(resolve(dirname(peerRequire.resolve('@deepseek-ai/dsh-client-ui-primitives/package.json')), 'lib/index.js'), 'utf8');
+
+// The installed product icons are published as a replaceable sprite: one
+// `"<glyph>": { size, svg }` entry per glyph. The plugin copies that geometry
+// inline, so the artwork tests compare against the sprite entry, not a component.
+const spriteEntry = (glyph: string): string => {
+  const start = nativePrimitives.indexOf('"' + glyph + '": {');
+  assert.notEqual(start, -1, 'native sprite entry ' + glyph);
+  return nativePrimitives.slice(start, nativePrimitives.indexOf('\n\t},', start) + 1);
+};
+const spritePaths = (glyph: string): string[] => [...spriteEntry(glyph).matchAll(/<path d="([^"]+)"/g)].map(match => match[1]!);
+// The workspace bundle inlines its layout metrics as one minified CSS string per
+// surface; look the surface up by content so an anonymous variable rename is not
+// mistaken for a metric change.
+const nativeStylesheet = (needle: string): string => {
+  for (const match of nativeWorkspace.matchAll(/const css\$?\d* = ("[^\n]+");/g)) {
+    const value = JSON.parse(match[1]!) as string;
+    if (value.includes(needle)) return value;
+  }
+  return assert.fail('native stylesheet containing ' + needle);
+};
 const nativeStateCss = await readFile(resolve(dirname(peerRequire.resolve('@deepseek-ai/dsh-client-ui-primitives/package.json')), 'lib/StateDot.module.css'), 'utf8');
 
 // Static assertions ignore emitted line wrapping; VM execution keeps the original text.
@@ -363,9 +383,7 @@ test('Projects working-session indicator uses native 14px ring geometry, neutral
 
 test('sidebar workspace folder SVGs match the actual native open and closed artwork', () => {
   const icon = source.slice(source.indexOf('function WorkspaceFolderIcon('), source.indexOf('function SidebarToolbarIcon('));
-  const open = nativePrimitives.slice(nativePrimitives.indexOf('const IconFolderOpenArtwork ='), nativePrimitives.indexOf('const IconFolderOpenRegular ='));
-  const closed = nativePrimitives.slice(nativePrimitives.indexOf('const FolderCloseArtwork ='), nativePrimitives.indexOf('//#endregion', nativePrimitives.indexOf('const FolderCloseArtwork =')));
-  assert.deepEqual([...icon.matchAll(/d: '([^']+)'/g)].map(match => match[1]), [...(open + closed).matchAll(/d: "([^"]+)"/g)].map(match => match[1]));
+  assert.deepEqual([...icon.matchAll(/d: '([^']+)'/g)].map(match => match[1]), [...spritePaths('folder-open'), ...spritePaths('folder-close')]);
   assert.match(staticSource(icon), /size = 16/); assert.match(staticSource(icon), /width: size, height: size.*viewBox: '0 0 16 16'.*strokeWidth: 1/); assert.match(staticSource(icon), /opacity: 0.16/);
   const group = source.slice(source.indexOf('function ProjectGroup('), source.indexOf('function SidebarToggle('));
   assert.match(staticSource(group), /h\(WorkspaceFolderIcon, \{ expanded: searching \|\| !collapsed, className: 'dsh-wt-project-folder' \}\)/); assert.doesNotMatch(staticSource(group), /'▱'/);
@@ -436,16 +454,14 @@ test('native navigation adapter preserves sidebar declarations, panel actions an
 
 test('toolbar Search, View options and Add project icons match the native header artwork', () => {
   const icon = source.slice(source.indexOf('function SidebarToolbarIcon('), source.indexOf('function FolderIcon('));
-  const artwork = (name: string) => nativePrimitives.slice(nativePrimitives.indexOf('const ' + name + 'Artwork ='), nativePrimitives.indexOf('const ' + name + 'Regular ='));
-  const pathList = (text: string) => [...text.matchAll(/d: "([^"]+)"/g)].map(match => match[1]);
-  assert.deepEqual([...icon.matchAll(/d: '([^']+)'/g)].map(match => match[1]), [...pathList(artwork('IconSearchOutline')), ...pathList(artwork('IconProjectAddOutline')), ...pathList(artwork('IconSlidersTwoOutline'))]);
+  assert.deepEqual([...icon.matchAll(/d: '([^']+)'/g)].map(match => match[1]), [...spritePaths('search-outline'), ...spritePaths('project-add-outline'), ...spritePaths('sliders-two-outline')]);
   assert.match(staticSource(icon), /cx: 9.95, cy: 5, r: 1.45/); assert.match(staticSource(icon), /cx: 5.75, cy: 11, r: 1.45/); assert.match(staticSource(icon), /strokeWidth: 1/);
   assert.deepEqual([...source.matchAll(/require\('([^']+)'\)/g)].map(match => match[1]), ['react']);
 });
 
 test('sidebar title, date, row and counted-expansion metrics match native Folder view', () => {
-  const rowsCss = JSON.parse(nativeWorkspace.match(/const css\$3 = ("[^\n]+");/)![1]!);
-  const browserCss = JSON.parse(nativeWorkspace.match(/const css = ("[^\n]+sessionOverflowButton[^\n]+");/)![1]!);
+  const rowsCss = nativeStylesheet('projectRow');
+  const browserCss = nativeStylesheet('sessionOverflowButton');
   const nativeRule = (css: string, name: string) => css.match(new RegExp('(?:^|\\})\\.[\\w-]+_' + name + '\\{([^}]+)\\}'))?.[1];
   const ownRule = (selector: string) => [...source.matchAll(new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\{([^}]+)\\}', 'g'))].at(-1)?.[1];
   for (const name of ['projectRow', 'sessionRow', 'title', 'time']) assert.ok(nativeRule(rowsCss, name), name);

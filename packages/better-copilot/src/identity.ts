@@ -207,10 +207,22 @@ export function wireIdentityMode(env: NodeJS.ProcessEnv = process.env): WireIden
 
 type Fetch = typeof globalThis.fetch;
 
+/**
+ * Rewrite one serialized Copilot request body before dispatch.
+ *
+ * Returning a string replaces the body; `undefined` keeps it byte-identical.
+ * A throw is contained like every other pre-dispatch normalization failure.
+ */
+export type CopilotRequestTransform = (request: { readonly url: URL; readonly body: string }) => string | undefined;
+
 interface ControllerState {
   active: boolean;
-  readonly identity: CopilotWireIdentity;
+  identity: CopilotWireIdentity | null;
+  transform: CopilotRequestTransform | null;
+  /** Header installers; the identity applies while at least one is live. */
   installs: number;
+  /** Body installers; the transform applies while at least one is live. */
+  transforms: number;
   readonly wrappers: WeakSet<Fetch>;
   readonly downstreams: WeakMap<Fetch, Fetch>;
   current?: { wrapper: Fetch; downstream: Fetch };
@@ -242,17 +254,23 @@ function createWrapper(state: ControllerState, downstream: Fetch): Fetch {
     if (!state.active) return downstream(input, init);
     let url: URL;
     let headers: Headers;
+    let body: string | undefined;
     try {
       url = requestUrl(input);
       if (!isTrustedCopilotUrl(url) || !isCopilotRequestPath(url.pathname)) return downstream(input, init);
       headers = effectiveHeaders(input, init);
-      rewriteCopilotRequestHeaders(url, headers, state.identity);
+      if (state.identity !== null) rewriteCopilotRequestHeaders(url, headers, state.identity);
+      if (state.transform !== null && typeof init?.body === 'string') {
+        body = state.transform({ url, body: init.body });
+        // A replaced body usually changes length, so its framing cannot be reused.
+        if (body !== undefined) { headers.delete('content-length'); headers.delete('transfer-encoding'); }
+      }
     } catch {
       // Only pre-dispatch normalization failures are fail-open; the request is
       // delegated once and its eventual rejection is never caught or retried.
       return downstream(input, init);
     }
-    return downstream(input, { ...init, headers });
+    return downstream(input, body === undefined ? { ...init, headers } : { ...init, headers, body });
   };
   state.wrappers.add(wrapper);
   state.downstreams.set(wrapper, downstream);
@@ -282,30 +300,56 @@ function attach(state: ControllerState): void {
  * current fetch rather than reusing stale installation state.
  */
 export function installCopilotIdentityHeaders(identity: CopilotWireIdentity = createCopilotWireIdentity()): () => void {
+  return install({ identity });
+}
+
+/**
+ * Install a process-wide Copilot request-body normalizer.
+ *
+ * It shares the header interceptor's controller, trust checks and release
+ * discipline, so both halves are installed once and released independently. A
+ * body is normalized only when the request is a trusted Copilot inference call
+ * and the caller passes a serialized string body; every other shape is
+ * delegated untouched.
+ */
+export function installCopilotRequestTransform(transform: CopilotRequestTransform): () => void {
+  return install({ transform });
+}
+
+function install(options: { identity?: CopilotWireIdentity; transform?: CopilotRequestTransform }): () => void {
   if (typeof globalThis.fetch !== 'function') return () => {};
   if (controller === undefined) {
     controller = {
       active: true,
-      identity,
+      identity: null,
+      transform: null,
       installs: 0,
+      transforms: 0,
       wrappers: new WeakSet(),
       downstreams: new WeakMap(),
     };
   }
   const state = controller;
+  const ownsIdentity = options.identity !== undefined, ownsTransform = options.transform !== undefined;
+  // The first live identity install owns it; later concurrent installs share it.
+  if (ownsIdentity && state.installs === 0) state.identity = options.identity!;
+  // A body transform is per installer, and the latest live one wins.
+  if (ownsTransform) state.transform = options.transform!;
   try {
     attach(state);
   } catch (error) {
-    if (state.installs === 0 && controller === state) controller = undefined;
+    if (state.installs === 0 && state.transforms === 0 && controller === state) controller = undefined;
     throw error;
   }
-  state.installs += 1;
+  if (ownsIdentity) state.installs += 1;
+  if (ownsTransform) state.transforms += 1;
   let released = false;
   return () => {
     if (released) return;
     released = true;
-    state.installs -= 1;
-    if (state.installs > 0) return;
+    if (ownsIdentity) { state.installs -= 1; if (state.installs === 0) state.identity = null; }
+    if (ownsTransform) { state.transforms -= 1; if (state.transforms === 0) state.transform = null; }
+    if (state.installs > 0 || state.transforms > 0) return;
     state.active = false;
     if (state.current !== undefined && globalThis.fetch === state.current.wrapper) {
       globalThis.fetch = state.current.downstream;

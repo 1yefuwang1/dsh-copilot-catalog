@@ -1,3 +1,4 @@
+import { WorktreeError } from '../../dist/errors.js';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdir, realpath, readFile, writeFile, rm } from 'node:fs/promises';
@@ -171,7 +172,7 @@ test('removed sources support independent worktree creation and retained worktre
   const settings: SessionSettings = { model: { provider: 'github-copilot', model: 'gpt-6.1-sol' }, preset: null, sandbox: 'danger-full-access', approval: 'never', plan: false, hash: 'same-settings' };
   const sessionCalls: Parameters<SessionBootstrap['create']>[0][] = [];
   const bootstrap = {
-    actor: (id: string) => agents.get(id), isLive: (agent: HostDouble) => agents.get(agent.id) === agent, async settings() { return structuredClone(settings); }, async assertBlank() {}, async close() {},
+    actor: (id: string) => agents.get(id), isLive: (agent: HostDouble) => agents.get(agent.id) === agent, assertOrdinaryCaller(agent: HostDouble) { if (agent.session.header.origin === 'subagent') throw new WorktreeError('SUBAGENT_SOURCE', 'subagent caller'); }, async settings() { return structuredClone(settings); }, async assertBlank() {}, async close() {},
     async create(input: Parameters<SessionBootstrap['create']>[0]) { sessionCalls.push(input); const child = actor(randomUUID(), input.cwd), result = { agent: child, sessionId: child.id, workspaceId: randomUUID() }; await input.onCreated?.(result); return result; },
   };
   const git = {

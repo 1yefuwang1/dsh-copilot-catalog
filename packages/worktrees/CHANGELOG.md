@@ -1,5 +1,37 @@
 # @1yefuwang1/dsh-worktrees changelog
 
+## 0.2.28 — DSH 0.2.2-rc.1 compatibility
+
+- Retarget the manifest, peer ranges and development pins to DSH `0.2.2-rc.1`.
+- Lease the native submit ABI `0.2.2-rc.1/default-sink-v3`: the sink now carries
+  the native acceptance callback, and the shell serializes every gesture through
+  its own transaction instead of publishing an attachment-only commit first. The
+  plugin therefore forwards the acceptance callback for native Local sends, no
+  longer restores drafts or attachments the shell still owns, and keeps refusing
+  a second gesture while one is pending.
+- Brand recorded `model/selection` efforts through one host helper, batch tool
+  calls through the rc.1 `ToolsService.execute` contract, and declare scheduling
+  through `isConcurrencySafe` instead of the removed per-call mode query.
+- Validate the declared parameter schemas with the registry's
+  `assertSupportedJsonSchema`/`assertObjectJsonSchema` projection instead of the
+  removed TypeScript/Python tools-SDK renderers, and mirror the native client's
+  `rebindDraftFiles(…, uploadImages)` and `sendSession(…, accept?)` signatures.
+- Refresh the native artwork checks against the sprite entries the rc.1 product
+  icon set publishes.
+- Treat an empty optional string as an omitted field in worktree and project
+  requests. Some model routes materialize every optional property of a tool
+  declaration as `""`, which previously failed validation (`Too small`,
+  `Invalid UUID`) for fields the caller never meant to send.
+- Parse `git_worktree` and `workspace_project` tool arguments tolerantly: a tool
+  call may enumerate properties the chosen action does not accept, so both tool
+  boundaries drop those before their strict checks. The authenticated UI RPC and
+  the slash command keep the strict per-action rejection, and an accepted field
+  with an invalid value is still refused.
+- Name a subagent caller explicitly. The ordinary-source gate now runs before the
+  worktree source resolver for every tool and project action, so a subagent is told
+  that worktree and project actions are unavailable to subagent sessions instead of
+  inheriting the source resolver's "new top-level worktree conversation" wording.
+
 ## 0.2.27 — Local mode has no branch selection
 
 - Render the starting-branch picker only for **New worktree**. A Local thread runs in

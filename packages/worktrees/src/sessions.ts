@@ -4,7 +4,7 @@ import type {} from '@deepseek-ai/dsh-agent-preset-registry';
 import type {} from '@deepseek-ai/dsh-plan-mode';
 import { realpath, stat } from 'node:fs/promises';
 import type { Context } from '@deepseek-ai/cordis';
-import type { Agent, AgentHandle, AgentOptions, CreateAgentOptions, ResumeAgentOptions, InboxWireState } from '@deepseek-ai/dsh-agent';
+import type { Agent, AgentHandle, AgentOptions, CreateAgentOptions, ResumeAgentOptions, InboxWireState, ModelSelection } from '@deepseek-ai/dsh-agent';
 import { Session, SessionId, SessionSeq, SessionLogOffset, buildForkSeed, interruptedTurnClosers, type SessionEvent, type SessionHeader } from '@deepseek-ai/dsh-session';
 import type { SessionHandle, SessionPersistenceSnapshot } from '@deepseek-ai/dsh-session-persistence';
 import { isAbsolute } from 'node:path';
@@ -70,6 +70,14 @@ export interface ColdContinuationInput {
 }
 
 function coldHash(source: Omit<ColdContinuationSource, 'hash' | 'seed'>): string { return hashValue(source); }
+/**
+ * The client-owned selection carries the effort as a plain string because it crosses the JSON
+ * RPC boundary; the host brands the same value as `ReasoningEffortId`. This is the one place
+ * that converts between the two, for both initial Agent options and recorded selection events.
+ */
+function hostSelection(model: NonNullable<SessionSettings['model']>): ModelSelection {
+  return { provider: model.provider, model: model.model, ...(model.reasoningEffort === undefined ? {} : { reasoningEffort: model.reasoningEffort as ModelSelection['reasoningEffort'] }) };
+}
 function modelIntent(value: unknown): SessionSettings['model'] {
   if (value === undefined || value === null) return null;
   if (typeof value !== 'object') throw new WorktreeError('INVALID_MODEL', 'The cold source model selection is invalid.');
@@ -180,6 +188,18 @@ export class SessionBootstrap {
     }).catch(() => undefined);
     return { ...await stage.entered.promise, completion: stage.completion };
   }
+  /**
+   * Refuse one session as the *invoking* caller, with a message about the caller.
+   *
+   * `actor()` resolves a worktree *source* and words its refusal for starting a
+   * new top-level conversation; an invocation that is merely a subagent needs a
+   * different explanation, so the two checks stay separate and honest.
+   */
+  assertOrdinaryCaller(agent: Agent): void {
+    if (agent.session.header.origin === 'subagent') {
+      throw new WorktreeError('SUBAGENT_SOURCE', 'Worktree and project actions are unavailable to subagent sessions; use an ordinary conversation.');
+    }
+  }
   actor(id: string): Agent {
     const agent = required<AgentsCapability>(this.owner, 'agents').get(id);
     if (agent === undefined) throw new WorktreeError('SESSION_NOT_LIVE', 'The source session is no longer live. Open it and retry.');
@@ -240,7 +260,7 @@ export class SessionBootstrap {
     return cwd;
   }
   private coldAgentOptions(source: Pick<ColdContinuationSource, 'model'>): AgentOptions {
-    return source.model === null ? {} : { provider: source.model.provider, model: source.model.model, ...(source.model.reasoningEffort === undefined ? {} : { reasoningEffort: source.model.reasoningEffort as AgentOptions['reasoningEffort'] }) };
+    return source.model === null ? {} : hostSelection(source.model);
   }
   private async mountColdPreset(agentCtx: Context, source: Pick<ColdContinuationSource, 'preset'>): Promise<void> {
     const presets = capability<PresetsCapability>(this.owner, 'agentPresets');
@@ -408,10 +428,7 @@ export class SessionBootstrap {
       sessionId: SessionId(randomUUID()),
       meta: { cwd, ...(input.settings.preset === null ? {} : { agentPreset: input.settings.preset }) },
       signal: input.signal,
-      agentOptions: input.settings.model === null ? {} : {
-        provider: input.settings.model.provider, model: input.settings.model.model,
-        ...(input.settings.model.reasoningEffort === undefined ? {} : { reasoningEffort: input.settings.model.reasoningEffort as AgentOptions['reasoningEffort'] }),
-      },
+      agentOptions: input.settings.model === null ? {} : hostSelection(input.settings.model),
       setup: async (agentCtx, child) => {
         const presets = capability<PresetsCapability>(this.owner, 'agentPresets');
         if (presets !== undefined) {
@@ -422,7 +439,7 @@ export class SessionBootstrap {
         setSandboxMode(child.session, input.settings.sandbox);
         setApprovalPolicy(child.session, input.settings.approval);
         child.session.append('plan/mode', { active: input.settings.plan });
-        if (input.settings.model !== null) child.session.append('model/selection', input.settings.model);
+        if (input.settings.model !== null) child.session.append('model/selection', hostSelection(input.settings.model));
       },
     };
     if (input.mode === 'continue') {

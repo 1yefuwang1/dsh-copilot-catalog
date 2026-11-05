@@ -12,8 +12,8 @@ test('providers reuse the adapter schema, including its resolved profile default
   const profile = config.providers.get()['github-copilot'] as unknown as Record<string, unknown> | undefined;
   assert.ok(profile);
   assert.equal(profile.baseURL, undefined);
-  assert.equal(profile.defaultContextWindow, 262144);
-  assert.equal(profile.defaultMaxTokens, 32768);
+  assert.equal(profile.defaultContextWindow, 1000000);
+  assert.equal(profile.defaultMaxTokens, 128000);
   assert.deepEqual(profile.compat, { chatTemplateKwargs: {}, chatTemplateArgs: {} });
   // The reused schema instance is the adapter's own field schema, not a restatement.
   assert.equal((OriginalConfig as unknown as { dict: { providers: unknown } }).dict.providers, (createConfig(OriginalConfig) as unknown as { dict: { providers: unknown } }).dict.providers);

@@ -34,8 +34,44 @@ const fields: Record<WorktreeAction, readonly string[]> = {
   'reopen-info': ['sourceSessionId', 'cursor', 'limit'], reopen: ['sourceSessionId', 'localBranch', 'localOid', 'takeover'],
   release: ['id', 'localBranch', 'repoPath'],
 };
+/**
+ * Drop unused optional strings before validation.
+ *
+ * Some model routes materialize every optional property of a tool declaration as
+ * an empty string instead of omitting it. An empty optional carries no intent, so
+ * it is treated as absent instead of failing validation for fields the caller
+ * never meant to send.
+ */
+export function withoutEmptyOptionalStrings(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return value;
+  const result: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value)) if (item !== '') result[key] = item;
+  return result;
+}
+/**
+ * Parse one model tool call.
+ *
+ * Tool arguments are also produced by an LLM, which may enumerate every property
+ * of the declaration instead of only the fields the chosen action accepts. Such a
+ * call still names its action explicitly, so fields the action does not accept are
+ * dropped rather than refused; the strict parser keeps guarding callers that are
+ * written by code, such as the authenticated UI RPC and the slash command.
+ *
+ * @param value - raw tool arguments.
+ * @returns the request the chosen action accepts.
+ */
+export function parseToolRequest(value: unknown): WorktreeRequest {
+  const normalized = withoutEmptyOptionalStrings(value);
+  if (typeof normalized !== 'object' || normalized === null || Array.isArray(normalized)) return parseRequest(normalized);
+  const action = (normalized as { action?: unknown }).action;
+  const accepted = typeof action === 'string' && Object.hasOwn(fields, action) ? fields[action as WorktreeAction] : undefined;
+  if (accepted === undefined) return parseRequest(normalized);
+  const kept: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(normalized)) if (key === 'action' || accepted.includes(key)) kept[key] = item;
+  return parseRequest(kept);
+}
 export function parseRequest(value: unknown): WorktreeRequest {
-  const parsed = requestSchema.safeParse(value);
+  const parsed = requestSchema.safeParse(withoutEmptyOptionalStrings(value));
   if (!parsed.success) throw new WorktreeError('INVALID_REQUEST', parsed.error.issues.map(i => `${i.path.join('.') || 'request'}: ${i.message}`).join('; '));
   const request = parsed.data;
   for (const key of Object.keys(request)) if (key !== 'action' && !fields[request.action].includes(key)) throw new WorktreeError('INVALID_REQUEST', `${request.action} does not accept ${key}.`);

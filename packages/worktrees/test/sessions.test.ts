@@ -110,6 +110,11 @@ test('blank and ordinary checks reject started, pending, replaced or subagent so
   f.live.set(f.source.id, { ...f.source }); await assert.rejects(f.bootstrap.settings(f.source), code('SESSION_CHANGED'));
   // Deliberately partial registry entry: actor must reject origin before accessing other capabilities.
   f.live.set('subagent', { session: { header: { origin: 'subagent' } } } as unknown as FixtureAgent); assert.throws(() => f.bootstrap.actor('subagent'), code('SUBAGENT_SOURCE'));
+  // A subagent *caller* is refused with a message about the caller, not about
+  // starting a new top-level conversation.
+  const subagent = { session: { header: { origin: 'subagent' } } } as unknown as FixtureAgent;
+  assert.throws(() => f.bootstrap.assertOrdinaryCaller(subagent), (error: unknown) => code('SUBAGENT_SOURCE')(error) && /subagent sessions/u.test((error as Error).message));
+  assert.doesNotThrow(() => f.bootstrap.assertOrdinaryCaller(f.source));
   assert.throws(() => f.bootstrap.actor('missing'), code('SESSION_NOT_LIVE'));
 });
 

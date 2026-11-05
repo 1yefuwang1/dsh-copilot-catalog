@@ -24,7 +24,7 @@ export interface Invocation {
   capturedRoot?: string;
 }
 type GitApi = Pick<GitOperations, 'discover' | 'remotes' | 'branches' | 'localBranches' | 'create' | 'verify' | 'status' | 'createBranch' | 'renameBranch' | 'fingerprint' | 'snapshot' | 'apply' | 'branchHolders' | 'releaseCheckout'>;
-type BootstrapApi = Pick<SessionBootstrap, 'actor' | 'isLive' | 'settings' | 'assertBlank' | 'create' | 'close'>;
+type BootstrapApi = Pick<SessionBootstrap, 'actor' | 'isLive' | 'assertOrdinaryCaller' | 'settings' | 'assertBlank' | 'create' | 'close'>;
 export interface RecoveryInvocation { agent?: Agent; origin: Invocation['origin']; signal: AbortSignal }
 export interface WorktreeLifecycle {
   summary(id: string): WorktreeCleanupSummary | undefined;
@@ -337,7 +337,9 @@ export class WorktreeController {
   }
   private guard(request: WorktreeRequest, invocation: Invocation): void {
     abortIfRequested(invocation.signal);
-    if (!this.bootstrap.isLive(invocation.agent) || this.bootstrap.actor(invocation.agent.id) !== invocation.agent) throw new WorktreeError('SESSION_CHANGED', 'The invoking session is no longer the exact live ordinary session.');
+    if (!this.bootstrap.isLive(invocation.agent)) throw new WorktreeError('SESSION_CHANGED', 'The invoking session is no longer the exact live ordinary session.');
+    this.bootstrap.assertOrdinaryCaller(invocation.agent);
+    if (this.bootstrap.actor(invocation.agent.id) !== invocation.agent) throw new WorktreeError('SESSION_CHANGED', 'The invoking session is no longer the exact live ordinary session.');
     if (fullAccessActions.has(request.action)) requireFullAccess(invocation.agent);
     if (invocation.origin === 'tool' && mutationActions.has(request.action) && planBlocksMutation(invocation.agent)) throw new WorktreeError('PLAN_MODE', 'This mutation is unavailable while plan mode is active or pending enabled.');
   }

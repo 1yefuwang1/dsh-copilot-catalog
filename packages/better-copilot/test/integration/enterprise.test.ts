@@ -22,6 +22,9 @@ const gheToken = 'synthetic-token;proxy-ep=copilot-api.msft.ghe.com';
 function fakeContext(record: CredentialRecord | undefined, key?: string, ambientKey?: string) {
   const registrations: { routes: AdapterRegistration[0]; adapter: AdapterRegistration[1] }[] = [];
   const effects: (() => void)[] = [];
+  // The rc.1 adapter prepares request headers through the `llm-pi-ai/request-headers`
+  // waterfall, so the fake context must compose listeners like the real one.
+  const listeners = new Map<string, ((...args: unknown[]) => unknown)[]>();
   const credentials = {
     readRecord: async () => record,
     resolve: async (ref: string) => ref === 'SYNTHETIC_COPILOT_TOKEN' && key ? { value: key, source: 'synthetic' } : undefined,
@@ -33,7 +36,21 @@ function fakeContext(record: CredentialRecord | undefined, key?: string, ambient
     fiber: { entry: { options: { id: 'llm-pi-ai-catalog' } } },
     get: (name: string) => name === 'credentials' ? credentials
       : name === 'launchEnvironment' && ambientKey ? { get: (ref: string) => ref === 'COPILOT_GITHUB_TOKEN' ? { value: ambientKey, source: 'process' } : undefined } : undefined,
-    inject() {}, on() {},
+    inject() {},
+    on(event: string, listener: (...args: unknown[]) => unknown) {
+      const list = listeners.get(event) ?? [];
+      list.push(listener); listeners.set(event, list);
+      return { dispose() { const index = list.indexOf(listener); if (index !== -1) list.splice(index, 1); } };
+    },
+    waterfall(thisArg: unknown, event: string, ...args: unknown[]) {
+      const next = args.pop() as () => unknown;
+      let current = next;
+      for (const listener of (listeners.get(event) ?? []).slice().reverse()) {
+        const downstream = current;
+        current = () => listener.apply(thisArg, [...args, downstream]);
+      }
+      return current();
+    },
     effect(execute: () => () => void) { effects.push(execute()); },
     logger: { info() {}, warn() {}, error() {} },
     llm: {

@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
-import { Context } from '@deepseek-ai/cordis';
+import { Context, Service } from '@deepseek-ai/cordis';
 import type { Agent, SessionStartSource } from '@deepseek-ai/dsh-agent';
 import type { WorktreeRecord, OperationRecord } from '../../dist/types.js';
 import type { CleanupReceipt, ReopenReceipt } from '../../dist/cleanup-store.js';
@@ -22,7 +22,7 @@ import { CommandRuntime } from '@deepseek-ai/dsh-commands';
 import { GoalService } from '@deepseek-ai/dsh-goal';
 import { PermissionPresetService } from '@deepseek-ai/dsh-permission-presets';
 import { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy';
-import { SessionStore, SessionId } from '@deepseek-ai/dsh-session';
+import { SessionStore, SessionId, SessionSeq } from '@deepseek-ai/dsh-session';
 import { releasedV3SessionFormatCodec as v3Codec, restoreReleasedV3Artifact } from '@deepseek-ai/dsh-session-format-v2-to-v3';
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl';
 import { SessionQueryEngine } from '@deepseek-ai/dsh-session-query';
@@ -132,12 +132,35 @@ async function fixture(t: TestContext) {
   let backend: JsonStorageBackend | undefined, facility: DomainFacility | undefined, unregisterPreset: (() => void | Promise<void>) | undefined;
   t.after(async () => { for (const cleanup of cleanups.reverse()) await cleanup.close(); for (const bootstrap of bootstraps.reverse()) await bootstrap.close(); for (const scope of scopes.reverse()) await scope.dispose(); await unregisterPreset?.(); await facility?.closeAll(); await backend?.close(); assert.equal(owner.agents.list().length, 0); assert.equal(dirname(root), tmpBase); assert.equal(await realpath(root), root); await rm(root, { recursive: true, force: false }); });
   const mount = async (plugin: DynamicMock, config?: DynamicMock) => { const scope = owner.plugin(plugin, config); scopes.push(scope); await scope.await(); assert.equal(scope.state, 2, `${plugin.name} requires ${(plugin.inject ?? []).filter((name: string) => owner.get(name) === undefined).join(', ')}`); return scope; };
-  new SessionStore(owner); new SessionProjectionRegistry(owner); new AgentRegistry(owner);
+  /**
+   * Run the Cordis service init a bare constructor skips.
+   *
+   * rc.1 services acquire their durable projection handles in an asynchronous
+   * `[Service.init]`, which the plugin runner calls for constructor plugins. This
+   * fixture constructs the real services directly, so it performs that exact step.
+   */
+  const initService = async (service: object) => {
+    const init = (service as Record<symbol, unknown>)[Service.init];
+    if (typeof init === 'function') await (init as () => Promise<unknown>).call(service);
+  };
+  new SessionStore(owner); new SessionProjectionRegistry(owner); await initService(new AgentRegistry(owner));
+  // rc.1 services acquire their projection handles in an asynchronous service init;
+  // settle those before any Session is created.
+  await owner.fiber.await();
   new SystemPrompt(owner, { includeHarnessIdentity: false }); new ToolRuntime(owner); new CommandRuntime(owner);
+  // rc.1 refuses to run an agent step without a selected tool executor. This
+  // fixture never calls a tool, so an empty provider is the honest composition.
+  owner.tools.setExecutor({
+    describe: () => ({ schemas: [], knownNames: [] }),
+    execute: async () => ({ results: [], additionalContexts: [], concluded: false }),
+  });
   // Only unused Host I/O ports are fixture adapters. The Agent factory, native
   // Session controller, preset registry, projections, policies, goals, workspace
   // and JSONL durability are the actual pinned 0.2.1 implementations.
   owner.provide('typert', { lookups: { configure() {} }, contexts: { configureHost() {} }, resources: { register() {} } });
+  // rc.1 reads remote-pending interactions when it reports a session's pending
+  // input; this local profile never receives a remote peer event.
+  owner.provide('typertGateway', { getPendingRemoteEvents: () => [] });
   // Local profile: no remote peer may reach the API controller's session surface.
   owner.provide('remoteAccess', { allows: () => true });
   owner.provide('agentDefaultModel', { currentSelection: () => route, async saveSelection() {} });
@@ -160,11 +183,11 @@ async function fixture(t: TestContext) {
   owner.llm.registerAdapter(['fixture'], new FixtureAdapter() as unknown as Parameters<Context['llm']['registerAdapter']>[1]); // Public transitive adapter base is dynamically resolved.
   const sessionLogs = resolve(root, 'session-logs');
   await mount(JsonlSessionPersistence, { root: sessionLogs, compression: 'none' });
-  new ReadQuery(owner); new SandboxPolicyService(owner, { mode: 'read-only', workspaceRoot: root }); new ApprovalService(owner, { policy: 'ask' }); new GoalService(owner);
+  new ReadQuery(owner); await initService(new SandboxPolicyService(owner, { mode: 'read-only', workspaceRoot: root })); await initService(new ApprovalService(owner, { policy: 'ask' })); await initService(new GoalService(owner));
   new Storage(owner); backend = new JsonStorageBackend(resolve(root, 'domain-data')); owner.storage.backend.register('fixture-json', backend);
   facility = new DomainFacility(owner, { backend: 'fixture-json' }); owner.provide('storageDomain', facility); await mount(WorkspaceRegistry);
   new Loader(owner, { baseUrl: import.meta.url });
-  new AgentPresetRegistry(owner, AgentPresetRegistry.Config({ default: 'factory-test' }));
+  await initService(new AgentPresetRegistry(owner, AgentPresetRegistry.Config({ default: 'factory-test' })));
   unregisterPreset = await owner.agentPresets.register({ id: 'factory-test', plugins: [] });
   assert.equal((await owner.agentPresets.resolve('factory-test')).id, 'factory-test');
   await mount(PermissionPresetService, { presets: { 'read-only': { sandbox: 'read-only', approval: 'ask' }, 'danger-full-access': { sandbox: 'danger-full-access', approval: 'never' } }, defaultPreset: 'read-only' });
@@ -281,9 +304,13 @@ test('real cold resume/adoption verifies the full preallocated prefix and retain
   const f = await fixture(t), cold = await f.bootstrap.coldSource(f.sourceId), sessionId = SessionId(randomUUID());
   const seed = clone(cold.seed); const queued = createUserMessage({ content: [{ type: 'text', text: 'Durably parked before cold resume.' }], source: { kind: 'user' } });
   const session = f.owner.sessions.prepare(sessionId, { seed, inheritedEventCount: cold.inheritedEventCount, meta: { cwd: f.cwd, parentSession: f.sourceId, isSeeded: true, agentPreset: required(cold.preset) } });
-  session.append('agent/inbox/spliced', { target: 'next-turn', start: 0, removedCount: 0, inserted: [queued] });
+  // rc.1 keeps a prepared session read-only until it is entered into the store, and
+  // entering one the factory must later create would collide. This fixture only
+  // needs a durable log, so it writes the same events the store would have written.
+  const preparedEvents = session.snapshotEvents();
   const writer = await f.owner.sessionPersistence.create(session.header, { inheritedEventCount: cold.inheritedEventCount });
-  await writer.append(session.snapshotEvents()); await writer.flush(); await writer.close();
+  await writer.append([...preparedEvents, { type: 'agent/inbox/spliced', seq: SessionSeq(preparedEvents.length), time: Date.now(), data: { target: 'next-turn', start: 0, removedCount: 0, inserted: [queued] } }]);
+  await writer.flush(); await writer.close();
   let hold!: ColdFactoryHold;
   const stage = await f.bootstrap.stageColdContinuation({ sessionId, cwd: f.cwd, title: 'Cold target', source: cold, holdInput(agent, factory) { assert.ok(factory); hold = factory; assert.equal(required(agent.inbox.nextTurn[0]).id, queued.id); } });
   const target = stage.agent; assert.equal(f.owner.agents.get(sessionId), target); assert.equal(ownTurns(target).length, 0);
@@ -402,7 +429,10 @@ test('a bootstrap factory listener failure after READY preserves commitment and 
   const resumed = await f.owner.sessionController.resolveAgent(SessionId(receipt.sessionId)); assert.ok('agent' in resumed, 'error' in resumed ? resumed.error.message : undefined);
   const target = resumed.agent; assert.equal(target.session.header.cwd, f.cwd); assert.equal(target.session.header.parentSession, f.sourceId);
   assert.equal(f.owner.sandboxPolicy.resolve({ session: target.session }).mode, 'read-only'); assert.equal(required(f.owner.goals.get(target)).activation, 'disarmed');
-  assert.equal(ownTurns(target).length, 0); await f.prompt(target.id); await target.whenIdle(); assert.equal(ownTurns(target).length, 1);
+  assert.equal(ownTurns(target).length, 0); await f.prompt(target.id); await target.whenIdle();
+  // rc.1 retains the input the factory handed over and drains it on the resumed
+  // target, so the retry answers both that message and this one instead of dropping it.
+  assert.equal(ownTurns(target).length, 2);
   assert.equal((await f.reopen('topic', TOPIC)).sessionId, target.id); assert.deepEqual(f.switchCalls, ['main']);
   assert.equal(f.owner.agents.list().length, 1); assert.deepEqual(await readFile(f.sourcePath), f.sourceBytes);
 });
@@ -427,7 +457,10 @@ test('a native factory post-gate listener failure cannot downgrade the same READ
   const retry = await f.owner.sessionController.resolveAgent(SessionId(pending.sessionId)); assert.ok('agent' in retry, 'error' in retry ? retry.error.message : undefined);
   assert.equal(retry.agent.session.header.cwd, f.cwd); assert.equal(required(f.owner.goals.get(retry.agent)).activation, 'disarmed');
   assert.equal(f.owner.sandboxPolicy.resolve({ session: retry.agent.session }).mode, 'read-only');
-  await f.prompt(retry.agent.id); await retry.agent.whenIdle(); assert.equal(ownTurns(retry.agent).length, 1);
+  await f.prompt(retry.agent.id); await retry.agent.whenIdle();
+  // The prompt held across the failed publication survives in the durable inbox, so the
+  // resumed target answers it and this one: two turns, neither duplicated.
+  assert.equal(ownTurns(retry.agent).length, 2);
   assert.equal((await next.cleanup.info(f.sourceId, new AbortController().signal)).continuationSessionId, retry.agent.id);
   assert.equal(f.owner.agents.list().length, 1); assert.deepEqual(f.switchCalls, ['main']); assert.deepEqual(await readFile(f.sourcePath), f.sourceBytes);
 });

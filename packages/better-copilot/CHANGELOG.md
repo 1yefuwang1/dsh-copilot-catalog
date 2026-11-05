@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.1.1 — DSH 0.2.2-rc.1 compatibility
+
+- Retarget the manifest, peer ranges and development pins to DSH `0.2.2-rc.1`
+  with `cordis ~4.1.0` and `schemastery ~3.19.0`.
+- Move the Gemini tool-declaration guard from the `system-prompt/assemble`
+  waterfall to the Copilot wire. `0.2.2-rc.1` assembles tool declarations
+  outside the presentation waterfall, so the guard now rewrites the serialized
+  request body inside the same refcounted interceptor that carries the wire
+  identity. It still adds only a missing root `properties` bucket, still matches
+  configured providers and model families, keeps `SKIPPED_*` reason codes and
+  `logFixes` summaries, and now runs even when `DSH_COPILOT_WIRE_IDENTITY=off`.
+- Export `installCopilotRequestTransform`, `guardCopilotRequestBody`,
+  `GuardedBody` and `MAX_GUARDED_BODY_BYTES`; `./guard` keeps exporting
+  `matchesRoute`, `normalizeToolSchemas`, `classifyParameters`,
+  `TOOL_SCHEMA_SKIPPED` and their types.
+- Follow the adapter's `1_000_000`/`128_000` profile defaults, its
+  `llm-pi-ai/request-headers` waterfall and the branded reasoning-effort id.
+
 ## 0.1.0 — consolidated Copilot plugin
 
 First release of `dsh-better-copilot`, merging three independently installable

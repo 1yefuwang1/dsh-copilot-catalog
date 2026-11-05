@@ -117,8 +117,10 @@ declare namespace WT {
     input: { for(scope: Scope): Input }; blocks: Blocks;
     resolveDraftAttachments(ids: readonly string[]): readonly { id: string; kind: string }[];
     fileUploads: Store<WTStringMap<{ status: string; message?: string }>>;
-    rebindDraftFiles(sessionId: string, ids: readonly string[]): void;
-    sendSession(session: Store<SessionSnapshot>, text: string, ids: readonly string[], mode: SubmitMode, signal: AbortSignal): Promise<SubmitResult>;
+    /** The native v3 signature: image uploads are requested explicitly per rebind. */
+    rebindDraftFiles(sessionId: string, ids: readonly string[], uploadImages: boolean): void;
+    /** The native v3 signature: `accept` reports Host acceptance before the outcome. */
+    sendSession(session: Store<SessionSnapshot>, text: string, ids: readonly string[], mode: SubmitMode, signal?: AbortSignal, accept?: () => void): Promise<SubmitResult>;
   }
   interface Listing { path: string; crumbs: { name: string; path: string }[]; entries: { name: string; path: string }[]; truncated?: boolean }
   interface UIWorkspace {

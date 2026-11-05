@@ -19,7 +19,7 @@ packages. Their behaviour is consolidated here; see the migration notes below.
 
 ## Compatibility
 
-- DSH and DSH peer packages: `0.2.1-rc.5`.
+- DSH and DSH peer packages: `0.2.2-rc.1`.
 - `@earendil-works/pi-ai`: `^1.1.0` (host-aligned peer range; tested at `1.1.0` and `1.3.0`).
 - Node.js: `>=22.19.0`.
 
@@ -92,11 +92,14 @@ existing Web search settings card is DeepSeek-specific and is not a chooser.
 
 ## Guard
 
-The guard is an additive `system-prompt/assemble` listener. For a route whose
-provider is listed and whose model id contains one of the configured families it
-adds an empty root `properties` bucket to object tool schemas that lack one, and
-leaves every other schema byte-identical. It never replaces an adapter or
-another plugin's settings.
+The guard is a Copilot wire-body transform. `0.2.2-rc.1` assembles tool
+declarations outside the presentation waterfall and treats them as
+provider-owned, so the last supported seam is the serialized request the adapter
+dispatches. Inside the same refcounted, trusted-path-checked interceptor that
+carries the wire identity, it adds an empty root `properties` bucket to object
+tool schemas that lack one for a configured Copilot route and model family, and
+leaves every other byte of the request untouched. It never replaces an adapter or
+another plugin's settings, and a guard failure dispatches the original body.
 
 ## Migration from the three predecessor packages
 

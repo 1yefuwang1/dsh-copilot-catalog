@@ -1,5 +1,37 @@
 # Monorepo changelog
 
+## DSH 0.2.2-rc.1 compatibility
+
+- Retarget both plugin engines, DSH peers, development SDK pins and the Cordis
+  and schemastery peers to the `0.2.2-rc.1` host baseline (`cordis` `~4.1.0`,
+  `cordis-plugin-include`/`-loader`/`-group` `1.1.0`, `schemastery` `~3.19.0`).
+  Release `dsh-better-copilot@0.1.1` and `@1yefuwang1/dsh-worktrees@0.2.28`;
+  refresh the pnpm lockfile and the version-specific release-age allowlist.
+- Re-home the Gemini tool-declaration guard to the Copilot wire. `0.2.2-rc.1`
+  makes `system-prompt/assemble` presentation-only and re-attaches
+  provider-owned tool declarations after the waterfall, so a listener can no
+  longer rewrite them. The guard now normalizes the serialized request body
+  inside the existing refcounted Copilot interceptor, which is installed,
+  trusted-path checked and released independently of the header identity. The
+  `toolSchema` configuration, route/family matching, controlled reason codes and
+  `logFixes` summaries are unchanged, and a guard failure leaves the request
+  byte-identical.
+- Port worktrees to the `0.2.2-rc.1` native submit ABI
+  (`0.2.2-rc.1/default-sink-v3`): the leased sink takes the native acceptance
+  callback, replacement bodies drop stale framing headers, and the port keeps
+  the shell's own transaction ownership instead of restoring drafts the shell
+  never detached. Update the pinned ABI, the native source checks and the
+  harness fixtures accordingly.
+- Adapt to renamed or moved host APIs: the branded `ModelSelection` effort id,
+  the `llm-pi-ai/request-headers` waterfall, the `ToolsService` batch
+  execution/`isConcurrencySafe` scheduling surface, `assertSupportedJsonSchema`
+  replacing the removed tools-SDK renderers, `SessionProjections.register`
+  handles acquired in asynchronous service init, a required selected tool
+  executor, and the sprite-based native icon artwork.
+- Raise the worktrees publication version and keep the exact 43/52-file
+  allowlists; `dsh-better-copilot` gains `guard.ts`'s request-body normalizer
+  while `./guard` keeps publishing its classification primitives.
+
 ## Better Copilot 0.1.0 — three Copilot plugins merged into one
 
 - Add `dsh-better-copilot@0.1.0`, consolidating `dsh-copilot-catalog@0.2.9`,

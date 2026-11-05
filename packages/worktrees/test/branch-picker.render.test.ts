@@ -117,8 +117,8 @@ async function controls(t: import('node:test').TestContext, { git = true, reposi
   function effect(factory: () => Cleanup) { const cleanup = factory(); let live = true; const stop = () => { if (live) { live = false; cleanups.delete(stop); return cleanup(); } }; cleanups.add(stop); return stop; }
   const session = observable<SessionSnapshot>(blank), state = observable(draft), panel = observable<{ activePanelId: string | undefined }>({ activePanelId: undefined }), list = observable<SessionList>({ byId: { source: { retainedBy: { mainView: 1 } } } });
   const binding = { ctx: { effect }, session };
-  const nativeSink = async (_text: string, _ids: string[], _mode: string, _signal: AbortSignal) => { assert.fail('rendering or choosing options must not submit a prompt'); };
-  // Match the rc.5 constructor callback shape even though this fixture only renders pickers.
+  const nativeSink = async (_text: string, _ids: string[], _mode: string, _signal: AbortSignal, _accept: () => void) => { assert.fail('rendering or choosing options must not submit a prompt'); };
+  // Match the native v3 constructor callback arity even though this fixture only renders pickers.
   const submissionState = () => undefined;
   const input = { state, deps: { actx: binding.ctx, defaultSink: nativeSink, inputTriggers: () => undefined, submissionState } };
   const block = observable<ComposerBlock>(undefined), metadata = observable<Metadata>({ projects: [], bindings: [], records: [] });

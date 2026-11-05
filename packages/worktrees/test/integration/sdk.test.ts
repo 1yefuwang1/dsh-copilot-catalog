@@ -16,6 +16,7 @@ import { Context } from '@deepseek-ai/cordis';
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths';
 import { SessionStore, SessionId } from '@deepseek-ai/dsh-session';
 import { ToolRuntime } from '@deepseek-ai/dsh-tools';
+import { NativeToolExecutor } from '@deepseek-ai/dsh-tool-executor-native';
 import { CommandRuntime } from '@deepseek-ai/dsh-commands';
 import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt';
 import { createScope, scopeTarget } from '@deepseek-ai/dsh-scope';
@@ -40,7 +41,32 @@ function record(root: string): WorktreeRecord {
 }
 type FixtureAgent = { -readonly [K in keyof Agent]: Agent[K] } & { scope: ReturnType<typeof createScope> };
 interface FixtureWorkspace { id: string; path: string; title: string; sessionIds: string[]; pins?: string[]; archived?: string[]; attachSession(id: string): Promise<void> }
-function toolCallId(id: string) { return id as Parameters<ToolRuntime['execute']>[0]['callId']; }
+function toolCallId(id: string) { return id as Parameters<ToolRuntime['execute']>[0]['calls'][number]['id']; }
+
+/**
+ * Call one tool through the real registry batch API and return its settled result.
+ *
+ * The rc.1 executor accepts a model-shaped call batch (`calls` with a JSON
+ * argument string) and answers one correlated result per call.
+ */
+async function callTool(
+  host: { tools: ToolRuntime },
+  name: string,
+  id: string,
+  args: unknown,
+  agent?: Agent,
+  signal?: AbortSignal,
+) {
+  const callId = toolCallId(id);
+  const batch = await host.tools.execute({
+    calls: [{ type: 'tool-call', id: callId, name, arguments: JSON.stringify(args) }],
+    signal: signal ?? new AbortController().signal,
+    ...(agent === undefined ? {} : { agent }),
+  });
+  const settled = batch.results.find(result => result.callId === callId);
+  assert.ok(settled, 'the batch answers the submitted call');
+  return settled.result;
+}
 
 function domainTables(worktree: WorktreeRecord) {
   const tables = { dsh_worktrees: { worktrees: memoryTable<WorktreeRecord>(), operations: memoryTable<OperationRecord>() }, dsh_worktree_projects: { projects: memoryTable<ProjectRecord>(), bindings: memoryTable<ProjectThreadBinding>(), starts: memoryTable<ProjectStartRecord>(), removals: memoryTable<ProjectRemovalRecord>() }, dsh_worktree_cleanup: { cleanup: memoryTable<CleanupReceipt>(), reopens: memoryTable<ReopenReceipt>() } };
@@ -49,6 +75,8 @@ function domainTables(worktree: WorktreeRecord) {
 async function hostFixture(t: TestContext) {
   const root = await tempDirectory('worktree-sdk-owned-'); assert.equal(dirname(root), tmpBase);
   const host = new Context(); new SessionStore(host); new SystemPrompt(host, { includeHarnessIdentity: false }); new ToolRuntime(host); new CommandRuntime(host);
+  // rc.1 dispatches tools through a selected executor; the native one runs the real pipeline.
+  host.tools.setExecutor(new NativeToolExecutor(host));
   const scopes: Array<{ ctx: Context; dispose(): Promise<void> }> = []; const agents = new Map<string, FixtureAgent>(); const events: Array<{ session: Session; event: SessionEvent }> = [];
   host.on('session/event', (session, event) => { events.push({ session, event }); });
   function agent(cwd: string, origin?: 'subagent') {
@@ -180,9 +208,9 @@ test('published plugin Config and real SDK register command/tool and dispose exa
   const command = await f.host.commands.execute(source, `/worktree protect ${JSON.stringify({ id: worktree.id, protected: true })}`, [], signal);
   assert.equal(required(command).result.kind, 'success'); const envelope = JSON.parse(required(required(command).result.text)); assert.equal(envelope.v, 1); assert.equal(envelope.ok, true); assert.equal(envelope.data.worktree.protected, true);
   assert.deepEqual(f.events.filter(e => e.session === source.session).map(e => e.event.type), ['command/run', 'command/done']);
-  const tool = await f.host.tools.execute({ name: 'git_worktree', callId: toolCallId('worktree-sdk-call'), arguments: { action: 'protect', id: worktree.id, protected: false }, agent: source, signal });
+  const tool = await callTool(f.host, 'git_worktree', 'worktree-sdk-call', { action: 'protect', id: worktree.id, protected: false }, source, signal);
   assert.equal(tool.isError, false); assert.equal((tool.value as DynamicMock).v, 1); assert.equal((tool.value as DynamicMock).data.worktree.protected, false);
-  const missingActor = await f.host.tools.execute({ name: 'git_worktree', callId: toolCallId('worktree-sdk-no-caller'), arguments: { action: 'protect', id: worktree.id, protected: false }, signal }); assert.equal(missingActor.isError, true); assert.match(JSON.stringify(missingActor), /NO_CALLER|receiving agent/u);
+  const missingActor = await callTool(f.host, 'git_worktree', 'worktree-sdk-no-caller', { action: 'protect', id: worktree.id, protected: false }, undefined, signal); assert.equal(missingActor.isError, true); assert.match(JSON.stringify(missingActor), /NO_CALLER|receiving agent/u);
   const invalid = await f.host.commands.execute(source, '/worktree create {"fullAccess":true}', [], signal); assert.equal(required(invalid).result.kind, 'error'); assert.equal(JSON.parse(required(required(invalid).result.text)).error.code, 'INVALID_REQUEST');
   await pluginScope.dispose(); assert.equal(f.host.commands.find(source, 'worktree'), undefined); assert.ok(!f.host.tools.schemas(source).some(tool => tool.name === 'git_worktree')); assert.equal(closed, 3); assert.equal(f.host.commands.find(source, 'project'), undefined); assert.ok(!f.host.tools.schemas(source).some(tool => tool.name === 'workspace_project'));
 });
@@ -218,7 +246,7 @@ test('actual plugin exact UI routes coexist with the real SDK gateway and await 
   assert.equal(required(command).result.kind, 'success'); const commandValue = JSON.parse(required(required(command).result.text));
   const before = f.events.length;
   const ui = await rpc({ action: 'protect', id: worktree.id, protected: true }); assert.deepEqual(ui, { ok: true, value: commandValue });
-  const tool = await f.host.tools.execute({ name: 'git_worktree', callId: toolCallId('rpc-sdk-tool'), arguments: { action: 'protect', id: worktree.id, protected: true }, agent: source, signal });
+  const tool = await callTool(f.host, 'git_worktree', 'rpc-sdk-tool', { action: 'protect', id: worktree.id, protected: true }, source, signal);
   assert.equal(tool.isError, false); assert.deepEqual(ui.value, tool.value); assert.equal(f.events.length, before);
   // Ordinary read failures/cancellation must also remain silent; this fixture forbids all subprocesses.
   for (const request of [{ action: 'list' }, { action: 'status' }, { action: 'branches', remote: 'origin' }]) {
@@ -317,7 +345,7 @@ test('actual Host project DTOs decode in actual Client protocol and share quiet 
   const native = required(f.registry.list().find(value => value.path === f.root)); await native.attachSession(source.id);
   const request = { action: 'list', projectId };
   const ui = await rpc(request); assert.equal(ui.projects.length, 1); assert.equal(ui.bindings[0].mode, 'local'); assert.equal(resolutions, 0);
-  const tool = await f.host.tools.execute({ name: 'workspace_project', callId: toolCallId('project-sdk-list'), arguments: request, agent: source, signal });
+  const tool = await callTool(f.host, 'workspace_project', 'project-sdk-list', request, source, signal);
   assert.equal(tool.isError, false); assert.deepEqual(ui, (tool.value as DynamicMock).data);
   assert.equal(f.events.length, before, 'metadata RPC and direct shared tool pipeline do not insert chat command rows');
   const changed = await rpc({ action: 'update', projectId, title: 'Renamed project', mainFolder: folder2 }, source.id); assert.equal(changed.project.title, 'Renamed project');
@@ -494,7 +522,7 @@ test('project remove shares exact quiet RPC/tool/command execution and retains l
   await tables.dsh_worktree_projects.starts.put(startId, start); await rpc({ action: 'list' });
   const headers = [structuredClone(source.session.header), structuredClone(isolated.session.header)], inbox = structuredClone(source.inbox), retained = structuredClone(worktree);
   const before = f.events.length, request = { action: 'remove', projectId: id }, data = { removed: true, projectId: id, scope: 'project-metadata' };
-  const removed = await f.host.tools.execute({ name: 'workspace_project', callId: toolCallId('project-sdk-remove'), arguments: request, agent: source, signal });
+  const removed = await callTool(f.host, 'workspace_project', 'project-sdk-remove', request, source, signal);
   assert.equal(removed.isError, false); assert.deepEqual(removed.value, { v: 1, ok: true, data });
   const ui = await rpc(request); assert.deepEqual(ui, { ok: true, value: removed.value }); assert.equal(f.events.length, before);
   const command = await f.host.commands.execute(source, `/project ${JSON.stringify(request)}`, [], signal);
@@ -510,16 +538,23 @@ test('project remove shares exact quiet RPC/tool/command execution and retains l
   const parameters = schema.parameters as { oneOf?: unknown; properties: { action: { enum: string[] } } };
   assert.equal('oneOf' in parameters, false);
   assert.deepEqual(parameters.properties.action.enum, ['list', 'create', 'update', 'remove', 'bind', 'start']);
-  assert.equal(f.host.tools.executionMode({ name: 'workspace_project', arguments: request, agent: source, callId: toolCallId('project-sdk-remove-mode'), signal }).kind, 'exclusive');
-  assert.equal(f.host.tools.executionMode({ name: 'workspace_project', arguments: { action: 'list' }, agent: source, callId: toolCallId('project-sdk-list-mode'), signal }).kind, 'parallel');
-  assert.equal(f.host.tools.executionMode({ name: 'workspace_project', arguments: { action: 'list', title: 'mutation field' }, agent: source, callId: toolCallId('project-sdk-mixed-mode'), signal }).kind, 'exclusive');
+  // rc.1 derives scheduling from the registered definition, not a per-call query.
+  const projectDefinition = required(f.host.tools.get('workspace_project', source));
+  const scheduling = (args: unknown) => projectDefinition.isConcurrencySafe?.(args) === true ? 'parallel' : 'exclusive';
+  assert.equal(scheduling(request), 'exclusive');
+  assert.equal(scheduling({ action: 'list' }), 'parallel');
+  // The tool boundary drops padded properties the chosen action does not accept,
+  // so such a call executes — and schedules — as the action it names.
+  assert.equal(scheduling({ action: 'list', title: 'mutation field' }), 'parallel');
+  // A genuinely invalid value for an accepted field still refuses parallel scheduling.
+  assert.equal(scheduling({ action: 'list', projectId: 'not-a-uuid' }), 'exclusive');
   const unknown = await rpc({ action: 'remove', projectId: randomUUID() }); assert.equal(unknown.value.error.code, 'PROJECT_NOT_FOUND');
   const invalid = await rpc({ ...request, deleteFolders: true }); assert.equal(invalid.ok, false); assert.equal(invalid.error.code, 'INVALID_RPC_REQUEST');
-  const noCaller = await f.host.tools.execute({ name: 'workspace_project', callId: toolCallId('project-sdk-remove-no-caller'), arguments: request, signal }); assert.equal(noCaller.isError, true);
-  const impostor = await f.host.tools.execute({ name: 'workspace_project', callId: toolCallId('project-sdk-remove-impostor'), arguments: request, agent: { ...source }, signal }); assert.equal(impostor.isError, true); assert.match(JSON.stringify(impostor), /SESSION_CHANGED|exact ordinary live session/u);
-  const aborted = new AbortController(); aborted.abort(); const cancel = await f.host.tools.execute({ name: 'workspace_project', callId: toolCallId('project-sdk-remove-cancelled'), arguments: request, agent: source, signal: aborted.signal }); assert.equal(cancel.isError, true);
+  const noCaller = await callTool(f.host, 'workspace_project', 'project-sdk-remove-no-caller', request, undefined, signal); assert.equal(noCaller.isError, true);
+  const impostor = await callTool(f.host, 'workspace_project', 'project-sdk-remove-impostor', request, { ...source } as Agent, signal); assert.equal(impostor.isError, true); assert.match(JSON.stringify(impostor), /SESSION_CHANGED|exact ordinary live session/u);
+  const aborted = new AbortController(); aborted.abort(); const cancel = await callTool(f.host, 'workspace_project', 'project-sdk-remove-cancelled', request, source, aborted.signal); assert.equal(cancel.isError, true);
   // Retained managed rows are still independently operable without project metadata.
-  const protect = await f.host.tools.execute({ name: 'git_worktree', callId: toolCallId('project-sdk-retained-protect'), arguments: { action: 'protect', id: worktree.id, protected: true }, agent: source, signal });
+  const protect = await callTool(f.host, 'git_worktree', 'project-sdk-retained-protect', { action: 'protect', id: worktree.id, protected: true }, source, signal);
   assert.equal(protect.isError, false); assert.equal((protect.value as DynamicMock).data.worktree.protected, true); assert.equal(tables.dsh_worktree_projects.projects.map.size, 0);
   assert.deepEqual(f.events.slice(before).map(value => value.event.type), ['command/run', 'command/done']);
 });

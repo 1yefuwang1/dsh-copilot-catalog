@@ -4,12 +4,12 @@ A **pnpm monorepo with two independently installable DeepSeek Harness plugins**.
 All maintained code—including Host implementations, the Web Client, tests and
 repository tooling—uses strict TypeScript. Published Host modules are ESM with
 declarations; the worktree Web Client is compiled to a persistent browser factory. The worktree plugin is packaged as
-`@1yefuwang1/dsh-worktrees@0.2.27`; npm availability follows maintainer approval
+`@1yefuwang1/dsh-worktrees@0.2.28`; npm availability follows maintainer approval
 of the staged release.
 
 | Package | Purpose | DSH behavior |
 | --- | --- | --- |
-| [dsh-better-copilot](<packages/better-copilot/README.md>) | One Copilot plugin: model discovery, wire identity, native Responses web search and a Gemini tool-declaration guard | Replaces the standard pi-ai adapter (one row, one config: `providers`, `search`, `toolSchema`), registers `github-copilot-search`, and adds the guard as an additive listener |
+| [dsh-better-copilot](<packages/better-copilot/README.md>) | One Copilot plugin: model discovery, wire identity, native Responses web search and a Gemini tool-declaration guard | Replaces the standard pi-ai adapter (one row, one config: `providers`, `search`, `toolSchema`), registers `github-copilot-search`, and normalizes Gemini tool declarations on the Copilot wire |
 | [@1yefuwang1/dsh-worktrees](<packages/worktrees/README.md>) | Multi-folder projects with Local/worktree threads | Adds metadata-only project grouping, main-folder defaults/reminders, native first-Send worktree setup and branch naming, configurable inactivity cleanup, explicit branch-choice Local recovery with staged input and exact-ID reuse, and guarded handoff; no core or LLM adapter changes |
 
 The repository root is **private development tooling**, not a DSH plugin. Install
@@ -21,7 +21,7 @@ for the exact migration table.
 
 ## Compatibility
 
-- DSH and DSH peer packages: `0.2.1-rc.5`.
+- DSH and DSH peer packages: `0.2.2-rc.1`.
 - `@earendil-works/pi-ai`: `^1.1.0` (host-aligned peer range; tested at `1.1.0` and `1.3.0`).
 - Node.js: `>=22.19.0`.
 - Development package manager: **pnpm `11.7.0`**, pinned in the root manifest.
@@ -62,10 +62,11 @@ instead of assuming a registry release exists.
   The existing Web search settings card is DeepSeek-specific, not a chooser.
 - A missing web service, a throwing guard registration, a throwing search
   registration and a throwing identity installer each degrade only that capability;
-  the adapter still mounts.
+  the adapter still mounts. The guard is a wire-body transform, so a throwing
+  guard leaves the request byte-identical instead of failing the call.
 - Loader patches replace a row's `config` wholesale: a profile override must restate
   `providers`, `search` and `toolSchema` together.
-- Restart the DSH host after host-plugin installation/removal. In rc.5, web-service
+- Restart the DSH host after host-plugin installation/removal. In rc.1, web-service
   provider selection is volatile and applies to the next operation without a
   remount. No Web UI rebuild is required for this host-only plugin.
 - Worktrees defaults to the current local branch without a remote fetch, or lets
@@ -186,12 +187,12 @@ A release selects **one package**, never the root or multiple packages at once:
 - `@1yefuwang1/dsh-worktrees-vX.Y.Z`
 
 The tag must match its leaf version and repository identity. `dsh-better-copilot` is
-`0.1.0`, the consolidation of catalog `0.2.9`, search `0.1.5` and tool schema
-`0.1.3` against DSH `0.2.1-rc.5`; those three npm versions remain published but are
+`0.1.1`, the consolidation of catalog `0.2.9`, search `0.1.5` and tool schema
+`0.1.3`, retargeted to DSH `0.2.2-rc.1`; those three npm versions remain published but are
 no longer built here, and published versions cannot be republished. This
 compatibility version is a local source update, not evidence of an npm publication.
 Worktrees is
-`@1yefuwang1/dsh-worktrees@0.2.27`, which hides the starting-branch picker while a
+`@1yefuwang1/dsh-worktrees@0.2.28`, which hides the starting-branch picker while a
 thread is Local: a Local send runs in the current checkout and never chooses,
 switches or creates a branch, so Local mode shows that checkout's current branch
 read-only while New worktree keeps the picker. It retains `release`: a managed
@@ -199,7 +200,7 @@ worktree can give a taken branch back to its own branch, or detach at the same
 commit, so the original Local checkout can switch to that branch again; the
 recovery chooser can take the same branch over only after an explicit `takeover`
 confirmation. It also retains DSH
-`0.2.1-rc.5` compatibility, exact-session discovery/non-creating Open, and
+`0.2.2-rc.1` compatibility, exact-session discovery/non-creating Open, and
 thread-switch-safe first Send with source-keyed recovery and prepared-target
 revalidation, factory staging, held-target resource checks, Local runtime
 admission/spawn guards, navigation fixes, ready Local recovery commits, guarded

@@ -99,6 +99,7 @@ async function fixture(t: TestContext, options: FixtureOptions = {}) {
   }
   const actor = agent();
   const bootstrap = {
+    assertOrdinaryCaller(value: HostDouble) { if (value.session.header.origin === 'subagent') throw new WorktreeError('SUBAGENT_SOURCE', 'subagent caller'); },
     actor(id: string) { const found = agents.get(id); if (!found) throw new WorktreeError('SESSION_NOT_LIVE', 'missing source'); if (found.session.header.origin === 'subagent') throw new WorktreeError('SUBAGENT_SOURCE', 'ordinary only'); return found; },
     isLive(value: HostDouble) { return agents.get(value.id) === value; },
     async settings(value: HostDouble) { calls.push(['settings', value.id]); return structuredClone(settings.get(value.id)!); },
@@ -560,7 +561,10 @@ test('initial request rejection binds no journal and no unexpected privilege par
   const f = await fixture(t);
   await assert.rejects(async () => f.controller.execute({ ...f.request(), fullAccess: true }, f.invocation), errorCode('INVALID_REQUEST'));
   await assert.rejects(f.controller.execute({ ...f.request(), settingsHash: 'stale' }, f.invocation), errorCode('SETTINGS_CHANGED'));
-  f.actor.session.header.origin = 'subagent'; await assert.rejects(f.controller.execute(f.request(), f.invocation), errorCode('SUBAGENT_SOURCE'));
+  f.actor.session.header.origin = 'subagent';
+  await assert.rejects(f.controller.execute(f.request(), f.invocation), errorCode('SUBAGENT_SOURCE'));
+  // Every action reaches the caller gate, including read-only inspection.
+  await assert.rejects(f.controller.execute({ action: 'list' as const }, f.invocation), errorCode('SUBAGENT_SOURCE'));
   assert.equal(f.store.operations.map.size, 0); assert.equal(f.fetchCount, 0);
 });
 

@@ -169,7 +169,7 @@ test('every plugin accepts the pinned runtime and rejects other DSH versions wit
   const rootManifest = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'));
   const pinned = rootManifest.devDependencies['@deepseek-ai/dsh-agent'];
   assert.match(pinned, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u);
-  assert.equal(pinned, '0.2.1-rc.5');
+  assert.equal(pinned, '0.2.2-rc.1');
   assert.equal(getDshRuntimeVersion(), pinned, 'tests must use the installed target runtime, not just retargeted manifest labels');
   for (const [name, version] of Object.entries(rootManifest.devDependencies)) {
     if (name.startsWith('@deepseek-ai/dsh-')) assert.equal(version, pinned, name);
@@ -181,7 +181,7 @@ test('every plugin accepts the pinned runtime and rejects other DSH versions wit
     assert.equal(manifest.engines?.dsh, pinned, manifest.name + ' must pin the shared runtime');
     assert.equal(evaluatePluginCompatibility(manifest, {}, pinned), undefined,
       manifest.name + ' must install on the pinned runtime without an exemption');
-    for (const other of ['0.2.0-rc.2', '0.2.1-rc.2', '0.2.1-rc.3', '0.2.1-rc.4', '0.2.1-rc.6', '0.2.1', '0.1.9']) {
+    for (const other of ['0.2.0-rc.2', '0.2.1-rc.5', '0.2.2-rc.2', '0.2.2', '0.2.1', '0.1.9']) {
       const issue = evaluatePluginCompatibility(manifest, {}, other);
       assert.ok(issue, manifest.name + ' must report ' + other + ' as unmet');
       assert.deepEqual(Object.keys(issue.requirements), ['engines.dsh']);

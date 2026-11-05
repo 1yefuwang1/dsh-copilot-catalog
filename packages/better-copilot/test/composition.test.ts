@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Context } from '@deepseek-ai/cordis';
-import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt';
 import { WebRuntime } from '@deepseek-ai/dsh-web';
 import z from '@deepseek-ai/schemastery';
 import { createConfig, type BetterCopilotConfig } from '../dist/config.js';
@@ -57,19 +56,21 @@ function fixture() {
 function fakeContext(options: {
   credentials?: unknown;
   web?: 'missing' | 'throwing' | { registerSearchProvider(provider?: unknown): unknown };
-  onThrows?: boolean;
+  effectThrows?: number;
 } = {}) {
   const listeners: unknown[] = [];
   const effects: (() => void)[] = [];
+  let effectCalls = 0;
   const logs: unknown[][] = [];
   const ctx = {
     effect(execute: () => () => void) {
+      // Capability containment: an installer that throws must only lose its capability.
+      if (options.effectThrows === ++effectCalls) throw new Error('effect unavailable');
       const release = execute();
       effects.push(release);
       return release;
     },
     on(_event: string, listener: unknown) {
-      if (options.onThrows) throw new Error('on is unavailable');
       listeners.push(listener);
       return () => {};
     },
@@ -94,41 +95,41 @@ function fakeContext(options: {
 /** The fake context is not a Cordis Context; the plugin only uses this structural seam. */
 const asContext = (ctx: unknown) => ctx as Parameters<ReturnType<typeof createPlugin>['apply']>[0];
 
-test('one apply registers search, installs the guard listener and delegates exactly one providers config', async t => {
+test('one apply registers search, installs the guard transform and delegates exactly one providers config', async t => {
   const { calls, dependencies } = fixture();
   const host = new Context();
   // The merged plugin injects these two services; provide them so the fiber activates.
   host.provide('llm', {});
   host.provide('credentials', { readRecord: async () => undefined, resolve: async () => undefined });
   const web = new WebRuntime(host, WebRuntime.Config({ searchProvider: COPILOT_SEARCH_PROVIDER_ID, fetchProvider: 'http' }));
-  const systemPrompt = host.plugin(SystemPrompt);
-  await systemPrompt;
-  const tools = [{ name: 't', description: 'd', parameters: { type: 'object' } }];
-  host.systemPrompt.tools(() => ({ schemas: structuredClone(tools) }));
-  host.systemPrompt.variable('provider', () => 'github-copilot');
-  host.systemPrompt.variable('model', () => 'gemini-4-argon');
+  // The tool-schema guard is a wire transform; capture what the adapter would send.
+  const sent: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => { sent.push(String(init?.body ?? '')); return new Response('ok'); }) as typeof fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
 
   // Before the plugin mounts, the configured provider is unknown to the web seam.
   await assert.rejects(web.search({ query: 'before mount' }), (error) => error instanceof Error && 'code' in error && error.code === 'WEB_PROVIDER_CONFIGURED_MISSING');
 
   const fiber = host.plugin(createPlugin(dependencies), { providers: { 'github-copilot': {} }, search: {}, toolSchema: {} });
   await fiber;
-  t.after(async () => { await fiber.dispose(); await systemPrompt.dispose(); });
+  t.after(async () => { await fiber.dispose(); });
 
   // One delegation, with exactly one config key: the facade cannot leak search/guard settings.
   assert.equal(calls.length, 1);
   assert.deepEqual(Object.keys(calls[0]!.config), ['providers']);
   // Search is registered; without a credential the merged provider reports the missing credential.
   await assert.rejects(web.search({ query: 'synthetic' }), (error) => error instanceof Error && 'code' in error && error.code === 'WEB_PROVIDER_CREDENTIAL_MISSING');
-  // The guard normalizes a defective Gemini declaration through the real assembly waterfall.
-  const assembly = await host.systemPrompt.assemble({});
-  assert.deepEqual((assembly.tools[0]!.parameters as { properties?: object }).properties, {});
+  // The guard normalizes a defective Gemini declaration on the serialized request.
+  const defective = JSON.stringify({ model: 'gemini-4-argon', tools: [{ type: 'function', function: { name: 't', description: 'd', parameters: { type: 'object' } } }] });
+  await globalThis.fetch('https://api.individual.githubcopilot.com/chat/completions', { method: 'POST', body: defective });
+  assert.deepEqual((JSON.parse(sent[0]!).tools[0].function.parameters as { properties?: object }).properties, {});
 
-  // Disposal unwinds the search registration and the guard listener.
+  // Disposal unwinds the search registration and the guard transform.
   await fiber.dispose();
   await assert.rejects(web.search({ query: 'after disposal' }), (error) => error instanceof Error && 'code' in error && error.code === 'WEB_PROVIDER_CONFIGURED_MISSING');
-  const afterDisposal = await host.systemPrompt.assemble({});
-  assert.equal((afterDisposal.tools[0]!.parameters as { properties?: object }).properties, undefined);
+  await globalThis.fetch('https://api.individual.githubcopilot.com/chat/completions', { method: 'POST', body: defective });
+  assert.equal(sent[1], defective, 'the released transform leaves the body byte-identical');
 });
 
 test('a discovered Enterprise endpoint becomes a runtime default without changing the caller config', async () => {
@@ -178,9 +179,9 @@ test('a missing web service is a silent skip and a throwing guard registration i
   assert.equal(missing.calls.length, 1);
   assert.deepEqual(missingContext.logs.filter(([level]) => level === 'warn'), []);
 
-  // A throwing ctx.on is contained and logged without credential material.
+  // A throwing guard effect is contained and logged without credential material.
   const throwing = fixture();
-  const throwingContext = fakeContext({ onThrows: true, web: { registerSearchProvider: () => () => {} } });
+  const throwingContext = fakeContext({ effectThrows: 2, web: { registerSearchProvider: () => () => {} } });
   assert.equal(await createPlugin(throwing.dependencies).apply(asContext(throwingContext.ctx), Config({ providers: {} }) as BetterCopilotConfig), undefined);
   assert.equal(throwing.calls.length, 1);
   const warning = throwingContext.logs.find(([level, message]) => level === 'warn' && String(message).includes('registration failed'));
@@ -192,7 +193,7 @@ test('a missing web service is a silent skip and a throwing guard registration i
 test('a throwing identity installer still registers the guard and one search provider', async () => {
   const { calls, dependencies } = fixture();
   const registrations: unknown[] = [];
-  const { ctx, logs, listeners } = fakeContext({
+  const { ctx, logs, effects } = fakeContext({
     web: { registerSearchProvider(provider: unknown) { registrations.push(provider); return () => {}; } },
   });
   const installIdentity = () => { throw new Error('identity unavailable'); };
@@ -200,18 +201,18 @@ test('a throwing identity installer still registers the guard and one search pro
   const result = await plugin.apply(asContext(ctx), Config({ providers: {} }) as BetterCopilotConfig);
   assert.equal(result, undefined);
   assert.equal(calls.length, 1, 'the adapter still mounts');
-  assert.equal(listeners.length, 1, 'the guard registers even when identity installation throws');
+  assert.equal(effects.length, 1, 'the guard transform installs even when identity installation throws');
   assert.equal(registrations.length, 1, 'search registers even when identity installation throws');
   assert.ok(logs.some(([level, ...rest]) => level === 'warn' && rest.some((value) => String(value) === 'wire identity')));
 });
 
 test('a throwing search registration cannot block the adapter', async () => {
   const { calls, dependencies } = fixture();
-  const { ctx, logs, listeners } = fakeContext({ web: 'throwing' });
+  const { ctx, logs, effects } = fakeContext({ web: 'throwing' });
   const result = await createPlugin(dependencies).apply(asContext(ctx), Config({ providers: {} }) as BetterCopilotConfig);
   assert.equal(result, undefined);
   assert.equal(calls.length, 1, 'the adapter mounts despite the web seam failing');
-  assert.equal(listeners.length, 1, 'the guard is unaffected');
+  assert.equal(effects.length, 2, 'both the identity and guard effects are unaffected');
   assert.ok(logs.some(([level, ...rest]) => level === 'warn' && rest.some((value) => String(value) === 'search provider')));
 });
 
@@ -251,7 +252,7 @@ test('the identity effect is released once when the install seam succeeds', asyn
   const released: string[] = [];
   await createPlugin({ ...dependencies, installIdentity: () => () => { released.push('released'); } })
     .apply(asContext(ctx), Config({ providers: {} }) as BetterCopilotConfig);
-  assert.equal(effects.length, 1);
+  assert.equal(effects.length, 2, 'the identity effect and the guard transform are both installed');
   effects[0]!();
   assert.deepEqual(released, ['released']);
 });

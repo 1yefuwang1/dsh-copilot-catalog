@@ -2,7 +2,7 @@
  * Sanitized tool declarations shaped like the real DSH ones. No session, user or
  * credential data: only the schema constructs the guard is meant to classify.
  */
-import type { PromptAssembly, ToolSchema } from '../dist/guard-types.js';
+import type { ToolSchema } from '../dist/guard-types.js';
 
 /** A declaration exactly as this fixture describes it, before the guard sees it. */
 export interface FixtureTool {
@@ -56,6 +56,34 @@ export const dataKeywordTool: FixtureTool = {
   },
 };
 
+/**
+ * One serialized chat-completions request carrying the fixture declarations, as
+ * the adapter builds it for the Copilot wire.
+ */
+export function chatBody(list: readonly FixtureTool[], model = 'gemini-4-argon'): string {
+  return JSON.stringify({
+    model,
+    messages: [{ role: 'user', content: 'synthetic' }],
+    tools: list.map(tool => ({ type: 'function', function: { name: tool.name, description: tool.description ?? '', parameters: tool.parameters } })),
+  });
+}
+
+/** One serialized Responses request carrying the fixture declarations. */
+export function responsesBody(list: readonly FixtureTool[], model = 'gemini-4-argon'): string {
+  return JSON.stringify({
+    model,
+    input: [{ role: 'user', content: 'synthetic' }],
+    tools: list.map(tool => ({ type: 'function', name: tool.name, description: tool.description ?? '', parameters: tool.parameters })),
+  });
+}
+
+/** Read one sent declaration's parameters from either surface. */
+export function sentParameters(body: string, index = 0): Record<string, unknown> {
+  const parsed = JSON.parse(body) as { tools: { function?: { parameters?: Record<string, unknown> }; parameters?: Record<string, unknown> }[] };
+  const declaration = parsed.tools[index]!;
+  return (declaration.function?.parameters ?? declaration.parameters ?? {}) as Record<string, unknown>;
+}
+
 /** The fixture declarations are structurally the tools the assembler carries. */
 export function tools(list: readonly FixtureTool[]): ToolSchema[] {
   return list as unknown as ToolSchema[];
@@ -66,11 +94,3 @@ export function parameters(tool: ToolSchema): Record<string, unknown> {
   return (tool.parameters ?? {}) as Record<string, unknown>;
 }
 
-export function assembly(list: readonly FixtureTool[], provider = 'github-copilot', model = 'gemini-4-argon'): PromptAssembly {
-  return {
-    sections: [{ name: 'persona', text: 'You are a coding agent.' }],
-    contexts: [{ name: 'runtime', text: 'cwd=/tmp' }],
-    tools: tools(list),
-    variables: { provider, model },
-  };
-}

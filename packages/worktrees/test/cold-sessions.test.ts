@@ -15,11 +15,14 @@ import { CommandId } from '@deepseek-ai/dsh-commands';
 import { Context } from '@deepseek-ai/cordis';
 import { SessionStore, SessionId, interruptedTurnClosers } from '@deepseek-ai/dsh-session';
 import { createScope } from '@deepseek-ai/dsh-scope';
+import type { ModelSelection } from '@deepseek-ai/dsh-agent';
 import { SessionBootstrap } from '../dist/sessions.js';
 import { WorktreeError } from '../dist/errors.js';
 import { tempDirectory, tmpBase } from './helpers.js';
 
 const model = { provider: 'github-copilot', model: 'gpt-6.1-sol', reasoningEffort: 'high' };
+/** The host brands the effort id; these fixtures only need a value the plugin accepts. */
+const recorded = (value: SessionSettings['model']) => value as unknown as ModelSelection;
 const lastModel = { provider: 'github-copilot', model: 'previous-model' };
 type InboxProjection = { 'next-turn': UserMessage[]; 'next-step': UserMessage[] };
 interface ProjectionValues { inbox?: InboxProjection; modelSelection?: { next: SessionSettings['model']; lastUsed: SessionSettings['model'] }; agentPreset?: string }
@@ -100,7 +103,7 @@ function closedHistory(f: Fixture) {
   f.source.append('turn/start', { turn: 1 }); f.source.append('turn/end', { turn: 1, reason: { kind: 'completed' } });
   appendSessionTitle(f.source, { title: 'Latest idle title', messageSeqs: [], source: { kind: 'user' } });
   f.source.append('sandbox/mode', { mode: 'read-only' }); f.source.append('approval/policy', { policy: 'ask' });
-  f.source.append('plan/mode', { active: true }); f.source.append('model/selection', model);
+  f.source.append('plan/mode', { active: true }); f.source.append('model/selection', recorded(model));
   f.source.append('goal/change', { kind: 'goal/change', version: 1, operation: 'create', goal: { id: GoalId(randomUUID()), revision: 1, objective: 'Preserved, not rearmed', phase: 'active', maxGoalRounds: 5 }, roundsStarted: 0, createdAt: 1, updatedAt: 1 });
   f.source.append('agent-preset/selected', { agentPreset: 'selected-preset' });
   return f.save(f.source, { inbox: emptyInbox(), modelSelection: { next: model, lastUsed: lastModel }, agentPreset: 'selected-preset' });
@@ -193,7 +196,7 @@ test('cold source rejects live, subagent, pending, unavailable inbox/model/prese
   await assert.rejects(f.bootstrap.coldSource(f.source.id), code('UNKNOWN_SOURCE_INBOX'));
   presentValue(presentValue(f.persisted.get(f.source.id)).events[0]).seq = SessionSeq(5); await assert.rejects(f.bootstrap.coldSource(f.source.id), /contiguous|seq/);
   assert.equal(f.disposed, 4);
-  f.persisted.set(f.source.id, { ...record, events: [{ type: 'model/selection', seq: SessionSeq(0), time: 1, data: model }], projections: { inbox: emptyInbox() } });
+  f.persisted.set(f.source.id, { ...record, events: [{ type: 'model/selection', seq: SessionSeq(0), time: 1, data: recorded(model) }], projections: { inbox: emptyInbox() } });
   await assert.rejects(f.bootstrap.coldSource(f.source.id), code('UNKNOWN_SOURCE_MODEL'));
   presentValue(f.persisted.get(f.source.id)).events = [{ type: 'agent-preset/selected', seq: SessionSeq(0), time: 1, data: { agentPreset: 'different' } }];
   await assert.rejects(f.bootstrap.coldSource(f.source.id), code('UNKNOWN_SOURCE_PRESET'));
@@ -231,7 +234,7 @@ test('adoption preserves target permission, model, preset, plan, title and goal 
   const f = await fixture(t); closedHistory(f); const input = await coldInput(f); const child = await f.bootstrap.createColdContinuation(input);
   const selectedModel = { provider: 'github-copilot', model: 'target-selected-model', reasoningEffort: 'medium' };
   child.agent.session.append('sandbox/mode', { mode: 'workspace-write' }); child.agent.session.append('approval/policy', { policy: 'never' }); child.agent.session.append('plan/mode', { active: false });
-  child.agent.session.append('model/selection', selectedModel); child.agent.session.append('agent-preset/selected', { agentPreset: 'target-user-preset' });
+  child.agent.session.append('model/selection', recorded(selectedModel)); child.agent.session.append('agent-preset/selected', { agentPreset: 'target-user-preset' });
   appendSessionTitle(child.agent.session, { title: 'User renamed target', messageSeqs: [], source: { kind: 'user' } });
   const inheritedChange = presentValue(input.source.events.find(event => event.type === 'goal/change')).data; assert.ok('goal' in inheritedChange);
   const inheritedGoal = inheritedChange.goal;

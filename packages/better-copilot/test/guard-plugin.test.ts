@@ -1,36 +1,21 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Context } from '@deepseek-ai/cordis';
-import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt';
-import z from '@deepseek-ai/schemastery';
 import { createConfig } from '../dist/config.js';
-import { createPlugin, type BetterCopilotDependencies } from '../dist/plugin.js';
+import { createPlugin } from '../dist/plugin.js';
 import * as fixtures from './guard-fixtures.js';
+import { minimalDependencies } from './merged-fixtures.js';
 
-type Handler = (assembly: PromptAssembly, context: unknown, next: () => Promise<PromptAssembly>) => Promise<PromptAssembly>;
-interface Registration { event: string; handler: Handler; options?: Record<string, unknown> }
-
-const Config = createConfig(z.object({ providers: z.dict(z.any()).default({}).volatile() }));
+const Config = createConfig(minimalDependencies().original.Config);
+const COPILOT_URL = 'https://api.individual.githubcopilot.com/chat/completions';
+const OTHER_URL = 'https://api.deepseek.com/chat/completions';
 
 /** The guard is one capability of the merged plugin; the rest is inert here. */
-function dependencies(): BetterCopilotDependencies {
-  return {
-    original: {
-      name: 'llm-pi-ai', Config: z.object({ providers: z.dict(z.any()) }), inject: ['llm'],
-      recordKeyFor: (id: string) => `llm-pi-ai/${id}`, apply: () => Promise.resolve(),
-    } as unknown as BetterCopilotDependencies['original'],
-    catalog: {},
-    oauth: {} as BetterCopilotDependencies['oauth'],
-    recordKeyFor: ((id: string) => `llm-pi-ai/${id}`) as unknown as BetterCopilotDependencies['recordKeyFor'],
-    createModels: (() => ({ setProvider() {}, getAuth: async () => undefined })) as unknown as BetterCopilotDependencies['createModels'],
-    provider: { id: 'github-copilot', auth: { oauth: {} }, getModels: () => [] } as unknown as BetterCopilotDependencies['provider'],
-    headers: {},
-    installIdentity: () => () => {},
-  };
+function dependencies() {
+  return minimalDependencies({ installIdentity: () => () => {} });
 }
 
 function harness() {
-  const listeners: Registration[] = [];
   const logs = { info: [] as string[], warn: [] as string[] };
   const sink = (target: string[]) => (...args: unknown[]) => {
     let index = 1;
@@ -38,93 +23,37 @@ function harness() {
   };
   const ctx = {
     logger: { info: sink(logs.info), warn: sink(logs.warn) },
-    effect(execute: () => () => void) { const release = execute(); return release; },
+    effect(execute: () => () => void) { return execute(); },
     inject() { return () => {}; },
     get() { return undefined; },
-    on(event: string, handler: Handler, options?: Record<string, unknown>) {
-      const entry: Registration = { event, handler, options };
-      listeners.push(entry);
-      return { dispose() { listeners.splice(listeners.indexOf(entry), 1); } };
-    },
+    on() { throw new Error('the tool-schema guard no longer registers assembly listeners'); },
   };
-  return { ctx, listeners, logs };
+  return { ctx, logs };
 }
 
-async function mount(overrides: Record<string, unknown> = {}) {
+interface Capture { input: RequestInfo | URL; init?: RequestInit }
+
+/** Install a fake downstream fetch, mount the plugin, then delegate one request. */
+async function withPlugin(
+  config: unknown,
+  operate: (state: { logs: { info: string[]; warn: string[] }; captures: Capture[] }) => Promise<void>,
+  apply?: (ctx: Context, config: unknown) => Promise<void>,
+): Promise<void> {
   const state = harness();
-  await createPlugin(dependencies()).apply(state.ctx as unknown as Context, Config({ toolSchema: overrides }));
-  return state;
-}
-
-const run = (state: ReturnType<typeof harness>, assembly: PromptAssembly, next?: () => Promise<PromptAssembly>) =>
-  state.listeners[0]!.handler(assembly, {}, next ?? (async () => assembly));
-
-test('registers one outer global waterfall listener and fixes only nonconformant tools', async () => {
-  const state = await mount();
-  assert.equal(state.listeners.length, 1);
-  assert.equal(state.listeners[0]!.event, 'system-prompt/assemble');
-  assert.deepEqual(state.listeners[0]!.options, { global: true, prepend: true });
-  const downstream = fixtures.assembly([fixtures.missingBucketTool, fixtures.conformantTool]);
-  const result = await run(state, downstream);
-  assert.notEqual(result, downstream);
-  assert.deepEqual(fixtures.parameters(result.tools[0]!).properties, {});
-  assert.equal(result.tools[1], downstream.tools[1]);
-  assert.equal(result.sections, downstream.sections);
-  assert.equal(result.contexts, downstream.contexts);
-  assert.equal(result.variables, downstream.variables);
-  // Discovery may log its own status line; the guard must stay silent here.
-  assert.equal(state.logs.info.filter((line) => line.includes('added a properties bucket')).length, 0);
-});
-
-test('returns the downstream assembly identity when the route or declarations are out of scope', async () => {
-  const state = await mount();
-  for (const route of [fixtures.assembly([fixtures.missingBucketTool], 'deepseek-account', 'deepseek-flash'), fixtures.assembly([fixtures.missingBucketTool], 'github-copilot', 'gpt-6.1-sol'), fixtures.assembly([fixtures.conformantTool])]) {
-    assert.equal(await run(state, route), route);
+  const captures: Capture[] = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => { captures.push({ input, init }); return new Response('ok'); }) as typeof fetch;
+  try {
+    await (apply ? apply(state.ctx as unknown as Context, config) : createPlugin(dependencies()).apply(state.ctx as unknown as Context, config as never));
+    await operate({ logs: state.logs, captures });
+  } finally {
+    globalThis.fetch = original;
   }
-});
+}
 
-test('awaits the downstream chain first, so selected-route variables are visible', async () => {
-  const state = await mount();
-  const downstream = fixtures.assembly([fixtures.missingBucketTool], '', '');
-  const result = await run(state, downstream, async () => ({ ...downstream, variables: { provider: 'github-copilot', model: 'gemini-4-argon' } }));
-  assert.deepEqual(fixtures.parameters(result.tools[0]!).properties, {});
-});
-
-test('propagates downstream failures unchanged and contains only its own failures', async () => {
-  const state = await mount();
-  await assert.rejects(run(state, fixtures.assembly([]), async () => { throw new Error('downstream failed'); }), /downstream failed/u);
-  const downstream = fixtures.assembly([]);
-  Object.defineProperty(downstream, 'tools', { get() { throw new Error('boom'); } });
-  const result = await run(state, downstream);
-  assert.equal(result, downstream);
-  assert.match(state.logs.warn.at(-1) ?? '', /internal error/u);
-});
-
-test('logs a summary only when logFixes is enabled, without tool arguments', async () => {
-  const quiet = await mount();
-  await run(quiet, fixtures.assembly([fixtures.missingBucketTool]));
-  const guardInfo = (state: ReturnType<typeof harness>) => state.logs.info.filter((line) => line.includes('added a properties bucket'));
-  assert.equal(guardInfo(quiet).length, 0);
-  const loud = await mount({ logFixes: true });
-  await run(loud, fixtures.assembly([fixtures.missingBucketTool]));
-  assert.equal(guardInfo(loud).length, 1);
-  assert.match(guardInfo(loud)[0] ?? '', /added a properties bucket/u);
-  assert.equal(JSON.stringify(loud.logs.info).includes('projectId'), false);
-  await run(loud, fixtures.assembly([fixtures.referenceTool]));
-  assert.match(loud.logs.warn.at(-1) ?? '', /left 1 tool schema/u);
-  assert.match(loud.logs.warn.at(-1) ?? '', /TOOL_SCHEMA_SKIPPED/u);
-  const mixed = await run(loud, fixtures.assembly([fixtures.missingBucketTool, fixtures.referenceTool, fixtures.noParametersTool]));
-  assert.match(guardInfo(loud).at(-1) ?? '', /added a properties bucket to 1 tool schema/u);
-  assert.match(loud.logs.warn.at(-1) ?? '', /left 2 tool schema\(s\) unchanged/u);
-  assert.match(loud.logs.warn.at(-1) ?? '', /SKIPPED_REFERENCE/u);
-  assert.match(loud.logs.warn.at(-1) ?? '', /SKIPPED_MISSING_PARAMETERS/u);
-  assert.deepEqual(mixed.tools.map(tool => tool.name), ['workspace_project', 'referenced', 'opaque']);
-});
-
-test('volatile settings are re-read for every assembly', async () => {
-  const state = harness();
-  const values = { providers: ['github-copilot'], families: ['gemini'], logFixes: false };
-  await createPlugin(dependencies()).apply(state.ctx as unknown as Context, {
+/** A plain config whose leaves are read through volatile accessors, as the schema exposes them. */
+function volatileConfig(values: { providers: string[]; families: string[]; logFixes: boolean }): unknown {
+  return {
     providers: { get: () => ({}) },
     search: {},
     toolSchema: {
@@ -132,31 +61,105 @@ test('volatile settings are re-read for every assembly', async () => {
       families: { get: () => values.families },
       logFixes: { get: () => values.logFixes },
     },
-  } as never);
-  const downstream = fixtures.assembly([fixtures.missingBucketTool]);
-  assert.deepEqual(fixtures.parameters((await run(state, downstream)).tools[0]!).properties, {});
-  values.families = ['gpt'];
-  assert.equal(await run(state, downstream), downstream);
-  values.families = ['gemini'];
-  values.providers = [];
-  assert.equal(await run(state, downstream), downstream);
+  };
+}
+
+test('mounting registers one wire transform and fixes only the configured route', async () => {
+  await withPlugin(Config({ toolSchema: { providers: ['github-copilot'], families: ['gemini'] } }), async ({ captures }) => {
+    await globalThis.fetch(COPILOT_URL, { method: 'POST', body: fixtures.chatBody([fixtures.missingBucketTool]) });
+    assert.deepEqual(fixtures.sentParameters(captures[0]!.init!.body as string).properties, {});
+    await globalThis.fetch(OTHER_URL, { method: 'POST', body: fixtures.chatBody([fixtures.missingBucketTool]) });
+    assert.equal(captures[1]!.init!.body, fixtures.chatBody([fixtures.missingBucketTool]), 'a foreign provider body is delegated byte-identical');
+    await globalThis.fetch(COPILOT_URL, { method: 'POST', body: fixtures.chatBody([fixtures.missingBucketTool], 'gpt-6.1-sol') });
+    assert.equal(captures[2]!.init!.body, fixtures.chatBody([fixtures.missingBucketTool], 'gpt-6.1-sol'), 'another model family is untouched');
+  });
 });
 
-test('a throwing logger cannot change the assembly', async () => {
-  const state = harness();
-  state.ctx.logger = { info() { throw new Error('exporter down'); }, warn() { throw new Error('exporter down'); } };
-  await createPlugin(dependencies()).apply(state.ctx as unknown as Context, Config({ toolSchema: { logFixes: true } }) as never);
-  const result = await run(state, fixtures.assembly([fixtures.missingBucketTool]));
-  assert.deepEqual(fixtures.parameters(result.tools[0]!).properties, {});
+test('a rewritten body drops stale framing headers and keeps the rest of init', async () => {
+  await withPlugin(Config({ toolSchema: {} }), async ({ captures }) => {
+    await globalThis.fetch(COPILOT_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'content-length': '999', 'x-custom': 'kept' },
+      body: fixtures.chatBody([fixtures.missingBucketTool]),
+      redirect: 'error',
+    });
+    const sent = new Headers(captures[0]!.init!.headers);
+    assert.equal(sent.get('content-length'), null, 'the stale length cannot describe the rewritten body');
+    assert.equal(sent.get('x-custom'), 'kept');
+    assert.equal(captures[0]!.init!.method, 'POST');
+    assert.equal(captures[0]!.init!.redirect, 'error');
+  });
 });
 
-test('duplicate installation is idempotent', async () => {
-  const state = await mount();
-  await createPlugin(dependencies()).apply(state.ctx as unknown as Context, Config({ toolSchema: {} }) as never);
-  assert.equal(state.listeners.length, 2);
-  const downstream = fixtures.assembly([fixtures.missingBucketTool]);
-  const once = await state.listeners[0]!.handler(downstream, {}, async () => downstream);
-  const twice = await state.listeners[1]!.handler(once, {}, async () => once);
-  assert.equal(JSON.stringify(twice.tools), JSON.stringify(once.tools));
-  assert.deepEqual(fixtures.parameters(twice.tools[0]!).properties, {});
+test('a non-gemini default route leaves every body byte-identical', async () => {
+  await withPlugin(Config({ toolSchema: { families: ['gemma'] } }), async ({ captures }) => {
+    await globalThis.fetch(COPILOT_URL, { method: 'POST', body: fixtures.chatBody([fixtures.missingBucketTool]) });
+    assert.equal(captures[0]!.init!.body, fixtures.chatBody([fixtures.missingBucketTool]));
+  });
+});
+
+test('volatile settings are re-read for every request', async () => {
+  const values = { providers: ['github-copilot'], families: ['gemini'], logFixes: false };
+  await withPlugin(volatileConfig(values), async ({ captures }) => {
+    const body = fixtures.chatBody([fixtures.missingBucketTool]);
+    await globalThis.fetch(COPILOT_URL, { method: 'POST', body });
+    assert.deepEqual(fixtures.sentParameters(captures[0]!.init!.body as string).properties, {});
+    values.families = ['gpt'];
+    await globalThis.fetch(COPILOT_URL, { method: 'POST', body });
+    assert.equal(captures[1]!.init!.body, body);
+    values.families = ['gemini']; values.providers = [];
+    await globalThis.fetch(COPILOT_URL, { method: 'POST', body });
+    assert.equal(captures[2]!.init!.body, body);
+  });
+});
+
+test('logFixes summarizes fixes and controlled skips without tool arguments', async () => {
+  await withPlugin(Config({ toolSchema: { logFixes: true } }), async ({ logs, captures }) => {
+    await globalThis.fetch(COPILOT_URL, { method: 'POST', body: fixtures.chatBody([fixtures.missingBucketTool]) });
+    const fixed = logs.info.filter(line => line.includes('added a properties bucket'));
+    assert.equal(fixed.length, 1);
+    assert.equal(JSON.stringify(logs.info).includes('projectId'), false);
+    await globalThis.fetch(COPILOT_URL, { method: 'POST', body: fixtures.chatBody([fixtures.referenceTool]) });
+    assert.match(logs.warn.at(-1) ?? '', /TOOL_SCHEMA_SKIPPED/u);
+    assert.match(logs.warn.at(-1) ?? '', /SKIPPED_REFERENCE/u);
+    await globalThis.fetch(COPILOT_URL, { method: 'POST', body: fixtures.chatBody([fixtures.missingBucketTool, fixtures.referenceTool, fixtures.noParametersTool]) });
+    assert.match(logs.info.at(-1) ?? '', /added a properties bucket to 1 tool schema/u);
+    assert.match(logs.warn.at(-1) ?? '', /left 2 tool schema\(s\) unchanged/u);
+    assert.equal(captures.length, 3);
+  });
+  await withPlugin(Config({ toolSchema: {} }), async ({ logs }) => {
+    await globalThis.fetch(COPILOT_URL, { method: 'POST', body: fixtures.chatBody([fixtures.missingBucketTool]) });
+    assert.equal(logs.info.filter(line => line.includes('added a properties bucket')).length, 0);
+  });
+});
+
+test('a throwing logger or settings accessor never fails or corrupts the request', async () => {
+  await withPlugin(Config({ toolSchema: { logFixes: true } }), async ({ captures }) => {
+    const body = fixtures.chatBody([fixtures.missingBucketTool]);
+    await globalThis.fetch(COPILOT_URL, { method: 'POST', body });
+    assert.deepEqual(fixtures.sentParameters(captures[0]!.init!.body as string).properties, {});
+  }, async (ctx, config) => {
+    (ctx as unknown as { logger: unknown }).logger = { info() { throw new Error('exporter down'); }, warn() { throw new Error('exporter down'); } };
+    await createPlugin(dependencies()).apply(ctx, config as never);
+  });
+  await withPlugin({
+    providers: { get: () => ({}) },
+    search: {},
+    toolSchema: { providers: { get: () => ['github-copilot'] }, families: { get: () => { throw new Error('settings unavailable'); } }, logFixes: { get: () => false } },
+  }, async ({ captures }) => {
+    const body = fixtures.chatBody([fixtures.missingBucketTool]);
+    await globalThis.fetch(COPILOT_URL, { method: 'POST', body });
+    assert.equal(captures[0]!.init!.body, body, 'a throwing settings read is fail-open');
+  });
+});
+
+test('duplicate installation still normalizes one body exactly once', async () => {
+  await withPlugin(Config({ toolSchema: {} }), async ({ captures }) => {
+    await globalThis.fetch(COPILOT_URL, { method: 'POST', body: fixtures.chatBody([fixtures.missingBucketTool]) });
+    const parameters = fixtures.sentParameters(captures[0]!.init!.body as string);
+    assert.deepEqual(parameters, { type: 'object', oneOf: parameters.oneOf, properties: {} });
+  }, async (ctx, config) => {
+    await createPlugin(dependencies()).apply(ctx, config as never);
+    await createPlugin(dependencies()).apply(ctx, config as never);
+  });
 });

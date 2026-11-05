@@ -8,6 +8,7 @@ import { SessionId } from '@deepseek-ai/dsh-session';
 import { abortIfRequested, WorktreeError } from './errors.js';
 import { localProjectPath, planBlocksMutation, policyOf, required } from './runtime.js';
 import { SessionBootstrap } from './sessions.js';
+import { withoutEmptyOptionalStrings } from './schema.js';
 import { projectBindingSchema, projectRecordSchema, type ProjectStartRecord, type ProjectStore } from './project-store.js';
 import type { WorktreeRecord } from './types.js';
 
@@ -32,7 +33,7 @@ export interface ProjectInvocation { agent?: Agent; origin: 'ui' | 'tool' | 'com
 export interface ProjectRemoveResult { removed: true; projectId: string; scope: 'project-metadata' }
 export interface ProjectStartResult { sessionId: string; workspaceId: string; binding: ProjectThreadBinding }
 export interface ProjectWorktreeSource { records(): WorktreeRecord[] }
-type BootstrapApi = Pick<SessionBootstrap, 'actor' | 'isLive' | 'settings' | 'create' | 'close'>;
+type BootstrapApi = Pick<SessionBootstrap, 'actor' | 'isLive' | 'assertOrdinaryCaller' | 'settings' | 'create' | 'close'>;
 export interface ProjectDependencies { bootstrap?: BootstrapApi; localPath?: typeof localProjectPath; operationTimeoutMs?: number }
 interface NativeWorkspace { id: string; path: string; title: string; sessionIds: readonly string[]; attachSession(id: SessionId): Promise<void> }
 interface Registry { list(): NativeWorkspace[]; create(path: string, title?: string): Promise<NativeWorkspace> }
@@ -85,8 +86,39 @@ export function projectJsonSnapshot(value: unknown, code = 'INVALID_REQUEST'): u
   };
   visit(value, 0); return JSON.parse(JSON.stringify(value)) as unknown;
 }
+/** Fields each project action accepts; a model tool call may enumerate the rest. */
+const actionFields: Record<ProjectRequest['action'], readonly string[]> = {
+  list: ['projectId'],
+  create: ['id', 'title', 'folders', 'mainFolder'],
+  update: ['projectId', 'title', 'folders', 'mainFolder'],
+  remove: ['projectId'],
+  bind: ['projectId', 'folderId', 'sessionId'],
+  start: ['operationId', 'projectId', 'folderId'],
+};
+
+/**
+ * Parse one model tool call.
+ *
+ * Tool arguments are also produced by an LLM, which may enumerate every property
+ * of the declaration. The chosen action is explicit, so properties it does not
+ * accept are dropped before the strict union; code-written callers such as the
+ * authenticated UI RPC keep the strict rejection.
+ *
+ * @param input - raw tool arguments.
+ * @returns the request the chosen action accepts.
+ */
+export function parseProjectToolRequest(input: unknown): ProjectRequest {
+  const snapshot = projectJsonSnapshot(input);
+  if (typeof snapshot !== 'object' || snapshot === null || Array.isArray(snapshot)) return parseProjectRequest(snapshot);
+  const action = (snapshot as { action?: unknown }).action;
+  const accepted = typeof action === 'string' && Object.hasOwn(actionFields, action) ? actionFields[action as ProjectRequest['action']] : undefined;
+  if (accepted === undefined) return parseProjectRequest(snapshot);
+  const kept: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(snapshot)) if (key === 'action' || accepted.includes(key)) kept[key] = item;
+  return parseProjectRequest(kept);
+}
 export function parseProjectRequest(input: unknown): ProjectRequest {
-  const parsed = requestSchema.safeParse(projectJsonSnapshot(input));
+  const parsed = requestSchema.safeParse(withoutEmptyOptionalStrings(projectJsonSnapshot(input)));
   if (!parsed.success) throw new WorktreeError('INVALID_REQUEST', 'Invalid project action or fields. Use absolute existing folder paths.');
   return parsed.data;
 }
@@ -229,7 +261,9 @@ export class ProjectController {
       if (invocation.origin !== 'ui' || request.action === 'bind') throw new WorktreeError('NO_CALLER', 'A genuine invoking ordinary session is required.');
       return request.action === 'start' ? startFolder ?? this.startFolder(request) : undefined;
     }
-    if (!this.bootstrap.isLive(agent) || this.bootstrap.actor(agent.id) !== agent) throw new WorktreeError('SESSION_CHANGED', 'The invoking session is no longer the exact ordinary live session.');
+    if (!this.bootstrap.isLive(agent)) throw new WorktreeError('SESSION_CHANGED', 'The invoking session is no longer the exact ordinary live session.');
+    this.bootstrap.assertOrdinaryCaller(agent);
+    if (this.bootstrap.actor(agent.id) !== agent) throw new WorktreeError('SESSION_CHANGED', 'The invoking session is no longer the exact ordinary live session.');
     if (invocation.origin === 'tool' && request.action !== 'list' && planBlocksMutation(agent)) throw new WorktreeError('PLAN_MODE', 'Project mutations are unavailable while plan mode is active or pending enabled.');
     if (request.action === 'start') {
       const folder = startFolder ?? this.startFolder(request); const policy = policyOf(agent);

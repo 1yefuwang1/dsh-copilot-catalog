@@ -1,7 +1,7 @@
 # @1yefuwang1/dsh-worktrees
 
 Multi-folder projects with Local and isolated Git worktree threads for DeepSeek
-Harness. This experimental Host + Web Client package is **`0.2.27`**; new releases
+Harness. This experimental Host + Web Client package is **`0.2.28`**; new releases
 use staged npm publishing with maintainer review/2FA. It does not require Copilot, the
 catalog plugin, or the search plugin. The scoped name avoids collision with the
 unrelated npm package `dsh-worktrees`; stable tool, command and metadata names are
@@ -231,12 +231,13 @@ command machine, serialization, undo/rollback and normal prompt transport remain
 native. No core file, global business service, native endpoint, keyboard handler
 or other plugin's DOM is replaced.
 
-Compatibility is the exact manifest/peer pin to DSH `0.2.1-rc.5` **plus structural
-callback/owner checks** (`0.2.1-rc.5/default-sink-v2`), not a runtime-source
-fingerprint or an upgrade-stability claim. The four-argument native sink and its
-readonly attachment list are retained; native session facts and submission analytics
-still use their original callbacks. Attachment-only Send captures intent before the
-native commit publishes its emptied rail. Independent detached sends keep distinct
+Compatibility is the exact manifest/peer pin to DSH `0.2.2-rc.1` **plus structural
+callback/owner checks** (`0.2.2-rc.1/default-sink-v3`), not a runtime-source
+fingerprint or an upgrade-stability claim. The five-argument native sink, its
+readonly attachment list and its acceptance callback are retained; native session
+facts and submission analytics still use their original callbacks. Attachment-only
+Send now travels the shell's ordinary transaction, so the plugin no longer restores
+drafts or attachments the shell still owns. Independent detached sends keep distinct
 signal-owned tokens; reentrant submits before that signal handoff are refused rather
 than exchanging targets. A capture refusal is retained even when native session-facts
 lookup errors are swallowed, and captures that become native commands cannot leak
@@ -364,7 +365,7 @@ explicit choice, not a fallback.
   for automatic Client navigation: late metadata/lifecycle responses update warnings
   and actions only, never replace a newer, pre-existing, or pending native selection.
   Explicit **Continue on selected branch** normally opens the requested Local target.
-- Cold create/resume use the rc.5 `AgentSetupCommit` finalizer to recheck the exact
+- Cold create/resume use the rc.1 `AgentSetupCommit` finalizer to recheck the exact
   target identity, inherited prefix and absence of new execution after asynchronous
   preset setup. This is the setup-completion boundary, before the factory persists
   its setup suffix and then publishes; it is not an atomic publication barrier.
@@ -588,7 +589,7 @@ protection, identity, and activity checks.
 
 ## Install from this repository
 
-Requires DSH/DSH peers `0.2.1-rc.5`, Node.js `>=22.19.0`, a suitable local Git
+Requires DSH/DSH peers `0.2.2-rc.1`, Node.js `>=22.19.0`, a suitable local Git
 executable, and the ordinary session/filesystem/subprocess/sandbox/preset/plan
 capabilities. The manifest names `@deepseek-ai/dsh-agent-preset-registry` and
 `@deepseek-ai/dsh-plan-mode`; the Web Client mounts beside the existing
@@ -598,7 +599,7 @@ After the staged release is approved and appears on npm, install the scoped
 package (the similarly named unscoped package is unrelated):
 
 ```sh
-dsh plugin --profile <profile> add @1yefuwang1/dsh-worktrees@0.2.27
+dsh plugin --profile <profile> add @1yefuwang1/dsh-worktrees@0.2.28
 ```
 
 For local development or while release approval is pending, build explicitly from
@@ -751,7 +752,7 @@ authenticated quiet RPC, and immutable history/settings. Actual pinned AgentLoop
 native Session controller, goals/presets/policies and JSONL persistence fixtures
 exercise real create/resume initialization claims, native permission changes, queued
 input, ready-journal/publication failures, exact-ID retry, and shutdown writer drains.
-The browser harness evaluates the published rc.5 shell, editor, reference codec
+The browser harness evaluates the published rc.1 shell, editor, reference codec
 choreography and submit machine, including attachment-only pre-detachment capture,
 reentrant fail-closed behavior and out-of-order detached failure restoration.
 On macOS, a signed bundled Node may reject a differently signed native persistence

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { fallbackName, generateWorktreeName, namingConfig, safeSlug } from '../dist/naming.js';
 import { Config } from '../dist/index.js';
-import { parseRequest, parameterSchema, stripToolSchemaHints } from '../dist/schema.js';
+import { parseRequest, parseToolRequest, parameterSchema, stripToolSchemaHints } from '../dist/schema.js';
 import { worktreeDomain } from '../dist/store.js';
 import type { WorktreeConfig } from '../dist/types.js';
 import type { HostDouble } from './controller-types.js';
@@ -178,6 +178,18 @@ test('firstPrompt is bounded and create-only, and tool parameters remain plain J
   assert.equal(parseRequest(input).firstPrompt!.length, 65536);
   assert.throws(() => parseRequest({ ...input, firstPrompt: 'a'.repeat(65537) }), error => error instanceof Error && 'code' in error && error.code === 'INVALID_REQUEST');
   assert.throws(() => parseRequest({ action: 'status' as const, firstPrompt: 'task' }), error => error instanceof Error && 'code' in error && error.code === 'INVALID_REQUEST');
+  // Some model routes materialize unused optional properties as an empty string.
+  const blanked = { action: 'list' as const, repoPath: '', id: '', operationId: '', localBranch: '', projectId: '', cursor: '' };
+  assert.deepEqual(parseRequest(blanked), { action: 'list' });
+  assert.throws(() => parseRequest({ action: 'list' as const, id: 'not-a-uuid' }), error => error instanceof Error && 'code' in error && error.code === 'INVALID_REQUEST');
+  assert.throws(() => parseRequest({ action: 'reopen' as const, sourceSessionId: '', localBranch: '', localOid: '' }), error => error instanceof Error && 'code' in error && error.code === 'INVALID_REQUEST');
+  // A model tool call may enumerate properties the chosen action does not accept;
+  // the tool boundary drops them, while the code-written callers stay strict.
+  const padded = { action: 'list' as const, repoPath: '/repo', branchSource: 'local' as const, sessionMode: 'new' as const, requireBlankSource: false, protected: false, id: '', limit: 5 };
+  const toolRequest = parseToolRequest(padded);
+  assert.deepEqual(toolRequest, { action: 'list', repoPath: '/repo', limit: 5 });
+  assert.throws(() => parseRequest(padded), error => error instanceof Error && 'code' in error && error.code === 'INVALID_REQUEST');
+  assert.throws(() => parseToolRequest({ action: 'list' as const, limit: 0 }), error => error instanceof Error && 'code' in error && error.code === 'INVALID_REQUEST');
   assert.deepEqual(JSON.parse(JSON.stringify(parameterSchema)), parameterSchema);
   const firstPrompt = (parameterSchema as { properties: { firstPrompt: { maxLength?: number; description?: string } } }).properties.firstPrompt;
   assert.equal(firstPrompt.maxLength, undefined);

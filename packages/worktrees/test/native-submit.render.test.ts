@@ -40,7 +40,7 @@ const require = createRequire(import.meta.url);
 const targetEntry = require.resolve('@deepseek-ai/dsh-client-ui-conversation/client');
 const targetManifest = JSON.parse(await readFile(require.resolve('@deepseek-ai/dsh-client-ui-conversation/package.json'), 'utf8')) as { version?: string };
 const targetVersion = required(targetManifest.version);
-assert.equal(targetVersion, '0.2.1-rc.5', 'the native-shell harness is pinned to the guarded target');
+assert.equal(targetVersion, '0.2.2-rc.1', 'the native-shell harness is pinned to the guarded target');
 
 function required<T>(value: T | null | undefined): T {
   assert.ok(value !== null && value !== undefined);
@@ -87,7 +87,7 @@ type SubmitOutcome = { kind: 'success' } | { kind: 'error'; text?: string };
 const permissionCommand = '/permission ';
 interface ShellDeps {
   actx: object;
-  defaultSink(text: string, ids: readonly string[], mode: 'queue' | 'steer', signal: AbortSignal): Promise<SubmitOutcome>;
+  defaultSink(text: string, ids: readonly string[], mode: 'queue' | 'steer', signal: AbortSignal, accept: () => void): Promise<SubmitOutcome>;
   inputTriggers(): TriggerController | undefined;
   inbox: { getSnapshot(): { 'next-turn': unknown[] }; subscribe(listener: () => void): () => void };
   commandAttachments: { serialize(ids: string[]): Promise<unknown[]>; release(ids: string[]): void; unsupportedNotice(token: string): string };
@@ -186,7 +186,7 @@ const protocol = protocolOf(plugin.factory(name => {
   if (name === 'react') return React;
   throw new Error(`Unexpected plugin external ${name}`);
 }));
-assert.equal(protocol.NATIVE_SUBMIT_ABI, '0.2.1-rc.5/default-sink-v2', 'the plugin adapter names the exact installed target ABI');
+assert.equal(protocol.NATIVE_SUBMIT_ABI, '0.2.2-rc.1/default-sink-v3', 'the plugin adapter names the exact installed target ABI');
 
 interface HarnessEvent {
   kind: string; text?: string; ids?: string[]; mode?: string; aborted?: boolean;
@@ -199,7 +199,7 @@ interface Harness {
   close(): Promise<void>;
 }
 
-function harness(options: { afterDetach?: () => void; submit?: SinkHooks['submit']; capture?: SinkHooks['capture']; facts?: unknown; factsError?: Error; adjudicate?: TriggerController['adjudicate']; onFacts?: () => void } = {}): Harness {
+function harness(options: { submit?: SinkHooks['submit']; capture?: SinkHooks['capture']; facts?: unknown; factsError?: Error; adjudicate?: TriggerController['adjudicate']; onFacts?: () => void } = {}): Harness {
   const events: HarnessEvent[] = [];
   const mid: HarnessMid[] = [];
   const submissions: { state?: unknown }[] = [];
@@ -219,7 +219,7 @@ function harness(options: { afterDetach?: () => void; submit?: SinkHooks['submit
     onSpace() { return false; },
     lexicon: { getSnapshot: () => new Map(), subscribe: () => () => {} },
   };
-  const originalSink: ShellDeps['defaultSink'] = async (text, ids, mode, signal) => {
+  const originalSink: ShellDeps['defaultSink'] = async (text, ids, mode, signal, _accept) => {
     events.push({ kind: 'native-sink', text, ids: [...ids], mode, aborted: signal.aborted });
     return { kind: 'success' };
   };
@@ -254,8 +254,6 @@ function harness(options: { afterDetach?: () => void; submit?: SinkHooks['submit
     },
   };
   const lease = protocol.leaseNativeSink(shell, binding, hooks);
-  // Native publishes commitSend synchronously; use the actual store, not a fake sink.
-  shell.state.subscribe(() => { if (shell.snapshot.draft === '' && shell.snapshot.attachmentIds.length === 0) options.afterDetach?.(); });
   assert.equal(lease.abi, protocol.NATIVE_SUBMIT_ABI);
   return { shell, deps, events, mid, lease, submissions, originalSink, originalTriggers, originalSubmission, close: () => lease.close() };
 }
@@ -284,8 +282,10 @@ test('the real target shell serializes a reference chip and restores it after a 
   assert.deepEqual(submit?.ids, ['attachment-1']);
   assert.equal(submit?.mode, 'queue'); assert.equal(submit?.aborted, false);
   assert.equal(h.mid.length, 1, 'the sink was entered exactly once');
-  assert.equal(h.mid[0]?.draft, '', 'the committed draft is cleared before the refusal restores it');
-  assert.deepEqual(h.mid[0]?.attachmentIds, [], 'committed attachments are cleared before the refusal restores them');
+  // The native transaction owns the draft and its attachments until the sink
+  // settles; a refusal never detaches them, so the plugin must not restore them.
+  assert.equal(h.mid[0]?.draft, '@a.ts please review', 'the pending native draft stays owned by the shell');
+  assert.deepEqual(h.mid[0]?.attachmentIds, ['attachment-1'], 'pending attachments stay owned by the shell');
   assert.equal(h.events.find(event => event.kind === 'settled')?.ok, true);
 
   const snapshot = h.shell.snapshot;
@@ -314,7 +314,7 @@ test('the real target shell adjudicates a leading command draft through the leas
   assert.equal(adjudicate?.attachments, 0); assert.equal(adjudicate?.aborted, false);
   const submit = h.events.find(event => event.kind === 'submit');
   assert.equal(submit?.text, '/permission danger-full-access'); assert.equal(submit?.mode, 'queue');
-  assert.equal(h.mid.length, 1); assert.equal(h.mid[0]?.draft, '', 'the committed command draft is cleared before restore');
+  assert.equal(h.mid.length, 1); assert.equal(h.mid[0]?.draft, '/permission danger-full-access', 'the pending command draft stays owned by the shell');
   assert.equal(h.events.find(event => event.kind === 'settled')?.ok, true);
   assert.equal(h.shell.snapshot.draft, '/permission danger-full-access');
   assert.equal(h.shell.notices.getSnapshot()?.text, 'worktree refused');
@@ -377,15 +377,15 @@ test('a refused route still refuses a slash draft when native adjudication falls
   assert.equal(h.shell.snapshot.draft, '/not-a-command'); assert.equal(h.shell.notices.getSnapshot()?.text, 'route capture refused');
 });
 
-test('attachment-only Send freezes New intent before native commit observers can choose Local', async t => {
+test('attachment-only Send freezes New intent before native facts observers can choose Local', async t => {
   let mode: Choice['mode'] = 'new';
   const facts = { runMode: 'plan', running: false, newSession: true };
-  const h = harness({ facts, capture: () => ({ mode }), afterDetach: () => { mode = 'local'; } });
+  const h = harness({ facts, capture: () => ({ mode }), onFacts: () => { mode = 'local'; } });
   t.after(async () => { await h.close(); h.shell.dispose(); });
   assert.equal(h.shell.addAttachments(['send-time-file']), true);
   h.shell.submit('steer');
   await settle();
-  assert.equal(mode, 'local', 'the real native commit observer ran before the sink');
+  assert.equal(mode, 'local', 'the real native facts observer ran after capture, before the sink');
   assert.equal(h.submissions.length, 1); assert.equal(h.submissions[0]?.state, facts, 'native facts and analytics retain the original snapshot');
   assert.equal(h.events.filter(event => event.kind === 'capture').length, 1);
   assert.equal(h.events.filter(event => event.kind === 'submit').length, 1);
@@ -407,7 +407,7 @@ test('submission facts failure cannot swallow a capture refusal and silently sen
 
 test('reentrant attachment-only commits fail closed instead of exchanging New and Local targets', async t => {
   let mode: Choice['mode'] = 'new', nested = false;
-  const h = harness({ capture: () => ({ mode }), afterDetach() {
+  const h = harness({ capture: () => ({ mode }), onFacts() {
     if (nested) return; nested = true; mode = 'local';
     assert.equal(h.shell.addAttachments(['inner-file']), true);
     h.shell.submit('queue');
@@ -423,20 +423,22 @@ test('reentrant attachment-only commits fail closed instead of exchanging New an
   assert.equal(h.events.filter(event => event.kind === 'settled').length, 1, 'the single acquired New capture releases exactly once');
 });
 
-test('independent detached sends keep their own captures and restore refused drafts in submission order', async t => {
+test('a second gesture during a pending send is refused by the native transaction and captures once', async t => {
   const flights: { text: string; resolve(outcome: SubmitOutcome): void }[] = [];
   const h = harness({ submit: async (_choice, text) => await new Promise<SubmitOutcome>(resolve => { flights.push({ text, resolve }); }) });
   t.after(async () => { await h.close(); h.shell.dispose(); });
-  h.shell.setDraft('first detached message'); h.shell.submit('queue');
-  h.shell.setDraft('second detached message'); h.shell.submit('steer');
+  h.shell.setDraft('first pending message'); h.shell.submit('queue');
   await settle();
-  assert.equal(flights.length, 2); assert.equal(h.events.filter(event => event.kind === 'capture').length, 2);
-  assert.equal(h.shell.snapshot.draft, ''); assert.equal(h.shell.snapshot.phase, 'plain');
-  required(flights[1]).resolve({ kind: 'error', text: 'second refused' }); await settle();
-  assert.equal(h.shell.snapshot.draft, 'second detached message');
+  // The native transaction owns the sink until it settles, so a later gesture is
+  // dropped before submission facts are published: no capture, no second sink.
+  h.shell.setDraft('second message'); h.shell.submit('steer');
+  await settle();
+  assert.equal(flights.length, 1); assert.equal(h.events.filter(event => event.kind === 'capture').length, 1);
+  assert.equal(h.submissions.length, 1, 'the dropped gesture never publishes submission facts');
+  assert.equal(h.shell.snapshot.draft, 'second message');
   required(flights[0]).resolve({ kind: 'error', text: 'first refused' }); await settle();
-  assert.equal(h.shell.snapshot.draft, 'first detached message\n\nsecond detached message');
-  assert.equal(h.events.filter(event => event.kind === 'settled').length, 2);
+  assert.equal(h.events.filter(event => event.kind === 'settled').length, 1);
+  assert.equal(h.shell.snapshot.draft, 'second message');
 });
 
 test('the real target shell restores an attachment-only draft after a refused send', async t => {
@@ -449,7 +451,7 @@ test('the real target shell restores an attachment-only draft after a refused se
 
   const submit = h.events.find(event => event.kind === 'submit');
   assert.equal(submit?.text, ''); assert.deepEqual(submit?.ids, ['attachment-only']); assert.equal(submit?.mode, 'queue');
-  assert.equal(h.mid.length, 1); assert.deepEqual(h.mid[0]?.attachmentIds, [], 'the attachment-only send is cleared before restore');
+  assert.equal(h.mid.length, 1); assert.deepEqual(h.mid[0]?.attachmentIds, ['attachment-only'], 'the pending attachment-only send stays owned by the shell');
   assert.equal(h.events.find(event => event.kind === 'settled')?.ok, true);
   assert.deepEqual([...h.shell.snapshot.attachmentIds], ['attachment-only']);
   assert.equal(h.shell.notices.getSnapshot()?.text, 'worktree refused');

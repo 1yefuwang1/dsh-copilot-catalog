@@ -4,7 +4,7 @@ import { mkdir, realpath, readFile, writeFile, rm, symlink } from 'node:fs/promi
 import { dirname, resolve } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { z } from 'zod';
-import { parseProjectRequest, parameterSchema as rawParameterSchema, resolveMainFolder } from '../dist/projects.js';
+import { parseProjectRequest, parseProjectToolRequest, parameterSchema as rawParameterSchema, resolveMainFolder } from '../dist/projects.js';
 import { TypedProjectController as ProjectController, type HostDouble } from './controller-types.js';
 import type { ProjectDependencies, ProjectInvocation, ProjectRequest } from '../dist/projects.js';
 import type { WorktreeRecord, SessionSettings } from '../dist/types.js';
@@ -73,6 +73,7 @@ async function fixture(t: TestContext, options: FixtureOptions = {}) {
   }
   const settings: SessionSettings = { model: { provider: 'github-copilot', model: 'gpt-6.1-sol', reasoningEffort: 'medium' }, preset: 'preset', sandbox: 'workspace-write', approval: 'ask', plan: true, hash: 'current' };
   const bootstrap: BootstrapApi = {
+    assertOrdinaryCaller(value) { if (value.session.header.origin === 'subagent') throw new WorktreeError('SUBAGENT_SOURCE', 'subagent caller'); },
     actor(id) { const value = actors.get(id); if (!value) throw new WorktreeError('SESSION_NOT_LIVE', 'missing'); if (value.session.header.origin === 'subagent') throw new WorktreeError('SUBAGENT_SOURCE', 'ordinary only'); return value; },
     isLive: value => actors.get(value.id) === value,
     async settings() { calls.push(['settings']); return structuredClone(settings); },
@@ -196,6 +197,10 @@ test('actual caller cross-root/plan authority is enforced; actor start copies se
   assert.equal(input.source, actor); assert.deepEqual(input.settings, f.settings); assert.equal(input.mode, 'new'); assert.equal(input.cwd, f.paths.b); assert.equal(input.prompt, undefined); assert.equal(result.binding.mode, 'local');
   const impostor = { ...actor }; await assert.rejects(f.controller.execute({ action: 'list' as const }, { ...invocation, agent: impostor }), errorCode('SESSION_CHANGED'));
   const child = f.actor(f.paths.a, 'subagent'); await assert.rejects(f.controller.execute({ action: 'list' as const }, { ...invocation, agent: child }), errorCode('SUBAGENT_SOURCE'));
+  // A model tool call may enumerate properties the chosen action does not accept.
+  assert.deepEqual(parseProjectToolRequest({ action: 'list', projectId: '11111111-1111-4111-8111-111111111111', folders: [], title: 'ignored' }),
+    { action: 'list', projectId: '11111111-1111-4111-8111-111111111111' });
+  assert.throws(() => parseProjectRequest({ action: 'list', projectId: '11111111-1111-4111-8111-111111111111', folders: [], title: 'ignored' }), errorCode('INVALID_REQUEST'));
   delete f.services.sessionController; f.plans.set(actor.id, { active: false });
   await f.controller.execute({ action: 'start' as const, operationId: randomUUID(), projectId: own!.projectId, folderId: own!.folderId }, invocation);
 });
