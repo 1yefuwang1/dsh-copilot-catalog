@@ -93,6 +93,15 @@ for (const { path, manifest } of leaves) {
       throw new Error('Worktree package, Client loader, native config row and public npm identity must agree');
     }
   }
+  if (path === 'packages/better-copilot') {
+    sources.push(`${path}/client.ts`, `${path}/client.types.d.ts`);
+    const client = await readFile(join(root, path, 'client.ts'), 'utf8');
+    const moduleId = client.match(/window\.__ModuleLoader__\.load\(\{\s*id: '([^']+)'/u)?.[1];
+    if (manifest.name !== 'dsh-better-copilot' || moduleId !== manifest.name ||
+        manifest.exports['./client'] !== './dist/client.js' || manifest.dsh.client?.platform !== 'web') {
+      throw new Error('Better Copilot package, Client loader and browser export must agree');
+    }
+  }
 }
 for (const file of sources) {
   const source = await readFile(join(root, file), 'utf8');

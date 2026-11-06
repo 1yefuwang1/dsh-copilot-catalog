@@ -101,6 +101,25 @@ tool schemas that lack one for a configured Copilot route and model family, and
 leaves every other byte of the request untouched. It never replaces an adapter or
 another plugin's settings, and a guard failure dispatches the original body.
 
+## Subagent model badge (Web)
+
+The package now carries a small browser client half. When a subagent
+conversation is open in the Web GUI, the session header shows the child's
+effective route as muted text next to the title — for example
+`gpt-6.1-sol · high`. The label is read-only: the plugin renders no selector and
+writes nothing back, because the Host fixes a child's provider, model and
+reasoning effort when the subagent is created and reuses the recorded route on
+resume. An adapter-defaulted effort appears as `default`, and the tooltip and
+accessible name say that the route is fixed.
+
+The badge reads the child Session's `modelSelection` projection; it adds no Host
+service, configuration field or RPC. Ids are shown exactly as the Host records
+them, because catalog display names are not exposed to third-party client
+plugins. Ordinary conversations are unchanged, and the subagent catalog
+dropdown is untouched: DSH renders those rows in its own client package rather
+than through an extension slot. The browser half is published as `./client`
+and declared through `dsh.client`; no additional wiring is needed.
+
 ## Migration from the three predecessor packages
 
 | Was | Now |

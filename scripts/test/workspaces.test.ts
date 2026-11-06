@@ -122,20 +122,23 @@ test('release workflow stages one pnpm package with provenance and no stored tok
   assert.doesNotMatch(workflow, /run: npm |secrets\.(?:NPM_TOKEN|NODE_AUTH_TOKEN)/u);
 });
 
-test('publication allowlists and bounds preserve every existing leaf and explicitly add worktree Client assets', () => {
+test('publication allowlists and bounds preserve every existing leaf and explicitly add Client assets', () => {
   const common = ['CHANGELOG.md', 'LICENSE', 'README.md', 'cordis.patch.yml', 'package.json'];
   const modules = {
     'dsh-better-copilot': ['index', 'plugin', 'config', 'runtime', 'catalog', 'discovery', 'identity', 'catalog-types', 'auth', 'endpoint', 'errors', 'provider', 'refresh', 'responses', 'search', 'search-types', 'schema', 'guard', 'guard-types'],
     '@1yefuwang1/dsh-worktrees': ['index', 'types', 'errors', 'runtime', 'schema', 'store', 'sessions', 'context', 'service', 'branch-release', 'git', 'naming', 'rpc', 'projects', 'project-store', 'project-rpc', 'project-context', 'quiet-rpc', 'first-message', 'cleanup-store', 'cleanup', 'recovery-rpc'],
   };
+  const extras: Record<string, string[]> = {
+    'dsh-better-copilot': ['dist/client.js'],
+    '@1yefuwang1/dsh-worktrees': ['dist/client.js', 'locale/en.json', 'icon.svg'],
+  };
   const bounds: Record<string, number> = {
-    'dsh-better-copilot': 220_000,
+    'dsh-better-copilot': 230_000,
     '@1yefuwang1/dsh-worktrees': 875_000,
   };
   for (const [name, names] of Object.entries(modules)) {
     const policy = publicationPolicy(name);
-    const extras = name === '@1yefuwang1/dsh-worktrees' ? ['dist/client.js', 'locale/en.json', 'icon.svg'] : [];
-    assert.deepEqual(policy.files, [...common, ...names.flatMap(module => [`dist/${module}.js`, `dist/${module}.d.ts`]), ...extras].sort());
+    assert.deepEqual(policy.files, [...common, ...names.flatMap(module => [`dist/${module}.js`, `dist/${module}.d.ts`]), ...(extras[name] ?? [])].sort());
     assert.equal(policy.maxBytes, bounds[name] ?? 150_000);
     assert.doesNotThrow(() => validatePublicationSize(name, policy.maxBytes - 1));
     assert.throws(() => validatePublicationSize(name, policy.maxBytes), /Unexpectedly large/u);

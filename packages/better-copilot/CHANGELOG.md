@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.0 — read-only subagent route badge
+
+- Add a browser client half that shows an addressed subagent's effective model
+  and reasoning effort in the Web session header, beside the title. The label is
+  text only: no selector, no click target, no Host write, because the child's
+  route is fixed at creation and reused on resume.
+- Read the route from the existing `modelSelection` session projection and show
+  an adapter-defaulted effort as `default`. Provider/model/effort ids render
+  verbatim; catalog display names are not available to client plugins.
+- Keep ordinary conversations and the DSH-rendered subagent catalog untouched.
+  Ship the bundle through `./client` and a `dsh.client` declaration, with render
+  tests and the publication allowlist updated.
+
 ## 0.1.1 — DSH 0.2.2-rc.1 compatibility
 
 - Retarget the manifest, peer ranges and development pins to DSH `0.2.2-rc.1`

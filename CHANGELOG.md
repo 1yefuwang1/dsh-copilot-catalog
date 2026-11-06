@@ -1,5 +1,14 @@
 # Monorepo changelog
 
+## Better Copilot 0.2.0 — read-only subagent route badge
+
+- `dsh-better-copilot@0.2.0` gains a browser client half that shows an
+  addressed subagent's fixed model and reasoning effort in the Web session
+  header, beside the title. The badge is text only, reads the existing
+  `modelSelection` Session projection, and leaves ordinary conversations and
+  the DSH-rendered subagent catalog unchanged. The leaf now ships `./client`
+  and a `dsh.client` declaration.
+
 ## DSH 0.2.2-rc.1 compatibility
 
 - Retarget both plugin engines, DSH peers, development SDK pins and the Cordis

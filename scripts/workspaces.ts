@@ -24,7 +24,11 @@ export type PackageManifest = ReleaseCandidate['manifest'] & {
   peerDependencies?: Record<string, string>;
   engines?: Record<string, string>;
   publishConfig?: { access?: string; registry?: string };
-  dsh?: { manifestVersion: number; bundle?: { patch?: string } };
+  dsh?: {
+    manifestVersion: number;
+    bundle?: { patch?: string };
+    client?: { platform?: string; external?: string[]; inject?: string[]; immediately?: boolean };
+  };
 }
 
 export interface WorkspacePackage extends ReleaseCandidate {

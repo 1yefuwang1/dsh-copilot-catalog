@@ -187,11 +187,11 @@ A release selects **one package**, never the root or multiple packages at once:
 - `@1yefuwang1/dsh-worktrees-vX.Y.Z`
 
 The tag must match its leaf version and repository identity. `dsh-better-copilot` is
-`0.1.1`, the consolidation of catalog `0.2.9`, search `0.1.5` and tool schema
-`0.1.3`, retargeted to DSH `0.2.2-rc.1`; those three npm versions remain published but are
-no longer built here, and published versions cannot be republished. This
-compatibility version is a local source update, not evidence of an npm publication.
-Worktrees is
+`0.2.0`, the consolidation of catalog `0.2.9`, search `0.1.5` and tool schema
+`0.1.3` (retargeted to DSH `0.2.2-rc.1`; those three npm versions remain published
+but are no longer built here) plus a browser client half that shows an addressed
+subagent's fixed model and reasoning effort beside the Web conversation title.
+Published versions cannot be republished. Worktrees is
 `@1yefuwang1/dsh-worktrees@0.2.28`, which hides the starting-branch picker while a
 thread is Local: a Local send runs in the current checkout and never chooses,
 switches or creates a branch, so Local mode shows that checkout's current branch

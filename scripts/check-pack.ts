@@ -11,8 +11,9 @@ const policies: Record<string, Policy> = {
   'dsh-better-copilot': {
     modules: ['index', 'plugin', 'config', 'runtime', 'catalog', 'discovery', 'identity', 'catalog-types', 'auth', 'endpoint', 'errors', 'provider', 'refresh', 'responses', 'search', 'search-types', 'schema', 'guard', 'guard-types'],
     // The three predecessor allowlists total 196,755 bytes; the merged leaf keeps
-    // bounded headroom below their combined 450,000-byte bound.
-    extras: [], maxBytes: 220_000,
+    // bounded headroom below their combined 450,000-byte bound. The read-only
+    // subagent route badge adds the package's first browser bundle.
+    extras: ['dist/client.js'], maxBytes: 230_000,
   },
   '@1yefuwang1/dsh-worktrees': {
     modules: ['index', 'types', 'errors', 'runtime', 'schema', 'store', 'sessions', 'context', 'service', 'branch-release', 'git', 'naming', 'rpc', 'projects', 'project-store', 'project-rpc', 'project-context', 'quiet-rpc', 'first-message', 'cleanup-store', 'cleanup', 'recovery-rpc'],
