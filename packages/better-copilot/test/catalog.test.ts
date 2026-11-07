@@ -20,6 +20,43 @@ test('known models retain descriptor identity and mixed API metadata', () => {
   assert.deepEqual(selected.unsupported, []);
 });
 
+test('explicit temperature capability overlays known and new descriptors without mutating defaults', () => {
+  for (const endpoint of ['/responses', '/chat/completions', '/v1/messages']) {
+    for (const temperature of [false, true]) {
+      const catalog = catalogFixture();
+      const before = structuredClone(catalog);
+      const known = accountItem('gpt-6-sol', { capabilities: { supports: { temperature } } });
+      const fresh = accountItem('opaque-new-id', { supported_endpoints: [endpoint] });
+      fresh.capabilities.supports = { ...fresh.capabilities.supports, ...{ temperature } };
+      const { models } = select([known, fresh], catalog);
+      assert.notEqual(models[known.id], catalog[known.id]);
+      assert.deepEqual(models[known.id], { ...catalog[known.id], compat: { ...catalog[known.id]!.compat, supportsTemperature: temperature } });
+      assert.equal((models[fresh.id]!.compat as Record<string, unknown>).supportsTemperature, temperature);
+      assert.deepEqual(catalog, before);
+    }
+  }
+});
+
+test('missing or malformed temperature metadata preserves known descriptor identity and unknown OpenAI behavior', () => {
+  for (const temperature of [undefined, null, 'false', 0, [], {}]) {
+    const catalog = catalogFixture();
+    const known = accountItem('gpt-6-sol', { capabilities: { supports: { temperature } } });
+    const fresh = accountItem('opaque-new-id');
+    fresh.capabilities.supports = { ...fresh.capabilities.supports, ...{ temperature } };
+    const { models } = select([known, fresh], catalog);
+    assert.equal(models[known.id], catalog[known.id]);
+    assert.equal((models[fresh.id]!.compat as Record<string, unknown>).supportsTemperature, undefined);
+  }
+});
+
+test('existing temperature compat survives absent metadata and preserves identity for an equal boolean', () => {
+  const catalog = catalogFixture();
+  Object.assign(catalog['gpt-6-sol'].compat, { supportsTemperature: false });
+  for (const supports of [{}, { temperature: false }, { temperature: 'true' }]) {
+    assert.equal(select([accountItem('gpt-6-sol', { capabilities: { supports } })], catalog).models['gpt-6-sol'], catalog['gpt-6-sol']);
+  }
+});
+
 test('exclude non-picker, disabled, unconfigured, invalid-policy, and tool-less models', () => {
   for (const changes of [
     { model_picker_enabled: false }, { model_picker_enabled: 'true' },

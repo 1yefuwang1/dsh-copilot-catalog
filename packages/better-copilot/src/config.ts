@@ -30,11 +30,19 @@ export interface GuardConfigValue {
   logFixes: Volatile<boolean>;
 }
 
+/** Builtin Auto review routing; omitted leaves retain the model's adapter defaults. */
+export interface AutoReviewSettings {
+  enabled: Volatile<boolean>;
+  model: Volatile<string | undefined>;
+  reasoningEffort: Volatile<string | undefined>;
+}
+
 /** The one configuration object every capability reads from. */
 export interface BetterCopilotConfig {
   providers: ProvidersValue;
   search: SearchSettings;
   toolSchema: GuardConfigValue;
+  autoReview: AutoReviewSettings;
 }
 
 /** User-facing configuration: plain values, before volatile resolution. */
@@ -55,6 +63,11 @@ export interface BetterCopilotConfigInput {
     providers?: string[];
     families?: string[];
     logFixes?: boolean;
+  };
+  autoReview?: {
+    enabled?: boolean;
+    model?: string;
+    reasoningEffort?: string;
   };
 }
 
@@ -99,6 +112,13 @@ export const GuardConfig = z.object({
   logFixes: z.boolean().default(false).volatile(),
 });
 
+/** Only the builtin reviewer is affected; exact model/effort ids are validated by LLM dispatch. */
+export const AutoReviewConfig = z.object({
+  enabled: z.boolean().default(true).volatile(),
+  model: z.string().min(1).volatile(),
+  reasoningEffort: z.string().min(1).volatile(),
+});
+
 /** The adapter schema exposes its field schemas for reuse; only `dict` is needed here. */
 interface ProviderSchemaCarrier {
   readonly dict?: { readonly providers?: unknown };
@@ -129,5 +149,6 @@ export function createConfig(originalConfig: unknown): BetterCopilotConfigSchema
     providers: providerProfileSchema(originalConfig),
     search: SearchConfig,
     toolSchema: GuardConfig,
+    autoReview: AutoReviewConfig,
   }) as unknown as BetterCopilotConfigSchema;
 }

@@ -50,6 +50,19 @@ test('search and guard settings resolve their defaults and overrides through vol
   assert.equal(overridden.toolSchema.logFixes.get(), true);
 });
 
+test('builtin review overrides are optional volatile leaves with an enabled default', () => {
+  const defaults = Config();
+  assert.equal(defaults.autoReview.enabled.get(), true);
+  assert.equal(defaults.autoReview.model.get(), undefined);
+  assert.equal(defaults.autoReview.reasoningEffort.get(), undefined);
+  const overridden = Config({ autoReview: { enabled: false, model: 'exact-model-id', reasoningEffort: 'max' } });
+  assert.equal(overridden.autoReview.enabled.get(), false);
+  assert.equal(overridden.autoReview.model.get(), 'exact-model-id');
+  assert.equal(overridden.autoReview.reasoningEffort.get(), 'max');
+  assert.throws(() => Config({ autoReview: { model: '' } }));
+  assert.throws(() => Config({ autoReview: { reasoningEffort: '' } }));
+});
+
 test('the parity table keeps every predecessor field at its merged path', () => {
   // Literal expectations, so this test survives the predecessor packages' deletion.
   const expected = {

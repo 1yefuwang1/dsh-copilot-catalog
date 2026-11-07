@@ -1,5 +1,15 @@
 # Monorepo changelog
 
+## Better Copilot 0.3.0 — builtin review overrides
+
+- Add configurable builtin Auto review model and reasoning effort. GitHub
+  Copilot defaults to `gpt-6.1-terra`; DeepSeek Flash stays on Flash. Conversation
+  routing and the builtin authorization policy remain unchanged.
+- Omit the builtin reviewer's Copilot sampling parameter without positive
+  temperature support; ordinary inference omits it only for explicit unsupported
+  catalog metadata. Share the existing trusted wire transform with the Gemini
+  guard and preserve independent capability containment.
+
 ## Better Copilot 0.2.0 — read-only subagent route badge
 
 - `dsh-better-copilot@0.2.0` gains a browser client half that shows an

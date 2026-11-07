@@ -18,6 +18,8 @@ import type {
 } from './catalog-types.js';
 import type { CopilotSearchOptions, SearchContext, SearchRuntime } from './search-types.js';
 import type { GuardSettings } from './guard-types.js';
+import { installAutoReviewRouting } from './auto-review.js';
+import { normalizeCopilotTemperature } from './temperature.js';
 
 export const name = 'better-copilot';
 
@@ -146,18 +148,24 @@ export function createPlugin(dependencies: BetterCopilotDependencies): BetterCop
       //    the defect. It is installed even when wire identity is opted out.
       contain('tool-schema guard', 'Gemini tool-schema normalization', () => {
         const transform: CopilotRequestTransform = ({ body }) => {
+          let normalized: string | undefined;
+          try {
+            normalized = normalizeCopilotTemperature(body, dependencies.catalog);
+          } catch {
+            log('warn', 'better-copilot: skipped temperature normalization after an internal error');
+          }
           try {
             const settings = guardSettings(config.toolSchema);
-            const result = guardCopilotRequestBody(body, settings);
+            const result = guardCopilotRequestBody(normalized ?? body, settings);
             if (settings.logFixes) {
               if (result.fixed.length > 0) log('info', 'better-copilot: added a properties bucket to %d tool schema(s) on the Copilot wire', result.fixed.length);
               if (result.skipped.length > 0) log('warn', 'better-copilot: %s left %d tool schema(s) unchanged: %s', TOOL_SCHEMA_SKIPPED, result.skipped.length, JSON.stringify(result.skipped));
             }
-            return result.body;
+            return result.body ?? normalized;
           } catch {
-            // The request is delegated byte-identical; a guard failure never fails a call.
+            // Guard failure never fails a call or discards a temperature fix.
             log('warn', 'better-copilot: skipped one request after an internal error');
-            return undefined;
+            return normalized;
           }
         };
         ctx.effect(() => installCopilotRequestTransform(transform), 'copilot: tool-schema wire normalization');
@@ -193,7 +201,12 @@ export function createPlugin(dependencies: BetterCopilotDependencies): BetterCop
         });
       });
 
-      // 4. Catalog discovery, then the adapter itself. Only this step is fatal:
+      // 4. Builtin authorization reviewer routing, independently contained.
+      contain('auto-review routing', 'builtin review model overrides', () => {
+        installAutoReviewRouting(ctx, config.autoReview, dependencies.catalog);
+      });
+
+      // 5. Catalog discovery, then the adapter itself. Only this step is fatal:
       // without the adapter there is no Copilot inference route at all.
       try {
         const credentials = (ctx as unknown as { get(name: string): CredentialReader | undefined }).get('credentials');

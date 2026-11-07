@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.0 — builtin review routing and temperature compatibility
+
+- Add volatile `autoReview.enabled`, `autoReview.model` and
+  `autoReview.reasoningEffort` settings. Builtin GitHub Copilot reviews default to
+  `gpt-6.1-terra`; DeepSeek Flash and non-Copilot routes retain their current
+  model. Omitted effort uses the selected model's adapter default.
+- Redispatch detached frozen auxiliary requests through the public LLM
+  waterfall, leaving conversation requests, review policy, permission state,
+  Session metadata and cancellation unchanged; dispose the listener on unload.
+- Remove the builtin Copilot reviewer's sampling parameter unless its model
+  positively advertises support. Map boolean account temperature capability
+  metadata into known/new catalog descriptors and strip explicitly unsupported
+  temperature on ordinary Copilot inference requests without model-name guesses.
+- Compose temperature and Gemini normalization in the existing wire transform;
+  a Gemini guard failure cannot discard a temperature fix. Add routing, effort
+  validation, metadata, protocol, lifecycle and publication regressions.
+
 ## 0.2.0 — read-only subagent route badge
 
 - Add a browser client half that shows an addressed subagent's effective model

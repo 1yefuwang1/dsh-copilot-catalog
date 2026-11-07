@@ -1,5 +1,6 @@
 import type { Api, Model, ModelCost, ModelCostRates, ModelThinkingLevel, ThinkingLevelMap } from '@earendil-works/pi-ai';
 import { asRecord, type AccountSelection, type ModelCatalog } from './catalog-types.js';
+import { withCopilotTemperatureSupport } from './temperature.js';
 
 export const DEFAULT_COPILOT_BASE_URL = 'https://api.individual.githubcopilot.com';
 
@@ -174,7 +175,7 @@ export function selectAccountModels(response: unknown, catalog: ModelCatalog, {
     // Own-property lookup prevents Object.prototype members becoming descriptors.
     const model = own(catalog, item.id) ?? createNewModel({ ...item, id: item.id }, headers, baseUrl);
     if (model) {
-      models[item.id] = model;
+      models[item.id] = withCopilotTemperatureSupport(model, supports?.temperature);
       unsupported.delete(item.id);
     } else {
       unsupported.add(item.id);

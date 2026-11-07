@@ -4,6 +4,9 @@ import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completio
 import { normalizeContext } from '@earendil-works/pi-ai/utils/transcript';
 import { normalizeToolSchemas } from '../../dist/index.js';
 import * as fixtures from '../guard-fixtures.js';
+import { normalizeCopilotTemperature, withCopilotTemperatureSupport } from '../../dist/temperature.js';
+import { installCopilotRequestTransform } from '../../dist/identity.js';
+import { catalogFixture } from '../catalog-helpers.js';
 
 type StreamArgs = Parameters<ReturnType<typeof openAICompletionsApi>['stream']>;
 
@@ -65,6 +68,46 @@ test('the guard makes every emitted chat/completions tool declare a properties b
   assert.deepEqual(tools[1]!.function.parameters.properties, fixtures.conformantTool.parameters!.properties);
   assert.equal(captured.headers['user-agent'], 'GitHubCopilotChat/0.35.0');
   assert.equal(captured.headers['editor-version'], 'vscode/1.107.0');
+});
+
+test('temperature wire transform is trusted-origin scoped and independently disposable without wire identity', async () => {
+  const originalFetch = globalThis.fetch;
+  const catalog = catalogFixture();
+  catalog['gpt-6-sol'] = withCopilotTemperatureSupport(catalog['gpt-6-sol'], false);
+  const received: { body: string; headers: Headers }[] = [];
+  globalThis.fetch = async (_input, init) => {
+    received.push({ body: String(init?.body), headers: new Headers(init?.headers) });
+    return Response.json({ synthetic: true });
+  };
+  const downstream = globalThis.fetch;
+  const release = installCopilotRequestTransform(({ body }) => normalizeCopilotTemperature(body, catalog));
+  const cached = globalThis.fetch;
+  const body = '{ "model": "gpt-6-sol", "temperature": 0, "stream": true }';
+  const init = { method: 'POST', body, headers: { 'content-length': String(body.length), 'user-agent': 'synthetic-original' } };
+  try {
+    for (const origin of ['https://api.enterprise.githubcopilot.com', 'https://copilot-api.synthetic.ghe.com']) {
+      for (const path of ['/responses', '/chat/completions', '/v1/messages']) {
+        await fetch(`${origin}${path}`, init);
+        const request = received.at(-1)!;
+        assert.deepEqual(JSON.parse(request.body), { model: 'gpt-6-sol', stream: true });
+        assert.equal(request.headers.get('content-length'), null);
+        assert.equal(request.headers.get('user-agent'), 'synthetic-original', 'Body transform must not depend on identity rewriting');
+      }
+    }
+    for (const url of ['https://foreign.example/responses', 'http://api.enterprise.githubcopilot.com/responses',
+      'https://api.enterprise.githubcopilot.com/unrelated']) {
+      await fetch(url, init);
+      assert.equal(received.at(-1)!.body, body);
+      assert.equal(received.at(-1)!.headers.get('content-length'), String(body.length));
+    }
+    release();
+    assert.equal(globalThis.fetch, downstream);
+    await cached('https://api.enterprise.githubcopilot.com/responses', init);
+    assert.equal(received.at(-1)!.body, body, 'Cached SDK fetch wrapper must become inert after unmount');
+  } finally {
+    release();
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('negative control: the same declarations without the guard reach the wire without a bucket', async () => {

@@ -9,7 +9,7 @@ of the staged release.
 
 | Package | Purpose | DSH behavior |
 | --- | --- | --- |
-| [dsh-better-copilot](<packages/better-copilot/README.md>) | One Copilot plugin: model discovery, wire identity, native Responses web search and a Gemini tool-declaration guard | Replaces the standard pi-ai adapter (one row, one config: `providers`, `search`, `toolSchema`), registers `github-copilot-search`, and normalizes Gemini tool declarations on the Copilot wire |
+| [dsh-better-copilot](<packages/better-copilot/README.md>) | One Copilot plugin: model discovery, wire identity, native web search, Gemini guard and builtin review overrides | Replaces the standard pi-ai adapter (one row, one config: `providers`, `search`, `toolSchema`, `autoReview`), registers `github-copilot-search`, normalizes wire compatibility and selects the builtin reviewer model/effort |
 | [@1yefuwang1/dsh-worktrees](<packages/worktrees/README.md>) | Multi-folder projects with Local/worktree threads | Adds metadata-only project grouping, main-folder defaults/reminders, native first-Send worktree setup and branch naming, configurable inactivity cleanup, explicit branch-choice Local recovery with staged input and exact-ID reuse, and guarded handoff; no core or LLM adapter changes |
 
 The repository root is **private development tooling**, not a DSH plugin. Install
@@ -63,9 +63,13 @@ instead of assuming a registry release exists.
 - A missing web service, a throwing guard registration, a throwing search
   registration and a throwing identity installer each degrade only that capability;
   the adapter still mounts. The guard is a wire-body transform, so a throwing
-  guard leaves the request byte-identical instead of failing the call.
-- Loader patches replace a row's `config` wholesale: a profile override must restate
-  `providers`, `search` and `toolSchema` together.
+  guard preserves any temperature fix instead of failing the call.
+- Builtin Auto review uses `autoReview.model` and `autoReview.reasoningEffort`
+  overrides. Without a model override, Copilot reviews use `gpt-6.1-terra`, while
+  DeepSeek Flash stays on Flash; omitted effort uses the review model's adapter
+  default. This does not enable Auto review or alter its authorization policy.
+- Loader patches replace a row's `config` wholesale: restate `providers` and all
+  non-default `search`, `toolSchema` and `autoReview` settings together.
 - Restart the DSH host after host-plugin installation/removal. In rc.1, web-service
   provider selection is volatile and applies to the next operation without a
   remount. No Web UI rebuild is required for this host-only plugin.
@@ -187,10 +191,10 @@ A release selects **one package**, never the root or multiple packages at once:
 - `@1yefuwang1/dsh-worktrees-vX.Y.Z`
 
 The tag must match its leaf version and repository identity. `dsh-better-copilot` is
-`0.2.0`, the consolidation of catalog `0.2.9`, search `0.1.5` and tool schema
-`0.1.3` (retargeted to DSH `0.2.2-rc.1`; those three npm versions remain published
-but are no longer built here) plus a browser client half that shows an addressed
-subagent's fixed model and reasoning effort beside the Web conversation title.
+`0.3.0`, adding builtin Auto review model/effort overrides and temperature
+compatibility while retaining the read-only subagent route badge. It consolidates
+catalog `0.2.9`, search `0.1.5` and tool schema `0.1.3` on DSH `0.2.2-rc.1`;
+those three npm versions remain published but are no longer built here.
 Published versions cannot be republished. Worktrees is
 `@1yefuwang1/dsh-worktrees@0.2.28`, which hides the starting-branch picker while a
 thread is Local: a Local send runs in the current checkout and never chooses,

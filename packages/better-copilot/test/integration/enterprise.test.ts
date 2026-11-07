@@ -9,7 +9,7 @@ import { accountItem, grantFixture } from '../catalog-helpers.js';
 import { transportResponse } from '../transport-fixtures.js';
 import { Config } from '../merged-fixtures.js';
 type AdapterRegistration = Parameters<PluginContext['llm']['registerAdapter']>;
-interface InferenceBody { model: string; reasoning?: { effort?: string }; reasoning_effort?: string; thinking?: unknown; output_config?: { effort?: string } }
+interface InferenceBody { model: string; temperature?: number; reasoning?: { effort?: string }; reasoning_effort?: string; thinking?: unknown; output_config?: { effort?: string } }
 interface RecordedRequest { path: string; method: string; body?: InferenceBody }
 interface VerifyOptions { record: CredentialRecord | undefined; profile?: { apiKeyEnv?: string; baseURL?: string }; explicitKey?: string; ambientKey?: string; expectedToken: string; expectedOrigin?: string; listingFails?: boolean }
 
@@ -73,6 +73,12 @@ async function verifyRequests({ record, profile = {}, explicitKey, ambientKey, e
     accountItem('arbitrary-chat-model', { supported_endpoints: ['/chat/completions'] }),
     accountItem('arbitrary-native-model', { supported_endpoints: ['/v1/messages'] }),
   ];
+  // Explicit catalog metadata, not names or reasoning, determines compatibility.
+  for (const item of items) item.capabilities.supports = { ...item.capabilities.supports, ...{ temperature: false } };
+  items.push(accountItem('temperature-supported', { capabilities: {
+    limits: { max_context_window_tokens: 1000000, max_output_tokens: 128000 },
+    supports: { tool_calls: true, reasoning_effort: ['high'], temperature: true },
+  } }), accountItem('temperature-unknown'));
   globalThis.fetch = async (input, init) => {
     const request = new Request(input, init);
     const url = new URL(request.url);
@@ -132,20 +138,33 @@ async function verifyRequests({ record, profile = {}, explicitKey, ambientKey, e
     const { adapter } = registrations[0]!;
     const selected = listingFails ? ['gpt-6-sol'] : items.map((item) => item.id);
     for (const model of selected) {
-      const chunks = [];
-      for await (const chunk of adapter.stream({
-        provider: 'github-copilot', model, reasoningEffort: 'high' as Parameters<AdapterRegistration[1]['stream']>[0]['reasoningEffort'],
-        system: 'Synthetic test instructions',
-        messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
-      })) chunks.push(chunk);
-      const finish = chunks.at(-1);
-      assert.ok(finish && finish.type === 'finish');
-      assert.equal(finish.reason.kind, 'stop', JSON.stringify(finish.reason));
-      assert.ok(chunks.some((chunk) => chunk.type === 'text-delta' && 'delta' in chunk && chunk.delta === 'ok') ||
-        chunks.some((chunk) => chunk.type === 'block-end' && chunk.block?.type === 'text' && chunk.block.text === 'ok'));
+      for (const purpose of ['turn', 'auto-review']) {
+        const chunks = [];
+        for await (const chunk of adapter.stream({
+          provider: 'github-copilot', model, purpose: purpose as never, temperature: 0,
+          reasoningEffort: 'high' as Parameters<AdapterRegistration[1]['stream']>[0]['reasoningEffort'],
+          system: 'Synthetic test instructions',
+          messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+        })) chunks.push(chunk);
+        const finish = chunks.at(-1);
+        assert.ok(finish && finish.type === 'finish');
+        assert.equal(finish.reason.kind, 'stop', JSON.stringify(finish.reason));
+        assert.ok(chunks.some((chunk) => chunk.type === 'text-delta' && 'delta' in chunk && chunk.delta === 'ok') ||
+          chunks.some((chunk) => chunk.type === 'block-end' && chunk.block?.type === 'text' && chunk.block.text === 'ok'));
+      }
     }
     assert.equal(requests.filter((request) => request.method === 'GET').length, 1);
-    assert.equal(requests.filter((request) => request.method === 'POST').length, selected.length);
+    assert.equal(requests.filter((request) => request.method === 'POST').length, selected.length * 2);
+    if (!listingFails) {
+      for (const request of requests.filter((request) => request.body)) {
+        const body = request.body!;
+        if (body.model === 'temperature-supported' || body.model === 'temperature-unknown') {
+          assert.equal(body.temperature, 0, 'Supported/unknown metadata preserves explicitly requested zero');
+        } else {
+          assert.equal(Object.hasOwn(body, 'temperature'), false, 'Normal inference and auxiliary review must omit unsupported temperature');
+        }
+      }
+    }
     for (const model of selected) {
       const request = requests.find((request) => request.body?.model === model);
       const expectedPath = (items.find((item) => item.id === model)!.supported_endpoints as string[])[0];

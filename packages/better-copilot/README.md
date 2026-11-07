@@ -12,6 +12,10 @@ One DeepSeek Harness plugin for GitHub Copilot:
   provider for the ordinary `web_search` tool.
 - **Gemini tool-declaration guard** — adds a missing root `properties` bucket to
   tool parameter schemas for configured Copilot routes.
+- **Builtin Auto review overrides** — selects the review model and effort without
+  changing the conversation model or the builtin authorization policy.
+- **Temperature compatibility** — omits unsupported sampling controls on the
+  Copilot wire, including the builtin reviewer's hard-coded zero.
 
 The plugin is a replacement for, and superset of, the earlier separate
 `dsh-copilot-catalog`, `dsh-copilot-search` and `dsh-copilot-tool-schema`
@@ -67,14 +71,55 @@ The bundle patch:
       providers: [github-copilot]
       families: [gemini]
       logFixes: false
+    autoReview:
+      enabled: true
+      # Optional: leave unset for Terra on Copilot, current model otherwise
+      # model: gpt-6.1-terra
+      # reasoningEffort: high
 ```
 
 `providers` is the pi-ai adapter's own schema, reused unchanged, so every
 provider setting behaves exactly as it does with the stock adapter. `search`
-configures the web-search provider; `toolSchema` configures the Gemini guard.
+configures the web-search provider; `toolSchema` configures the Gemini guard;
+`autoReview` configures the builtin review request only.
 
 Loader patches replace a row's `config` wholesale, not key by key: an override
-must restate `providers`, `search` and `toolSchema` together.
+must restate every non-default group it needs together. Omitted `search`,
+`toolSchema` and `autoReview` groups resolve their defaults.
+
+## Builtin Auto review
+
+`autoReview` applies only to requests marked `purpose: auto-review` by the builtin
+experimental Auto review plugin. It does not enable Auto review, select a
+permission preset, replace its policy or change normal conversation/subagent
+requests.
+
+- With no `autoReview.model`, GitHub Copilot reviews use `gpt-6.1-terra`.
+  DeepSeek Flash (`deepseek-v4-flash`) stays on Flash; other non-Copilot providers
+  retain their current model.
+- `autoReview.model` selects an exact model id on the current provider;
+  `autoReview.reasoningEffort` selects that model's exact effort id. Explicit
+  settings win over defaults, including on DeepSeek. Omitted effort uses the
+  selected model's adapter default, not the main agent's effort. A model change
+  drops any prior model's effort. Unsupported explicit efforts fail normally
+  before provider I/O, without clamping or silently switching models.
+- Settings are volatile: edits apply to the next review, not an in-flight review.
+  `autoReview.enabled: false` restores the builtin request's model and effort.
+
+The builtin reviewer hard-codes `temperature: 0`. Copilot review requests omit
+this parameter unless the selected catalog model positively advertises
+`compat.supportsTemperature: true`, so older GPT metadata lacking a temperature
+flag does not cause an unsupported-parameter error. This conservative rule is
+limited to the reviewer-owned control; it does not discard explicit sampling
+settings on ordinary requests with unknown support.
+
+For ordinary Copilot inference, account discovery maps boolean
+`capabilities.supports.temperature` into `compat.supportsTemperature`. The
+existing trusted wire transform strips `temperature` only for exact catalog
+models declaring `false`; supported and unknown metadata preserve the original
+body. No model-name or reasoning-capability heuristics are used. Temperature
+normalization remains active with wire identity disabled, and a Gemini guard
+failure cannot undo a successful temperature fix.
 
 ## Wire identity
 
@@ -99,7 +144,8 @@ dispatches. Inside the same refcounted, trusted-path-checked interceptor that
 carries the wire identity, it adds an empty root `properties` bucket to object
 tool schemas that lack one for a configured Copilot route and model family, and
 leaves every other byte of the request untouched. It never replaces an adapter or
-another plugin's settings, and a guard failure dispatches the original body.
+another plugin's settings, and a guard failure preserves the body after any
+successful temperature normalization.
 
 ## Subagent model badge (Web)
 

@@ -15,6 +15,9 @@ export const syncCopilotCatalog = (credentials?: CredentialReader, authOptions?:
   plugin.sync(credentials, authOptions);
 
 export { DEFAULT_SEARCH_MODEL } from './config.js';
+export { configureAutoReview, DEFAULT_REVIEW_MODEL } from './auto-review.js';
+export type { AutoReviewOverrides } from './auto-review.js';
+export { normalizeCopilotTemperature } from './temperature.js';
 export { liveCost, selectAccountModels } from './catalog.js';
 export { DiscoveryError } from './discovery.js';
 export {
@@ -32,7 +35,7 @@ export { COPILOT_SEARCH_PROVIDER_ID, CopilotSearchProvider } from './provider.js
 export { matchesRoute, normalizeToolSchemas, TOOL_SCHEMA_SKIPPED } from './schema.js';
 export { loadRuntime } from './runtime.js';
 export type { BetterCopilotRuntime, RuntimeOptions } from './runtime.js';
-export type { BetterCopilotConfig, BetterCopilotConfigSchema } from './config.js';
+export type { AutoReviewSettings, BetterCopilotConfig, BetterCopilotConfigSchema } from './config.js';
 export type { BetterCopilotDependencies, BetterCopilotPlugin } from './plugin.js';
 export type { AccountModelOptions } from './catalog.js';
 export type { NormalizeResult } from './schema.js';

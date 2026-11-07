@@ -2,6 +2,9 @@ import {
   apply,
   Config,
   DEFAULT_SEARCH_MODEL,
+  DEFAULT_REVIEW_MODEL,
+  configureAutoReview,
+  normalizeCopilotTemperature,
   inject,
   liveCost,
   name,
@@ -45,9 +48,14 @@ const configured: BetterCopilotConfig = Config({
   providers: { 'github-copilot': { apiKeyEnv: 'COPILOT_ACCESS_TOKEN' } },
   search: { model: DEFAULT_SEARCH_MODEL, maxTokens: 8192, searchMode: 'live' },
   toolSchema: { providers: ['github-copilot'], families: ['gemini'], logFixes: true },
+  autoReview: { model: DEFAULT_REVIEW_MODEL, reasoningEffort: 'high' },
 });
 const searchModel: string = configured.search.model.get();
 const guardFamilies: string[] = configured.toolSchema.families.get();
+const reviewModel: string | undefined = configured.autoReview.model.get();
+const reviewEffort: string | undefined = configured.autoReview.reasoningEffort.get();
+const reviewRequest = configureAutoReview({ provider: 'github-copilot', model: 'gpt-6.1-sol', messages: [], purpose: 'auto-review' }, { enabled: true }, catalog);
+const temperatureBody: string | undefined = normalizeCopilotTemperature('{"model":"synthetic"}', catalog);
 const typedApply: (ctx: Parameters<typeof apply>[0], config: BetterCopilotConfig) => Promise<void> = apply;
 const pending: Promise<SyncResult> = syncCopilotCatalog();
 const configuredSync: Promise<SyncResult> = syncCopilotCatalog(undefined, { baseUrl: 'https://api.enterprise.githubcopilot.com' });
@@ -99,6 +107,6 @@ async function usePlugin(): Promise<void> {
   await typedApply(context, configured);
 }
 
-void [pluginName, pluginInject, searchModel, guardFamilies, pending, configuredSync, lowLevel, catalogAuth, searchAuth, selection,
+void [pluginName, pluginInject, searchModel, guardFamilies, reviewModel, reviewEffort, reviewRequest, temperatureBody, pending, configuredSync, lowLevel, catalogAuth, searchAuth, selection,
   sameSelection, cost, normalized, skipped, matched, wireIdentity, providerId, providerType, provider, nativeResult, sse,
   invalidMode, invalidResolver, usePlugin];

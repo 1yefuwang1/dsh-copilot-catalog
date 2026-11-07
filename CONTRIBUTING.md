@@ -11,9 +11,9 @@ The root is private tooling. Runtime source/tests live in
 [better-copilot](<packages/better-copilot/README.md>) and
 [worktrees](packages/worktrees/README.md), each with its own manifest, bundle,
 declarations, output and release version. `better-copilot` is one plugin for all
-Copilot behaviour; keep its three capabilities isolated (one failing registration
+Copilot behaviour; keep its capabilities isolated (one failing registration
 must not block the adapter) and keep the single config shape (`providers`,
-`search`, `toolSchema`). Keep
+`search`, `toolSchema`, `autoReview`). Keep
 [pnpm-lock.yaml](pnpm-lock.yaml) committed. Do not add npm lockfiles, run installs
 from a leaf, or add a dependency on an unpublished/private workspace package.
 

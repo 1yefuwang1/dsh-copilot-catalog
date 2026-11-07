@@ -155,6 +155,7 @@ test('volatile settings are snapshotted once per call and update only the next r
   const config: BetterCopilotConfig = {
     providers: { get: () => ({}) },
     search,
+    autoReview: Config().autoReview,
     toolSchema: { providers: { get: () => ['github-copilot'] }, families: { get: () => ['gemini'] }, logFixes: { get: () => false } },
   };
   await createPlugin(dependencies({ fetcher: mockFetch(async (url, init) => {
