@@ -1,5 +1,20 @@
 # Monorepo changelog
 
+## Better Copilot 0.4.0 — persistent catalogs and live refresh
+
+- Retain the last successful account model list in DSH's optional persistent
+  `dsh_better_copilot_catalog` domain, isolated by hashed credential identity and
+  validated endpoint. Persist only bounded model metadata, never credentials;
+  reject malformed, foreign, future or more-than-seven-day-old cache entries.
+- Add volatile `catalog.cache` and `catalog.refreshIntervalMs` settings with a
+  15-minute demand-refresh default and a 60-second missing-model cooldown.
+  Update the active adapter registry without resetting already-prepared calls.
+- Reuse cached metadata on startup/network failure, deduplicate refresh callers,
+  guard cancellation/account changes/unload and report unavailable builtin
+  reviewers without silently switching models.
+- Validate real DSH storage reopen and adapter behavior, preserve independent
+  search/guard capabilities, and extend the exact publication allowlist.
+
 ## Better Copilot 0.3.0 — builtin review overrides
 
 - Add configurable builtin Auto review model and reasoning effort. GitHub

@@ -153,6 +153,7 @@ test('volatile settings are snapshotted once per call and update only the next r
   // Volatile-setting doubles expose only get(); the plugin never reads other schema methods.
   const search = Object.fromEntries((Object.keys(values) as (keyof typeof values)[]).map((key) => [key, { get() { reads[key] = (reads[key] ?? 0) + 1; return values[key]; } }])) as unknown as SearchSettings;
   const config: BetterCopilotConfig = {
+    catalog: Config().catalog,
     providers: { get: () => ({}) },
     search,
     autoReview: Config().autoReview,

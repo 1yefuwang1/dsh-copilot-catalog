@@ -35,12 +35,15 @@ export { COPILOT_SEARCH_PROVIDER_ID, CopilotSearchProvider } from './provider.js
 export { matchesRoute, normalizeToolSchemas, TOOL_SCHEMA_SKIPPED } from './schema.js';
 export { loadRuntime } from './runtime.js';
 export type { BetterCopilotRuntime, RuntimeOptions } from './runtime.js';
-export type { AutoReviewSettings, BetterCopilotConfig, BetterCopilotConfigSchema } from './config.js';
+export type { AutoReviewSettings, CatalogSettings, BetterCopilotConfig, BetterCopilotConfigSchema } from './config.js';
 export type { BetterCopilotDependencies, BetterCopilotPlugin } from './plugin.js';
 export type { AccountModelOptions } from './catalog.js';
 export type { NormalizeResult } from './schema.js';
 export type {
   AccountSelection,
+  CatalogCache,
+  CatalogCacheEntry,
+  CatalogCacheScope,
   CopilotAuthOptions as CatalogAuthOptions,
   CredentialReader,
   ModelCatalog,

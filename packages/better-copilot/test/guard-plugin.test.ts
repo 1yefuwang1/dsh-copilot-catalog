@@ -26,7 +26,10 @@ function harness() {
     effect(execute: () => () => void) { return execute(); },
     inject() { return () => {}; },
     get() { return undefined; },
-    on() { throw new Error('the tool-schema guard no longer registers assembly listeners'); },
+    on(event: string) {
+      assert.notEqual(event, 'system-prompt/assemble', 'the guard must not register assembly listeners');
+      return () => {};
+    },
   };
   return { ctx, logs };
 }
@@ -55,6 +58,7 @@ async function withPlugin(
 function volatileConfig(values: { providers: string[]; families: string[]; logFixes: boolean }): unknown {
   return {
     providers: { get: () => ({}) },
+    catalog: Config().catalog,
     search: {},
     toolSchema: {
       providers: { get: () => values.providers },
@@ -144,6 +148,7 @@ test('a throwing logger or settings accessor never fails or corrupts the request
   });
   await withPlugin({
     providers: { get: () => ({}) },
+    catalog: Config().catalog,
     search: {},
     toolSchema: { providers: { get: () => ['github-copilot'] }, families: { get: () => { throw new Error('settings unavailable'); } }, logFixes: { get: () => false } },
   }, async ({ captures }) => {

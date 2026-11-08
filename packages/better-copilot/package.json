@@ -1,6 +1,6 @@
 {
   "name": "dsh-better-copilot",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Account-aware GitHub Copilot model discovery, Copilot-compatible wire identity, native Responses web search and a Copilot Gemini tool-declaration guard in one DeepSeek Harness plugin.",
   "type": "module",
   "main": "./dist/index.js",
@@ -43,7 +43,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.client.json",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p test/tsconfig.json && tsc -p tsconfig.client.json --noEmit",
-    "test": "pnpm run build && node --import tsx --test test/catalog.test.ts test/discovery.test.ts test/identity.test.ts test/secrets.test.ts test/catalog-plugin.test.ts test/config.test.ts test/composition.test.ts test/auth.test.ts test/refresh.test.ts test/provider.test.ts test/responses.test.ts test/search-plugin.test.ts test/schema.test.ts test/guard.test.ts test/guard-plugin.test.ts test/patch.test.ts test/client.render.test.ts test/temperature.test.ts test/auto-review.test.ts",
+    "test": "pnpm run build && node --import tsx --test test/catalog-cache.test.ts test/discovery-cache.test.ts test/catalog-adapter.test.ts test/catalog-controller.test.ts test/catalog-store.test.ts test/catalog.test.ts test/discovery.test.ts test/identity.test.ts test/secrets.test.ts test/catalog-plugin.test.ts test/config.test.ts test/composition.test.ts test/auth.test.ts test/refresh.test.ts test/provider.test.ts test/responses.test.ts test/search-plugin.test.ts test/schema.test.ts test/guard.test.ts test/guard-plugin.test.ts test/patch.test.ts test/client.render.test.ts test/temperature.test.ts test/auto-review.test.ts",
     "test:integration": "pnpm run build && node --import tsx --test test/integration/nested-layout.test.ts test/integration/catalog-runtime.test.ts test/integration/enterprise.test.ts test/integration/identity-wire.test.ts test/integration/search-runtime.test.ts test/integration/guard-runtime.test.ts test/integration/wire.test.ts",
     "test:types": "pnpm run build && tsc -p test/types/tsconfig.json",
     "test:pack": "pnpm run build && tsx ../../scripts/check-pack.ts .",
@@ -82,7 +82,14 @@
     "access": "public",
     "registry": "https://registry.npmjs.org/"
   },
+  "dependencies": {
+    "zod": "4.4.3"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-storage-domain": { "optional": true }
+  },
   "peerDependencies": {
+    "@deepseek-ai/dsh-storage-domain": "0.2.2-rc.1",
     "@deepseek-ai/cordis": "~4.1.0",
     "@deepseek-ai/dsh-credentials": "0.2.2-rc.1",
     "@deepseek-ai/dsh-launch-environment": "0.2.2-rc.1",

@@ -58,6 +58,9 @@ The bundle patch:
     providers:
       # The pi-ai adapter's own provider profile: baseURL, apiKeyEnv, models, ...
       github-copilot: {}
+    catalog:
+      cache: true
+      refreshIntervalMs: 900000 # refresh on use after 15 minutes
     search:
       model: gpt-6.1-sol
       maxTokens: 4096
@@ -84,8 +87,48 @@ configures the web-search provider; `toolSchema` configures the Gemini guard;
 `autoReview` configures the builtin review request only.
 
 Loader patches replace a row's `config` wholesale, not key by key: an override
-must restate every non-default group it needs together. Omitted `search`,
-`toolSchema` and `autoReview` groups resolve their defaults.
+must restate every non-default group it needs together. Omitted `catalog`,
+`search`, `toolSchema` and `autoReview` groups resolve their defaults.
+
+## Persistent model catalog
+
+By default, the plugin retains the **last successfully discovered account catalog**
+in DSH's storage domain `dsh_better_copilot_catalog`, table `catalogs`. DSH's
+configured storage backend determines the physical location; nothing is written
+into this repository or the profile's plugin configuration. The optional
+`storageDomain` service is required for persistence. If it is absent or cannot
+open, discovery and inference still work without a disk cache.
+
+- Records are keyed by a digest of the credential identity, record context and
+  validated account endpoint. OAuth access-token rotation reuses the cache; a
+  different grant/API key or endpoint does not. Re-signing in with a new grant
+  creates a separate entry, even for the same GitHub user.
+- Only bounded, allowlisted model metadata and its fetch timestamp are persisted.
+  OAuth grants, API keys, Authorization headers and arbitrary response fields are
+  never written. Unsupported versions, malformed/foreign records, future dates
+  and entries older than **7 days** are ignored.
+- Startup loads a matching valid cache before attempting a live `/models` fetch,
+  including before an expired OAuth grant is refreshed. Network/refresh failure
+  preserves that cached list; success replaces it. This is the latest **known**
+  list, not a guarantee of present account entitlement.
+- Model listing, resolution and call preparation refresh on demand after
+  `catalog.refreshIntervalMs` (default **15 minutes**). A missing model triggers
+  one bounded refresh before lookup fails, with a shared **60-second** miss
+  cooldown to prevent request storms. There is no idle polling timer and no
+  retry of a paid inference request.
+- Concurrent callers share discovery. Canceling one waiter does not cancel other
+  waiters; canceling them all or unloading the plugin blocks late registry
+  publication. DSH storage writes already submitted cannot be canceled, but are
+  account-scoped; subsequent writes and publication remain guarded.
+- Successful refresh invalidates the adapter's live profile/model snapshot and
+  notifies model pickers. Already-prepared calls retain their original snapshot.
+  Credential and provider-profile changes clear account-specific runtime state;
+  other providers and explicitly configured models remain supported.
+
+Set `catalog.cache: false` to disable cache reads/writes without disabling live
+discovery. Cache and interval settings are volatile and affect the next refresh;
+disabling persistence does not delete previously saved records. A host restart
+is needed to load an updated plugin implementation, not to adopt a live catalog.
 
 ## Builtin Auto review
 
@@ -187,8 +230,9 @@ them and treats them as superseded.
 
 ## Limits
 
-- Discovery is one read-only, bounded startup request; failures keep the bundled
-  catalog and log only a controlled reason code.
+- Discovery requests are bounded and read-only with respect to credentials. A
+  failed refresh retains a valid matching cache/current catalog, or bundled
+  defaults when none exists; logs contain only controlled reason codes.
 - Search requests never forward credentials to redirects or untrusted origins.
 - The guard only supplies a missing `properties` bucket; it does not rewrite
   references, unions or nested schemas.

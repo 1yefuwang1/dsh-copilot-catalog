@@ -58,6 +58,18 @@ export function installAutoReviewRouting(ctx: PluginContext, config: AutoReviewS
     if (selected === options) return next();
     routed.add(selected);
     // Purpose typing is owned by the optional builtin package, not a hard peer.
-    return this.stream(selected as GenerateOptions);
+    // The catalog adapter refreshes before exact-model resolution. If still absent,
+    // retain the failure instead of silently selecting another reviewer.
+    const stream = this.stream(selected as GenerateOptions);
+    return (async function* () {
+      for await (const chunk of stream) {
+        if (selected.provider === 'github-copilot' && chunk.type === 'finish' && chunk.reason.kind === 'error'
+          && chunk.reason.failure.code === 'UNKNOWN_MODEL') {
+          yield { ...chunk, reason: { ...chunk.reason, failure: { ...chunk.reason.failure,
+            message: `${chunk.reason.failure.message}. The configured Copilot reviewer remains unavailable after catalog refresh; select an available autoReview.model.`,
+          } } };
+        } else yield chunk;
+      }
+    })();
   });
 }

@@ -201,7 +201,7 @@ test('a throwing identity installer still registers the guard and one search pro
   const result = await plugin.apply(asContext(ctx), Config({ providers: {} }) as BetterCopilotConfig);
   assert.equal(result, undefined);
   assert.equal(calls.length, 1, 'the adapter still mounts');
-  assert.equal(effects.length, 1, 'the guard transform installs even when identity installation throws');
+  assert.equal(effects.length, 3, 'the guard and two catalog lifetime effects install even when identity throws');
   assert.equal(registrations.length, 1, 'search registers even when identity installation throws');
   assert.ok(logs.some(([level, ...rest]) => level === 'warn' && rest.some((value) => String(value) === 'wire identity')));
 });
@@ -212,7 +212,7 @@ test('a throwing search registration cannot block the adapter', async () => {
   const result = await createPlugin(dependencies).apply(asContext(ctx), Config({ providers: {} }) as BetterCopilotConfig);
   assert.equal(result, undefined);
   assert.equal(calls.length, 1, 'the adapter mounts despite the web seam failing');
-  assert.equal(effects.length, 2, 'both the identity and guard effects are unaffected');
+  assert.equal(effects.length, 4, 'identity, guard and both catalog lifetime effects are unaffected');
   assert.ok(logs.some(([level, ...rest]) => level === 'warn' && rest.some((value) => String(value) === 'search provider')));
 });
 
@@ -230,7 +230,7 @@ test('discovery failure logs only a controlled reason code and still delegates',
   const result = await createPlugin(failing).apply(asContext(ctx), Config({ providers: {} }) as BetterCopilotConfig);
   assert.equal(result, undefined);
   assert.equal(calls.length, 1);
-  const discoveryWarning = logs.find(([level, message]) => level === 'warn' && String(message).includes('discovery failed'));
+  const discoveryWarning = logs.find(([level, message]) => level === 'warn' && String(message).includes('catalog refresh'));
   assert.ok(discoveryWarning);
   assert.deepEqual(discoveryWarning.slice(2), ['DISCOVERY_FAILED']);
   assert.ok(!JSON.stringify(logs).includes('test-access-token'));
@@ -252,7 +252,7 @@ test('the identity effect is released once when the install seam succeeds', asyn
   const released: string[] = [];
   await createPlugin({ ...dependencies, installIdentity: () => () => { released.push('released'); } })
     .apply(asContext(ctx), Config({ providers: {} }) as BetterCopilotConfig);
-  assert.equal(effects.length, 2, 'the identity effect and the guard transform are both installed');
+  assert.equal(effects.length, 4, 'identity, guard and both catalog lifetime effects are installed');
   effects[0]!();
   assert.deepEqual(released, ['released']);
 });

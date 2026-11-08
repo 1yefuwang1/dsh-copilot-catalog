@@ -19,9 +19,36 @@ export interface AccountSelection {
   unsupported: string[];
 }
 
+export interface CatalogCacheScope {
+  /** SHA-256 stable credential identity + record/Enterprise context + endpoint; never a raw credential. */
+  accountKey: string;
+  /** Canonical origin validated from the current authentication route, never trusted from storage. */
+  endpoint: string;
+}
+
+export interface CatalogCacheEntry extends CatalogCacheScope {
+  version: 1;
+  savedAt: number;
+  /** Bounded, allowlisted /models metadata. No descriptors, headers or authentication data. */
+  raw: { data: Record<string, unknown>[] };
+}
+
+/** Optional parent-owned persistence seam. Implementations must honor abort before committing writes. */
+export interface CatalogCache {
+  read(scope: CatalogCacheScope, signal: AbortSignal): Promise<unknown>;
+  write(scope: CatalogCacheScope, entry: CatalogCacheEntry, signal: AbortSignal): Promise<void>;
+}
+
+export interface CatalogUpdate {
+  source: 'cache' | 'live';
+  baseUrl: string;
+  scope?: CatalogCacheScope;
+}
+
 export type SyncResult =
   | { status: 'no Copilot credential' }
-  | { status: 'synced'; count: number; unsupported: string[] };
+  | { status: 'synced'; count: number; unsupported: string[] }
+  | { status: 'cached'; count: number; unsupported: string[]; reason: string };
 
 export interface CopilotAuthOptions {
   /** Explicit API-key route endpoint; OAuth grants still own their derived endpoint. */
@@ -33,7 +60,18 @@ export interface CopilotAuthOptions {
 }
 
 export interface DiscoveryOptions extends CopilotAuthOptions {
+  /** Mutable destination must belong to this account/mount, never a process-shared catalog when cache is enabled. */
   catalog: ModelCatalog;
+  /** Immutable bundled descriptors used for every selection; avoids learning metadata from another account. */
+  baselineCatalog?: ModelCatalog;
+  cache?: CatalogCache;
+  signal?: AbortSignal;
+  /** Called after validating the live account endpoint, before cache adoption or network listing. */
+  onAccount?: (scope: CatalogCacheScope) => void;
+  /** Synchronous parent registry notification; never called after cancellation/deadline. */
+  onCatalog?: (selection: AccountSelection, update: CatalogUpdate) => void;
+  /** Controlled cache/fallback reason codes only, never raw errors or credentials. */
+  onDiagnostic?: (code: string) => void;
   oauth: CopilotOAuth;
   recordKey: CredentialKey;
   fetcher?: typeof globalThis.fetch;

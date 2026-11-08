@@ -64,6 +64,12 @@ instead of assuming a registry release exists.
   registration and a throwing identity installer each degrade only that capability;
   the adapter still mounts. The guard is a wire-body transform, so a throwing
   guard preserves any temperature fix instead of failing the call.
+- Copilot keeps its last successful account model list in DSH's optional
+  `dsh_better_copilot_catalog` storage domain, without credentials. Matching cache
+  metadata survives restart/network failure for up to 7 days; model use refreshes
+  after 15 minutes and missing models trigger one bounded, deduplicated refresh.
+  The active adapter registry updates without resetting already-prepared calls.
+  `catalog.cache` and `catalog.refreshIntervalMs` configure this behavior.
 - Builtin Auto review uses `autoReview.model` and `autoReview.reasoningEffort`
   overrides. Without a model override, Copilot reviews use `gpt-6.1-terra`, while
   DeepSeek Flash stays on Flash; omitted effort uses the review model's adapter
@@ -191,8 +197,9 @@ A release selects **one package**, never the root or multiple packages at once:
 - `@1yefuwang1/dsh-worktrees-vX.Y.Z`
 
 The tag must match its leaf version and repository identity. `dsh-better-copilot` is
-`0.3.0`, adding builtin Auto review model/effort overrides and temperature
-compatibility while retaining the read-only subagent route badge. It consolidates
+`0.4.0`, adding persistent account-scoped model catalogs and live registry
+refresh while retaining builtin Auto review overrides, temperature compatibility
+and the read-only subagent route badge. It consolidates
 catalog `0.2.9`, search `0.1.5` and tool schema `0.1.3` on DSH `0.2.2-rc.1`;
 those three npm versions remain published but are no longer built here.
 Published versions cannot be republished. Worktrees is

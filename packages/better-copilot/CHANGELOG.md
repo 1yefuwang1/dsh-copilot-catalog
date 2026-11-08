@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.4.0 — persistent account catalogs and live refresh
+
+- Cache the last successful account model metadata in DSH's optional
+  `dsh_better_copilot_catalog` storage domain, isolated by hashed grant/API-key
+  identity and validated endpoint. Store no credentials; reject malformed,
+  foreign, future, oversized or more-than-seven-day-old entries.
+- Load valid cache metadata before startup refresh and preserve it during
+  network/OAuth failures. Add volatile `catalog.cache` and
+  `catalog.refreshIntervalMs` (15-minute default) settings.
+- Refresh before model listing/resolution/preparation on demand, and once for
+  missing models with a shared 60-second cooldown. Invalidate the active adapter
+  registry while preserving already-prepared calls, explicit model declarations
+  and other provider routes.
+- Deduplicate concurrent discovery, guard cancellation/unload/account changes,
+  and give missing builtin reviewers an actionable failure rather than a silent
+  model fallback. Add synthetic and real DSH storage/adapter regressions.
+
 ## 0.3.0 — builtin review routing and temperature compatibility
 
 - Add volatile `autoReview.enabled`, `autoReview.model` and

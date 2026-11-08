@@ -20,6 +20,11 @@ import type { CopilotSearchOptions, SearchContext, SearchRuntime } from './searc
 import type { GuardSettings } from './guard-types.js';
 import { installAutoReviewRouting } from './auto-review.js';
 import { normalizeCopilotTemperature } from './temperature.js';
+import { createCatalogController } from './catalog-controller.js';
+import { openCatalogStore } from './catalog-store.js';
+import { adapterContext } from './catalog-adapter.js';
+import type { CatalogCache } from './catalog-types.js';
+import type { DomainFacility } from '@deepseek-ai/dsh-storage-domain';
 
 export const name = 'better-copilot';
 
@@ -39,6 +44,8 @@ export interface BetterCopilotDependencies extends BetterCopilotRuntime {
   installIdentity?: () => () => void;
   /** Search-owned view; defaults to the merged runtime. */
   searchRuntime?: SearchRuntime;
+  /** Optional test/embedding persistence seam; the Host normally provides storageDomain. */
+  cache?: CatalogCache;
 }
 
 export interface BetterCopilotPlugin {
@@ -72,17 +79,22 @@ function guardSettings(config: BetterCopilotConfig['toolSchema']): GuardSettings
  * Volatile references are frozen, so their protocol (including symbols) is copied
  * into a detached facade instead of violating frozen-property proxy rules.
  */
-export function providersFacade(source: ProvidersValue, endpoint: string | undefined): ProvidersValue {
-  if (!endpoint) return source;
+export function providersFacade(source: ProvidersValue, endpoint: string | undefined | (() => string | undefined), revision?: () => number): ProvidersValue {
+  if (!endpoint && !revision) return source;
   let previous: Record<string, ProviderProfile> | undefined;
   let resolved: Record<string, ProviderProfile> | undefined;
+  let lastRevision: number | undefined;
+  let lastEndpoint: string | undefined;
   const get = () => {
     const raw = source.get();
-    if (raw === previous && resolved !== undefined) return resolved;
+    const currentRevision = revision?.();
+    const currentEndpoint = typeof endpoint === 'function' ? endpoint() : endpoint;
+    if (raw === previous && resolved !== undefined && currentRevision === lastRevision && currentEndpoint === lastEndpoint) return resolved;
     const profile = raw['github-copilot'];
-    previous = raw;
-    resolved = !profile || profile.baseURL !== undefined && profile.baseURL !== null
-      ? raw : Object.freeze({ ...raw, 'github-copilot': Object.freeze({ ...profile, baseURL: endpoint }) });
+    previous = raw; lastRevision = currentRevision; lastEndpoint = currentEndpoint;
+    resolved = currentEndpoint && profile && (profile.baseURL === undefined || profile.baseURL === null)
+      ? Object.freeze({ ...raw, 'github-copilot': Object.freeze({ ...profile, baseURL: currentEndpoint }) })
+      : revision ? Object.freeze({ ...raw }) : raw;
     return resolved;
   };
   return Object.freeze({ ...source, get }) as ProvidersValue;
@@ -96,8 +108,9 @@ export function createPlugin(dependencies: BetterCopilotDependencies): BetterCop
   }
   const searchRuntime: SearchRuntime = dependencies.searchRuntime ?? dependencies;
   let accountEndpoint: string | undefined;
+  const baselineCatalog = structuredClone(dependencies.catalog);
 
-  /** One read-only discovery per mount; never writes credentials. */
+  /** Explicit standalone discovery retains its predecessor semantics. */
   const sync = (credentials?: CredentialReader, authOptions?: CopilotAuthOptions): Promise<SyncResult> => {
     accountEndpoint = undefined;
     const options: DiscoveryOptions = {
@@ -206,44 +219,91 @@ export function createPlugin(dependencies: BetterCopilotDependencies): BetterCop
         installAutoReviewRouting(ctx, config.autoReview, dependencies.catalog);
       });
 
-      // 5. Catalog discovery, then the adapter itself. Only this step is fatal:
-      // without the adapter there is no Copilot inference route at all.
-      try {
-        const credentials = (ctx as unknown as { get(name: string): CredentialReader | undefined }).get('credentials');
+      // 5. Persistent account catalog, demand-driven refresh, then the adapter.
+      // Storage is optional: failure degrades to account discovery and bundled defaults.
+      const lifetime = new AbortController();
+      ctx.effect(() => () => lifetime.abort(), 'copilot: catalog storage lifetime');
+      let cache = dependencies.cache;
+      let opening: Promise<CatalogCache | undefined> | undefined;
+      const getCache = async (): Promise<CatalogCache | undefined> => {
+        lifetime.signal.throwIfAborted();
+        if (cache) return cache;
+        if (opening) return opening;
+        const storage = ctx.get('storageDomain') as DomainFacility | undefined;
+        if (!storage) return undefined;
+        opening = (async () => {
+          try {
+            const store = await openCatalogStore(storage, lifetime.signal);
+            ctx.effect(() => () => store.close(), 'copilot: persistent catalog cache');
+            cache = store;
+            return store;
+          } catch {
+            log('warn', 'better-copilot: persistent catalog cache unavailable: CACHE_OPEN_FAILED');
+            return undefined;
+          }
+        })();
+        return opening;
+      };
+      // Lazy access also supports enabling persistence on a later volatile update.
+      const persistentCache: CatalogCache = {
+        async read(scope, signal) { return (await getCache())?.read(scope, signal); },
+        async write(scope, entry, signal) { await (await getCache())?.write(scope, entry, signal); },
+      };
+      if (config.catalog.cache.get()) await getCache();
+      const credentials = ctx.get('credentials') as CredentialReader | undefined;
+      const resolver = credentials as unknown as {
+        resolve(reference: CredentialRef): Promise<{ value?: string } | undefined>;
+      } | undefined;
+      const readReference = async (value: string) => {
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) throw new DiscoveryError('INVALID_AUTH', 'Invalid credential reference');
+        return (await resolver?.resolve(value as CredentialRef))?.value;
+      };
+      const authOptions = (): CopilotAuthOptions => {
         const profile = config.providers.get()['github-copilot'];
         const ref = profile?.apiKeyEnv;
-        const resolver = credentials as unknown as {
-          resolve(reference: CredentialRef): Promise<{ value?: string } | undefined>;
-        } | undefined;
-        const readReference = async (value: string) => {
-          if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) {
-            throw new DiscoveryError('INVALID_AUTH', 'Invalid credential reference');
-          }
-          return (await resolver?.resolve(value as CredentialRef))?.value;
-        };
-        const authOptions: CopilotAuthOptions = {
+        return {
           ...(typeof profile?.baseURL === 'string' ? { baseUrl: profile.baseURL } : {}),
           ...(typeof ref === 'string' ? { resolveApiKey: () => readReference(ref) } : {}),
           resolveAmbientApiKey: async () => (await readReference('COPILOT_GITHUB_TOKEN'))
             ?? launchEnvironmentOf(ctx as never).get('COPILOT_GITHUB_TOKEN')?.value,
         };
-        const result = await sync(credentials, authOptions);
-        if (result.status === 'synced') {
-          // JSON quoting prevents model IDs from injecting log lines.
-          log('info', 'Copilot catalog synced: %d enabled models; unsupported new IDs: %s',
-            result.count, JSON.stringify(result.unsupported));
-        } else {
-          log('info', 'Copilot catalog kept bundled defaults: %s', result.status);
-        }
-      } catch (error) {
-        // Arbitrary OAuth/network/credential errors may include tokens or bodies.
-        // Only our controlled code is safe to log; never log the raw exception.
-        const reason = error instanceof DiscoveryError ? error.code : 'DISCOVERY_FAILED';
-        log('warn', 'Copilot model discovery failed; keeping current catalog: %s', reason);
+      };
+      let revision = 0;
+      const controller = createCatalogController({
+        catalog: dependencies.catalog, baseline: baselineCatalog, credentials,
+        oauth: dependencies.oauth, recordKey: dependencies.recordKeyFor('github-copilot'),
+        authOptions, cache: () => config.catalog.cache.get() ? persistentCache : undefined,
+        refreshIntervalMs: () => config.catalog.refreshIntervalMs.get(),
+        ...(dependencies.fetcher === undefined ? {} : { fetcher: dependencies.fetcher }),
+        ...(dependencies.timeoutMs === undefined ? {} : { timeoutMs: dependencies.timeoutMs }),
+        ...(dependencies.now === undefined ? {} : { now: dependencies.now }),
+        changed(endpoint) {
+          accountEndpoint = endpoint; revision++;
+          // Notify model pickers without mutating stored provider settings.
+          try { ctx.emit('llm/models-updated', 'github-copilot'); } catch { /* diagnostics/UI only */ }
+        },
+        diagnostic(code) { log('warn', 'Copilot catalog refresh: %s', code); },
+      });
+      ctx.effect(() => () => controller.dispose(), 'copilot: catalog refresh lifecycle');
+      ctx.on('credentials/record-updated', (key) => {
+        if (key === dependencies.recordKeyFor('github-copilot') && !config.providers.get()['github-copilot']?.apiKeyEnv) controller.invalidate();
+      });
+      ctx.on('credentials/reference-updated', (ref) => {
+        if (ref === config.providers.get()['github-copilot']?.apiKeyEnv || ref === 'COPILOT_GITHUB_TOKEN') controller.invalidate();
+      });
+      let previousProfile = config.providers.get()['github-copilot'];
+      // The loader owns this event; it is not a runtime dependency of this Host-only wrapper.
+      (ctx as unknown as { on(event: 'loader/volatile-update', listener: () => void): unknown }).on('loader/volatile-update', () => {
+        const profile = config.providers.get()['github-copilot'];
+        if (profile !== previousProfile) { previousProfile = profile; controller.invalidate(); }
+      });
+      const result = await controller.refresh();
+      if (result?.status === 'synced') {
+        log('info', 'Copilot catalog synced: %d enabled models; unsupported new IDs: %s', result.count, JSON.stringify(result.unsupported));
       }
       if (accountEndpoint) log('info', 'Copilot runtime endpoint: %s', accountEndpoint);
-      return original.apply(ctx, {
-        providers: providersFacade(config.providers, accountEndpoint),
+      return original.apply(adapterContext(ctx, controller.ensure), {
+        providers: providersFacade(config.providers, () => accountEndpoint, () => revision),
       } as unknown as PluginConfig);
     },
   };

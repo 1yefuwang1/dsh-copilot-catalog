@@ -37,9 +37,16 @@ export interface AutoReviewSettings {
   reasoningEffort: Volatile<string | undefined>;
 }
 
+/** Persistent catalog cache and demand-driven live refresh. */
+export interface CatalogSettings {
+  cache: Volatile<boolean>;
+  refreshIntervalMs: Volatile<number>;
+}
+
 /** The one configuration object every capability reads from. */
 export interface BetterCopilotConfig {
   providers: ProvidersValue;
+  catalog: CatalogSettings;
   search: SearchSettings;
   toolSchema: GuardConfigValue;
   autoReview: AutoReviewSettings;
@@ -48,6 +55,7 @@ export interface BetterCopilotConfig {
 /** User-facing configuration: plain values, before volatile resolution. */
 export interface BetterCopilotConfigInput {
   providers?: Record<string, { apiKeyEnv?: string; baseURL?: string } & Record<string, unknown>>;
+  catalog?: { cache?: boolean; refreshIntervalMs?: number };
   search?: {
     apiKeyEnv?: string;
     baseURL?: string;
@@ -112,6 +120,12 @@ export const GuardConfig = z.object({
   logFixes: z.boolean().default(false).volatile(),
 });
 
+/** Cache can be disabled without disabling account discovery or missing-model refresh. */
+export const CatalogConfig = z.object({
+  cache: z.boolean().default(true).volatile(),
+  refreshIntervalMs: z.number().step(1).min(60_000).max(86_400_000).default(900_000).volatile(),
+});
+
 /** Only the builtin reviewer is affected; exact model/effort ids are validated by LLM dispatch. */
 export const AutoReviewConfig = z.object({
   enabled: z.boolean().default(true).volatile(),
@@ -147,6 +161,7 @@ function providerProfileSchema(originalConfig: unknown): ReturnType<typeof z.any
 export function createConfig(originalConfig: unknown): BetterCopilotConfigSchema {
   return z.object({
     providers: providerProfileSchema(originalConfig),
+    catalog: CatalogConfig,
     search: SearchConfig,
     toolSchema: GuardConfig,
     autoReview: AutoReviewConfig,

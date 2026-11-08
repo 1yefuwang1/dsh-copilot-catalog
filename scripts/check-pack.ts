@@ -9,7 +9,7 @@ export interface PackedPackage { name: string; version: string; files: { path: s
 
 const policies: Record<string, Policy> = {
   'dsh-better-copilot': {
-    modules: ['index', 'plugin', 'config', 'runtime', 'catalog', 'discovery', 'identity', 'catalog-types', 'auth', 'endpoint', 'errors', 'provider', 'refresh', 'responses', 'search', 'search-types', 'schema', 'guard', 'guard-types', 'auto-review', 'temperature'],
+    modules: ['index', 'plugin', 'config', 'runtime', 'catalog', 'catalog-adapter', 'catalog-cache', 'catalog-controller', 'catalog-store', 'discovery', 'identity', 'catalog-types', 'auth', 'endpoint', 'errors', 'provider', 'refresh', 'responses', 'search', 'search-types', 'schema', 'guard', 'guard-types', 'auto-review', 'temperature'],
     // The three predecessor allowlists total 196,755 bytes; the merged leaf keeps
     // bounded headroom below their combined 450,000-byte bound. The read-only
     // subagent route badge adds the package's first browser bundle.
