@@ -33,7 +33,7 @@ jobs:
         run: pnpm run verify
 
   minimum-pi:
-    name: Minimum pi-ai 1.1.0
+    name: Minimum Better Copilot pi-ai 1.3.0
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -45,16 +45,14 @@ jobs:
         with:
           version: 11.7.0
           run_install: false
-      # The published peer range is the host adapter's ^1.1.0, so the oldest
-      # supported pi-ai must build and pass every suite. This override exists only
-      # in the CI checkout; shipped manifests and the lockfile keep 1.3.0.
-      # pnpm 11 ignores the package.json "pnpm" field; overrides belong in the
-      # workspace file, which is the only place this job edits.
+      # Better Copilot's rc2 adapter and published peer range require ^1.3.0.
+      # Pin its oldest supported pi-ai, leaving Worktrees/root rc1 independent.
+      # This scoped override exists only in CI; pnpm 11 reads it from the workspace.
       - name: Pin the minimum supported pi-ai in this checkout only
         run: |
-          printf "overrides:\n  '@earendil-works/pi-ai': 1.1.0\n" >> pnpm-workspace.yaml
+          printf "overrides:\n  '@deepseek-ai/dsh-llm-pi-ai@0.2.2-rc.2>@earendil-works/pi-ai': 1.3.0\n" >> pnpm-workspace.yaml
           pnpm install --no-frozen-lockfile --ignore-scripts
-      - name: Assert the adapter-resolved pi-ai version
-        run: pnpm exec tsx scripts/check-pi.ts 1.1.0
+      - name: Assert the Better Copilot adapter-resolved pi-ai version
+        run: pnpm exec tsx scripts/check-pi.ts 1.3.0 packages/better-copilot
       - name: Verify all plugins against the minimum pi-ai
         run: pnpm run verify

@@ -23,9 +23,16 @@ packages. Their behaviour is consolidated here; see the migration notes below.
 
 ## Compatibility
 
-- DSH and DSH peer packages: `0.2.2-rc.1`.
-- `@earendil-works/pi-ai`: `^1.1.0` (host-aligned peer range; tested at `1.1.0` and `1.3.0`).
-- Node.js: `>=22.19.0`.
+- Better Copilot `0.5.0`: exact DSH and DSH peer packages `0.2.2-rc.2`.
+- `@earendil-works/pi-ai`: peer `^1.3.0`, tested baseline `1.3.0`.
+- Zod: `4.6.6`.
+- DSH CLI/host runtime: Node.js `>=24.9.0`.
+- Plugin library/helper minimum: Node.js `>=22.19.0`, not the DSH CLI minimum.
+
+The repository root development SDK and the independent Worktrees plugin remain
+on DSH `0.2.2-rc.1`. They do not establish this leaf's runtime baseline: Better
+Copilot's leaf checks use rc.2 peers. Use the exact supported host version, without
+compatibility exemptions; this release does not claim rc.1 host support.
 
 The plugin resolves the same public pi-ai runtime the DSH adapter uses, including
 nested pnpm layouts. It vendors neither DSH nor pi-ai and does not modify
@@ -34,10 +41,12 @@ affiliated with GitHub, DeepSeek or the pi-ai maintainers.
 
 ## Installation
 
-Install or link this leaf package, not the monorepo root. The package is
-published as `dsh-better-copilot`; until a registry release exists, install the
-packed tarball or link the workspace directory. Restart the DSH host after
-installing or removing a host plugin.
+Install or link this leaf package, not the monorepo root. Its package name is
+`dsh-better-copilot`. Version `0.5.0` is staged for npm under the package-specific
+release workflow; no live GUI or account testing is claimed. Until that staged
+version is approved, use an explicitly built local tarball or workspace link only
+if you intend to change a profile. Restart the DSH host after installing or
+removing a host plugin.
 
 The bundle patch:
 
@@ -130,6 +139,11 @@ discovery. Cache and interval settings are volatile and affect the next refresh;
 disabling persistence does not delete previously saved records. A host restart
 is needed to load an updated plugin implementation, not to adopt a live catalog.
 
+The `0.5.0` rc.2 migration preserves the existing configuration, storage domain,
+cache format version and credential record keys. Persisted account caches need no
+migration or reset; their existing account/endpoint validation and expiry rules
+still apply.
+
 ## Builtin Auto review
 
 `autoReview` applies only to requests marked `purpose: auto-review` by the builtin
@@ -176,14 +190,15 @@ the interceptor entirely.
 Search uses the stored `llm-pi-ai/github-copilot` credential — inference may use
 either the stock adapter or this wrapper. Sign in through DSH's normal Copilot
 flow. `web_search` is an ordinary tool independent of the conversation model; the
-existing Web search settings card is DeepSeek-specific and is not a chooser.
+native rc.2 search-provider picker and provider directory expose provider
+selection. This plugin uses that native UI and adds no custom search chooser.
 
 ## Guard
 
-The guard is a Copilot wire-body transform. `0.2.2-rc.1` assembles tool
-declarations outside the presentation waterfall and treats them as
-provider-owned, so the last supported seam is the serialized request the adapter
-dispatches. Inside the same refcounted, trusted-path-checked interceptor that
+The guard is a Copilot wire-body transform. Since `0.2.2-rc.1`, DSH assembles
+tool declarations outside the presentation waterfall and treats them as
+provider-owned; rc.2 retains this behavior. The supported seam remains the
+serialized request the adapter dispatches. Inside the same refcounted, trusted-path-checked interceptor that
 carries the wire identity, it adds an empty root `properties` bucket to object
 tool schemas that lack one for a configured Copilot route and model family, and
 leaves every other byte of the request untouched. It never replaces an adapter or

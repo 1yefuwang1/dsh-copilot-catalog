@@ -21,9 +21,18 @@ for the exact migration table.
 
 ## Compatibility
 
-- DSH and DSH peer packages: `0.2.2-rc.1`.
-- `@earendil-works/pi-ai`: `^1.1.0` (host-aligned peer range; tested at `1.1.0` and `1.3.0`).
-- Node.js: `>=22.19.0`.
+| Scope | Runtime baseline |
+| --- | --- |
+| Better Copilot `0.5.0` | Exact DSH and DSH peers `0.2.2-rc.2`; `@earendil-works/pi-ai` peer `^1.3.0`, tested baseline `1.3.0`; Zod `4.6.6` |
+| Worktrees and root development SDK | DSH and DSH peers `0.2.2-rc.1`; unchanged by the Better Copilot migration |
+
+These are separate runtime baselines, not a claim that both plugins support the
+same host. Use each leaf's declared host version; do not use compatibility
+exemptions to load a mismatched plugin. Better Copilot's leaf checks use its rc.2
+peers even though shared root development SDK pins remain rc.1.
+
+- DSH CLI/host runtime: Node.js `>=24.9.0`.
+- Plugin library/helper minimum: Node.js `>=22.19.0`; this is not the DSH CLI minimum.
 - Development package manager: **pnpm `11.7.0`**, pinned in the root manifest.
 
 The Copilot plugin resolves the same public pi-ai runtime the DSH adapter uses,
@@ -59,7 +68,8 @@ instead of assuming a registry release exists.
 - It explicitly selects `github-copilot-search`, keeping the shipped HTTP fetch
   provider. Preserve custom fetch selection in a higher-priority override.
 - It uses DSH's ordinary `web_search` tool independently of the conversation model.
-  The existing Web search settings card is DeepSeek-specific, not a chooser.
+  DSH rc.2 provides a native search-provider picker and provider directory; use
+  that native UI rather than expecting a plugin-specific chooser.
 - A missing web service, a throwing guard registration, a throwing search
   registration and a throwing identity installer each degrade only that capability;
   the adapter still mounts. The guard is a wire-body transform, so a throwing
@@ -76,9 +86,9 @@ instead of assuming a registry release exists.
   default. This does not enable Auto review or alter its authorization policy.
 - Loader patches replace a row's `config` wholesale: restate `providers` and all
   non-default `search`, `toolSchema` and `autoReview` settings together.
-- Restart the DSH host after host-plugin installation/removal. In rc.1, web-service
-  provider selection is volatile and applies to the next operation without a
-  remount. No Web UI rebuild is required for this host-only plugin.
+- Restart the DSH host after host-plugin installation/removal. Search-provider
+  selection applies to the next operation. Better Copilot retains its existing
+  read-only subagent badge; this migration adds no custom UI or metadata feature.
 - Worktrees defaults to the current local branch without a remote fetch, or lets
   you select a freshly fetched remote branch on first native Send. Its themed
   branch picker searches loaded lists without network requests. It creates a
@@ -197,11 +207,16 @@ A release selects **one package**, never the root or multiple packages at once:
 - `@1yefuwang1/dsh-worktrees-vX.Y.Z`
 
 The tag must match its leaf version and repository identity. `dsh-better-copilot` is
-`0.4.0`, adding persistent account-scoped model catalogs and live registry
-refresh while retaining builtin Auto review overrides, temperature compatibility
-and the read-only subagent route badge. It consolidates
-catalog `0.2.9`, search `0.1.5` and tool schema `0.1.3` on DSH `0.2.2-rc.1`;
-those three npm versions remain published but are no longer built here.
+`0.5.0`, prepared locally for exact DSH `0.2.2-rc.2`, pi-ai peer `^1.3.0`
+(tested baseline `1.3.0`) and Zod `4.6.6`. It is staged for npm under the
+package-specific release workflow; no live GUI or account testing is claimed.
+It retains persistent
+account-scoped model catalogs, live registry refresh, native Responses search,
+wire identity, Gemini schema guarding, temperature normalization, builtin Auto
+review overrides and the read-only subagent route badge. Existing configuration,
+cache domain/version and credential keys are unchanged; persisted account caches
+need no migration. It consolidates catalog `0.2.9`, search `0.1.5` and tool schema
+`0.1.3`; those three npm versions remain published but are no longer built here.
 Published versions cannot be republished. Worktrees is
 `@1yefuwang1/dsh-worktrees@0.2.28`, which hides the starting-branch picker while a
 thread is Local: a Local send runs in the current checkout and never chooses,

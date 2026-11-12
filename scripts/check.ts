@@ -1,7 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { evaluatePluginCompatibility, getDshRuntimeVersion } from '@deepseek-ai/dsh-app-boot';
-import { root, packages, assertWorkspaceDefinition, type PackageManifest } from './workspaces.js';
+import { root, packages, assertDshSdk, assertWorkspaceDefinition, minimumReleaseAgeExclusions, type PackageManifest } from './workspaces.js';
 
 async function sourceFiles(directory: string, suffix: string): Promise<string[]> {
   const result: string[] = [];
@@ -21,21 +20,14 @@ if (rootManifest.private !== true || rootManifest.dsh || rootManifest.main || ro
 }
 const definition = await readFile(join(root, 'pnpm-workspace.yaml'), 'utf8');
 assertWorkspaceDefinition(definition);
+minimumReleaseAgeExclusions(definition);
 
-// One runtime baseline: the SDK the repository develops and tests against.
+// The private tooling keeps its own baseline; publishable leaves may target newer runtimes.
 const dshVersion = rootManifest.devDependencies?.['@deepseek-ai/dsh-agent'];
-if (typeof dshVersion !== 'string' || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(dshVersion)) {
-  throw new Error('Root must pin one exact @deepseek-ai/dsh-agent development version');
+if (dshVersion !== '0.2.2-rc.1') {
+  throw new Error('Root must pin @deepseek-ai/dsh-agent development version 0.2.2-rc.1');
 }
-
-if (getDshRuntimeVersion() !== dshVersion) {
-  throw new Error(`Installed SDK runtime must be exactly ${dshVersion}; reinstall from the frozen lockfile`);
-}
-for (const [name, version] of Object.entries(rootManifest.devDependencies ?? {})) {
-  if (name.startsWith('@deepseek-ai/dsh-') && version !== dshVersion) {
-    throw new Error(`Root SDK ${name} must be exactly ${dshVersion}`);
-  }
-}
+await assertDshSdk(join(root, 'package.json'), rootManifest, dshVersion);
 
 const files = [...await sourceFiles('scripts', '.ts')];
 const sources: string[] = [];
@@ -45,7 +37,7 @@ for (const suffix of legacy) {
   const remaining = await sourceFiles('scripts', suffix);
   if (remaining.length) throw new Error(`Maintained tooling must use TypeScript: ${remaining.join(', ')}`);
 }
-for (const { path, manifest } of leaves) {
+for (const { path, directory, manifest } of leaves) {
   if (names.has(manifest.name)) throw new Error('Workspace package names must be unique');
   names.add(manifest.name);
   if (!manifest.license || !manifest.exports?.['.'] || !manifest.types || !manifest.dsh?.bundle?.patch ||
@@ -56,21 +48,9 @@ for (const { path, manifest } of leaves) {
   if (manifest.dependencies && Object.values(manifest.dependencies).some((value) => /^workspace:/u.test(value))) {
     throw new Error('Published plugins cannot depend on private workspace packages: ' + path);
   }
-  // Every leaf declares the same exact runtime, and the runtime itself accepts it.
-  if (manifest.engines?.dsh !== dshVersion) {
-    throw new Error(`${path} must declare engines.dsh ${dshVersion}`);
-  }
-  for (const [name, version] of Object.entries(manifest.devDependencies ?? {})) {
-    if (name.startsWith('@deepseek-ai/dsh-') && version !== dshVersion) {
-      throw new Error(`${path} SDK ${name} must be exactly ${dshVersion}`);
-    }
-  }
-  for (const [name, range] of Object.entries(manifest.peerDependencies ?? {})) {
-    if ((name === '@deepseek-ai/dsh' || name.startsWith('@deepseek-ai/dsh-')) && range !== dshVersion) {
-      throw new Error(`${path} peer ${name} must be exactly ${dshVersion}`);
-    }
-  }
-  const incompatibility = evaluatePluginCompatibility(manifest as object, {}, dshVersion);
+  // Use the leaf's installed app-boot: its own package version is the runtime baseline.
+  const runtime = await assertDshSdk(join(directory, 'package.json'), manifest);
+  const incompatibility = runtime.evaluatePluginCompatibility(manifest as object);
   if (incompatibility !== undefined) {
     throw new Error(`${path} declares requirements the target runtime rejects: ${JSON.stringify(incompatibility.requirements)}`);
   }

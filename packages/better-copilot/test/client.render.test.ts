@@ -4,6 +4,7 @@ import vm from 'node:vm';
 import { test } from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { modelSelectionProjectionDefinition } from '@deepseek-ai/dsh-agent';
 
 interface LocaleDict { [key: string]: string }
 interface Selection { provider: string; model: string; reasoningEffort?: string }
@@ -115,6 +116,37 @@ test('the settled selection is used when the projection carries no pending route
   const markup = render({ useProjection: () => ({ lastUsed: high, next: null }) });
   assert.match(markup, /gpt-6\.1-sol · high/u);
   assert.deepEqual(plain(real.selectedOf({ lastUsed: high, next: { provider: 'deepseek-account', model: 'deepseek-flash' } })), { provider: 'deepseek-account', model: 'deepseek-flash' });
+});
+
+test('the rc.2 host projection retains the next wire field for pending and settled child routes', () => {
+  const projection = modelSelectionProjectionDefinition;
+  for (const raw of [{ lastUsed: null, pending: high }, { lastUsed: high, pending: null }]) {
+    const state = projection.stateSchema.parse(raw);
+    const view = projection.wire.viewSchema.parse(projection.wire.view(state));
+    assert.deepEqual(view.next, high);
+    assert.equal(Object.hasOwn(view, 'pending'), false, 'internal state must not become the client contract');
+    assert.match(render({ useProjection: (key) => {
+      assert.equal(key, 'modelSelection');
+      return view;
+    } }), /gpt-6\.1-sol · high/u);
+  }
+  const empty = projection.stateSchema.parse({ lastUsed: null, pending: null });
+  assert.equal(render({ useProjection: () => projection.wire.view(empty) }), '');
+});
+
+test('a nested child reads only its own projected route', () => {
+  const child = { provider: 'github-copilot', model: 'gpt-6.1-sol', reasoningEffort: 'high' };
+  const view = modelSelectionProjectionDefinition.wire.view(
+    modelSelectionProjectionDefinition.stateSchema.parse({ lastUsed: null, pending: child }),
+  );
+  const markup = render({
+    sessionId: 'grandchild',
+    useSessions: (select) => select({ byId: {
+      parent: { origin: 'session' }, child: { origin: 'subagent' }, grandchild: { origin: 'subagent' },
+    } }),
+    useProjection: () => view,
+  });
+  assert.match(markup, /gpt-6\.1-sol · high/u);
 });
 
 test('the badge formatter keeps the provider in the tooltip, not the inline label', () => {

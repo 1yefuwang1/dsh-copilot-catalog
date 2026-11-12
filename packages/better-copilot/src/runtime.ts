@@ -47,13 +47,13 @@ export async function loadRuntime(options: RuntimeOptions = {}): Promise<BetterC
   try {
     adapterEntry = options.adapterEntry ?? require.resolve('@deepseek-ai/dsh-llm-pi-ai');
   } catch {
-    throw new Error('dsh-better-copilot requires @deepseek-ai/dsh-llm-pi-ai@0.2.1-rc.5; install it in the same profile');
+    throw new Error('dsh-better-copilot requires @deepseek-ai/dsh-llm-pi-ai@0.2.2-rc.2; install it in the same profile');
   }
   const adapterUrl = pathToFileURL(adapterEntry);
   const piManifest = findPackageJSON('@earendil-works/pi-ai', adapterUrl);
   if (!piManifest) throw new Error('Cannot resolve the DSH adapter\'s pi-ai dependency');
   const piRoot = dirname(piManifest);
-  // These are the public providers/* export targets in supported pi-ai >=1.1.0.
+  // These are the public providers/* export targets in supported pi-ai >=1.3.0.
   // No private OAuth module or platform-specific application path is imported.
   const [original, pi, { githubCopilotProvider }, { GITHUB_COPILOT_MODELS: catalog }] = await Promise.all([
     import(adapterUrl.href) as Promise<OriginalAdapter>,

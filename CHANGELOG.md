@@ -1,5 +1,24 @@
 # Monorepo changelog
 
+## Better Copilot 0.5.0 — DSH 0.2.2-rc.2 migration (local preparation)
+
+- Target exact DSH/DSH peers `0.2.2-rc.2`, pi-ai peer `^1.3.0` (tested
+  baseline `1.3.0`) and Zod `4.6.6` for Better Copilot only. Root development
+  SDK pins and Worktrees remain on `0.2.2-rc.1`; no compatibility exemptions.
+- Retain account catalog caching/live refresh, native Responses search, wire
+  identity, Gemini schema guarding, temperature normalization, builtin Auto
+  review overrides and the read-only subagent badge. The rc.2 audit found the
+  search-provider/WebError contracts, bundle IDs, session badge slot and
+  `modelSelection` wire shape (`lastUsed`, `next`) compatible.
+- Document rc.2's native search-provider picker and provider directory. No new
+  custom UI or metadata feature is introduced.
+- Preserve configuration, cache domain/format version and credential record
+  keys; persisted account caches need no migration.
+- Distinguish the DSH CLI/host Node.js minimum (`>=24.9.0`) from the unchanged
+  plugin library/helper minimum (`>=22.19.0`).
+- Version `0.5.0` is staged for npm under the package-specific release
+  workflow. No live GUI or account testing is claimed.
+
 ## Better Copilot 0.4.0 — persistent catalogs and live refresh
 
 - Retain the last successful account model list in DSH's optional persistent
@@ -360,10 +379,10 @@
 
 Package history and versions are independent:
 
-- [Better Copilot changelog](<packages/better-copilot/CHANGELOG.md>) — `0.1.0`, consolidating
-  catalog `0.2.9` (exact pi-ai behavior headers), search `0.1.5` (cancellation-safe
-  credential refresh) and tool schema `0.1.3` (the Copilot Gemini properties-bucket
-  guard) against DSH 0.2.1-rc.5.
+- [Better Copilot changelog](<packages/better-copilot/CHANGELOG.md>) — `0.5.0`,
+  prepared locally for exact DSH `0.2.2-rc.2`, retaining the `0.4.0` persistent
+  catalog/live-refresh behavior and the consolidated catalog `0.2.9`, search
+  `0.1.5` and tool schema `0.1.3` capabilities. Staged for npm.
 - The predecessor packages no longer exist in this repository; their release notes
   remain readable in Git history at `35ff48e`.
 - [Worktrees changelog](<packages/worktrees/CHANGELOG.md>) — `@1yefuwang1/dsh-worktrees@0.2.27`, no branch selection in Local mode on top of the 0.2.26 branch release and DSH 0.2.1-rc.5 compatibility; npm availability still requires staged-release approval.

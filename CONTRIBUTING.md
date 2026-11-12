@@ -1,11 +1,19 @@
 # Contributing
 
-Use Node.js 22.19+ and **pnpm 11.7.0**. From the root:
+Use **pnpm 11.7.0**. The DSH CLI/host requires Node.js **24.9.0+**; the
+plugin library/helper minimum remains **22.19.0+**, which is not sufficient to
+promise a supported DSH CLI environment. Use the host minimum when running DSH
+integration or CLI commands. From the root:
 
 ```sh
 pnpm install --frozen-lockfile --ignore-scripts
 pnpm run verify
 ```
+
+On macOS, use a standard development Node installation for native-addon tests.
+A signed Desktop-bundled Node may refuse separately signed npm addons with a
+Team ID mismatch. Do not re-sign app files or disable library validation to work
+around that test-environment limitation.
 
 The root is private tooling. Runtime source/tests live in
 [better-copilot](<packages/better-copilot/README.md>) and
@@ -19,6 +27,17 @@ from a leaf, or add a dependency on an unpublished/private workspace package.
 
 ## Runtime boundaries
 
+- Keep runtime baselines separate: Better Copilot `0.5.0` targets exact DSH/DSH
+  peers `0.2.2-rc.2`, pi-ai peer `^1.3.0` (tested baseline `1.3.0`) and Zod
+  `4.6.6`; the root development SDK and Worktrees remain on `0.2.2-rc.1`.
+  Resolve Better Copilot checks against its leaf peers, not the root SDK. Do not
+  add compatibility exemptions or widen host support based on root-only checks.
+- Preserve existing configuration, cache domain/format version and credential
+  keys. This migration requires no persisted account-cache conversion or reset.
+  Use rc.2's native search-provider picker/directory, not a new custom UI or
+  metadata feature. Retain the existing read-only subagent badge.
+- Version `0.5.0` is local preparation, not a published or installed release. Do
+  not describe synthetic checks as live GUI or account testing.
 - Never modify signed app files, active profiles or real credential files during
   build/test/install preparation. Synthetic tests must not make live account calls.
 - Resolve DSH/pi-ai public peers from the adapter's installation. Do not use

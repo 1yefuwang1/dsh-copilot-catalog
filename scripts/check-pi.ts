@@ -1,10 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const ADAPTER = '@deepseek-ai/dsh-llm-pi-ai';
 const PI = '@earendil-works/pi-ai';
+const BETTER_MANIFEST = new URL('../packages/better-copilot/package.json', import.meta.url);
 
 /** The pi-ai package the adapter itself resolves, including a nested pnpm layout. */
 export function adapterPiRoot(adapterEntry: string): string {
@@ -18,7 +19,12 @@ export function adapterPiRoot(adapterEntry: string): string {
   }
 }
 
-export function adapterPiVersion(adapterEntry = createRequire(import.meta.url).resolve(ADAPTER)): string {
+/** Anchor adapter selection to the package under test, never the tooling's root. */
+export function adapterEntryForPackage(manifestFile: string | URL = BETTER_MANIFEST): string {
+  return createRequire(manifestFile).resolve(ADAPTER);
+}
+
+export function adapterPiVersion(adapterEntry = adapterEntryForPackage()): string {
   const manifest: { version?: unknown } = JSON.parse(readFileSync(join(adapterPiRoot(adapterEntry), 'package.json'), 'utf8'));
   if (typeof manifest.version !== 'string') throw new Error('The adapter-resolved ' + PI + ' has no version');
   return manifest.version;
@@ -26,7 +32,8 @@ export function adapterPiVersion(adapterEntry = createRequire(import.meta.url).r
 
 function main(): void {
   const expected = process.argv[2];
-  const actual = adapterPiVersion();
+  const manifestFile = process.argv[3] === undefined ? BETTER_MANIFEST : resolve(process.argv[3], 'package.json');
+  const actual = adapterPiVersion(adapterEntryForPackage(manifestFile));
   if (expected !== undefined && actual !== expected) {
     console.error('adapter-resolved ' + PI + ' is ' + actual + ', expected ' + expected);
     process.exitCode = 1;

@@ -104,8 +104,13 @@ test('one apply registers search, installs the guard transform and delegates exa
   const web = new WebRuntime(host, WebRuntime.Config({ searchProvider: COPILOT_SEARCH_PROVIDER_ID, fetchProvider: 'http' }));
   // The tool-schema guard is a wire transform; capture what the adapter would send.
   const sent: string[] = [];
+  const sentHeaders: Headers[] = [];
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => { sent.push(String(init?.body ?? '')); return new Response('ok'); }) as typeof fetch;
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    sent.push(String(init?.body ?? ''));
+    sentHeaders.push(new Headers(init?.headers));
+    return new Response('ok');
+  }) as typeof fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
 
   // Before the plugin mounts, the configured provider is unknown to the web seam.
@@ -121,9 +126,19 @@ test('one apply registers search, installs the guard transform and delegates exa
   // Search is registered; without a credential the merged provider reports the missing credential.
   await assert.rejects(web.search({ query: 'synthetic' }), (error) => error instanceof Error && 'code' in error && error.code === 'WEB_PROVIDER_CREDENTIAL_MISSING');
   // The guard normalizes a defective Gemini declaration on the serialized request.
-  const defective = JSON.stringify({ model: 'gemini-4-argon', tools: [{ type: 'function', function: { name: 't', description: 'd', parameters: { type: 'object' } } }] });
-  await globalThis.fetch('https://api.individual.githubcopilot.com/chat/completions', { method: 'POST', body: defective });
+  const defective = JSON.stringify({
+    model: 'gemini-4-argon',
+    messages: [{ role: 'tool', tool_call_id: 'synthetic-call', content: 'ok' }, { role: 'user', content: 'Current runtime context.' }],
+    tools: [{ type: 'function', function: { name: 't', description: 'd', parameters: { type: 'object' } } }],
+  });
+  await globalThis.fetch('https://api.individual.githubcopilot.com/chat/completions', {
+    method: 'POST', body: defective, headers: { 'X-Initiator': 'user' },
+  });
   assert.deepEqual((JSON.parse(sent[0]!).tools[0].function.parameters as { properties?: object }).properties, {});
+  assert.equal(sentHeaders[0]!.get('x-initiator'), 'user', 'the plugin must not reclassify Gemini continuations');
+  for (const header of ['x-interaction-id', 'x-session-affinity', 'x-interaction-type']) {
+    assert.equal(sentHeaders[0]!.has(header), false, 'the plugin must not add affinity headers');
+  }
 
   // Disposal unwinds the search registration and the guard transform.
   await fiber.dispose();

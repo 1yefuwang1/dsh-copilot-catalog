@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.5.0 — DSH 0.2.2-rc.2 migration (local preparation)
+
+- Target exact DSH and DSH peer packages `0.2.2-rc.2`, pi-ai peer `^1.3.0`
+  (tested baseline `1.3.0`) and Zod `4.6.6`. Root development SDK pins and the
+  independent Worktrees plugin remain on `0.2.2-rc.1`. No compatibility
+  exemptions are required or recommended.
+- Retain persistent account catalogs/live refresh, native Responses search,
+  Copilot wire identity, Gemini schema guarding, temperature normalization,
+  builtin Auto review overrides and the read-only subagent route badge. The
+  rc.2 audit found the search-provider/WebError contracts, bundle IDs, badge
+  session slot and `modelSelection` wire shape (`lastUsed`, `next`) compatible.
+- Correct search guidance for rc.2's native search-provider picker and provider
+  directory; add no custom UI or metadata feature.
+- Preserve configuration, the cache domain/format version and credential record
+  keys. Existing persisted account caches need no migration or reset.
+- Document the DSH CLI/host Node.js minimum of `>=24.9.0` separately from the
+  unchanged plugin library/helper minimum of `>=22.19.0`.
+- This version is staged for npm under the package-specific release workflow.
+  No live GUI or account testing is claimed.
+
 ## 0.4.0 — persistent account catalogs and live refresh
 
 - Cache the last successful account model metadata in DSH's optional

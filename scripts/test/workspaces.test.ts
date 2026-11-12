@@ -1,12 +1,35 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { resolve } from 'node:path';
-import { readFile } from 'node:fs/promises';
-import { root, workspacePaths, packages, containedPath, releasePackage, assertWorkspaceDefinition, packageManager } from '../workspaces.js';
+import { dirname, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { createRequire } from 'node:module';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { root, workspacePaths, packages, containedPath, releasePackage, assertDshSdk, assertWorkspaceDefinition, minimumReleaseAgeExclusions, packageManager, type PackageManifest } from '../workspaces.js';
 import { releaseIdentity } from '../release.js';
 import { findCredentialIssues } from '../check-secrets.js';
 import { publicationPolicy, validatePublicationMetadata, validatePublicationSize } from '../check-pack.js';
-import { evaluatePluginCompatibility, getDshRuntimeVersion } from '@deepseek-ai/dsh-app-boot';
+import { adapterEntryForPackage, adapterPiRoot, adapterPiVersion } from '../check-pi.js';
+
+async function installedFixture(directory: string, name: string, version: string): Promise<string> {
+  const packageDirectory = resolve(directory, 'node_modules', name);
+  await mkdir(packageDirectory, { recursive: true });
+  await writeFile(resolve(packageDirectory, 'package.json'), JSON.stringify({
+    name, version, type: 'module', exports: { '.': './index.js', './package.json': './package.json' },
+  }));
+  await writeFile(resolve(packageDirectory, 'index.js'), name === '@deepseek-ai/dsh-app-boot'
+    ? `import { readFileSync } from 'node:fs';
+export function getDshRuntimeVersion() { return JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version; }
+`
+    : 'export {};\n');
+  return resolve(packageDirectory, 'index.js');
+}
+
+function sdkFixtureManifest(name: string, version: string): PackageManifest {
+  return {
+    name, version: '1.0.0', exports: {}, scripts: {}, engines: { dsh: version },
+    devDependencies: { '@deepseek-ai/dsh-agent': version },
+  };
+}
 
 const repository = '1yefuwang1/dsh-copilot-catalog';
 const candidates = [
@@ -60,6 +83,41 @@ test('workspace validation rejects every missing, substring-only or commented pa
     const otherRows = workspacePaths.filter(path => path !== missing).map(path => `  - ${path}`);
     for (const row of ['', `  - ${missing}-extra`, `#  - ${missing}`]) {
       assert.throws(() => assertWorkspaceDefinition(['packages:', ...otherRows, row].join('\n')), /Missing pnpm workspace/u);
+    }
+  }
+});
+
+test('release-age exclusions accept finite exact unions and reject shadowing, globs and ranges', () => {
+  const policy = (...rules: string[]): string => ['minimumReleaseAgeExclude:', ...rules.map(rule => `  - '${rule}'`), 'onlyBuiltDependencies: []'].join('\n');
+  const name = '@deepseek-ai/dsh-agent';
+  for (const ending of ['\n', '\r\n', '\r']) {
+    const parsed = minimumReleaseAgeExclusions(policy(`${name}@0.2.2-rc.1 || 0.2.2-rc.2`, 'unscoped@1.2.3+build').replaceAll('\n', ending));
+    assert.deepEqual([...parsed], [[name, ['0.2.2-rc.1', '0.2.2-rc.2']], ['unscoped', ['1.2.3+build']]]);
+  }
+  assert.throws(() => minimumReleaseAgeExclusions(policy(`${name}@0.2.2-rc.1`, `${name}@0.2.2-rc.2`)), /Duplicate release-age package rule shadows/u);
+  for (const version of ['*', '^0.2.2-rc.2', '~0.2.2', '>=0.2.2', '0.2', 'latest', '0.2.x', 'workspace:*', '0.2.2-rc.1 || *', '0.2.2 ||', '01.2.3', '0.2.2-rc.01']) {
+    assert.throws(() => minimumReleaseAgeExclusions(policy(`${name}@${version}`)), /finite exact/u, version);
+  }
+  for (const rule of ['@deepseek-ai/*@0.2.2-rc.2', name]) {
+    assert.throws(() => minimumReleaseAgeExclusions(policy(rule)), /finite exact/u);
+  }
+});
+
+test('first applicable release-age rules cover both unchanged root rc1 and leaf-specific SDK pins', async () => {
+  const definition = await readFile(resolve(root, 'pnpm-workspace.yaml'), 'utf8');
+  const rules = [...minimumReleaseAgeExclusions(definition)];
+  const rootManifest: PackageManifest = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'));
+  assert.equal(rootManifest.devDependencies?.['@deepseek-ai/dsh-agent'], '0.2.2-rc.1');
+  const leaves = await packages();
+  assert.equal(leaves.find(leaf => leaf.path === 'packages/better-copilot')?.manifest.engines?.dsh, '0.2.2-rc.2');
+  assert.equal(leaves.find(leaf => leaf.path === 'packages/worktrees')?.manifest.engines?.dsh, '0.2.2-rc.1');
+  for (const manifest of [rootManifest, ...leaves.map(leaf => leaf.manifest)]) {
+    for (const field of ['dependencies', 'devDependencies', 'peerDependencies'] as const) {
+      for (const [name, version] of Object.entries(manifest[field] ?? {})) {
+        if (name !== '@deepseek-ai/dsh' && !name.startsWith('@deepseek-ai/dsh-')) continue;
+        const firstRule = rules.find(([packageName]) => packageName === name);
+        assert.ok(firstRule?.[1].includes(version), `${manifest.name} ${name}@${version} must be covered by the first applicable exact release-age rule`);
+      }
     }
   }
 });
@@ -168,23 +226,33 @@ test('worktree tarball metadata rejects extra/missing files, wrong identity and 
   assert.equal(manifest.scripts.postinstall, undefined);
 });
 
-test('every plugin accepts the pinned runtime and rejects other DSH versions without exemptions', async () => {
-  const rootManifest = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'));
-  const pinned = rootManifest.devDependencies['@deepseek-ai/dsh-agent'];
-  assert.match(pinned, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u);
+test('root and every plugin use their own exact installed runtime and preserve exact-pair exemptions', async () => {
+  const rootFile = resolve(root, 'package.json');
+  const rootManifest: PackageManifest = JSON.parse(await readFile(rootFile, 'utf8'));
+  const pinned = rootManifest.devDependencies?.['@deepseek-ai/dsh-agent'];
   assert.equal(pinned, '0.2.2-rc.1');
-  assert.equal(getDshRuntimeVersion(), pinned, 'tests must use the installed target runtime, not just retargeted manifest labels');
-  for (const [name, version] of Object.entries(rootManifest.devDependencies)) {
-    if (name.startsWith('@deepseek-ai/dsh-')) assert.equal(version, pinned, name);
-  }
-  for (const { manifest } of await packages()) {
-    for (const [name, version] of Object.entries(manifest.devDependencies ?? {})) {
-      if (name.startsWith('@deepseek-ai/dsh-')) assert.equal(version, pinned, manifest.name + ': ' + name);
+  const rootRuntime = await assertDshSdk(rootFile, rootManifest, pinned);
+  assert.equal(rootRuntime.getDshRuntimeVersion(), pinned, 'the private tooling must remain on rc1');
+  const baselines: Record<string, string> = {
+    'packages/better-copilot': '0.2.2-rc.2',
+    'packages/worktrees': '0.2.2-rc.1',
+  };
+  for (const { path, directory, manifest } of await packages()) {
+    const expected = baselines[path];
+    assert.equal(manifest.engines?.dsh, expected, manifest.name + ' must pin its own runtime');
+    const runtime = await assertDshSdk(resolve(directory, 'package.json'), manifest);
+    assert.equal(runtime.getDshRuntimeVersion(), expected, 'manifest labels must match the leaf-resolved runtime');
+    const { evaluatePluginCompatibility } = runtime;
+    assert.equal(evaluatePluginCompatibility(manifest), undefined,
+      manifest.name + ' must install on its own runtime without an exemption');
+    if (path === 'packages/better-copilot') {
+      assert.equal(manifest.version, '0.5.0');
+      assert.equal(manifest.devDependencies?.['@deepseek-ai/dsh-app-boot'], expected);
+      assert.equal(manifest.devDependencies?.['@deepseek-ai/dsh-storage-json'], expected);
+      assert.equal(manifest.peerDependencies?.['@earendil-works/pi-ai'], '^1.3.0');
+      assert.equal(manifest.devDependencies?.['@earendil-works/pi-ai'], '1.3.0');
     }
-    assert.equal(manifest.engines?.dsh, pinned, manifest.name + ' must pin the shared runtime');
-    assert.equal(evaluatePluginCompatibility(manifest, {}, pinned), undefined,
-      manifest.name + ' must install on the pinned runtime without an exemption');
-    for (const other of ['0.2.0-rc.2', '0.2.1-rc.5', '0.2.2-rc.2', '0.2.2', '0.2.1', '0.1.9']) {
+    for (const other of ['0.2.0-rc.2', '0.2.1-rc.5', '0.2.2-rc.1', '0.2.2-rc.2', '0.2.2', '0.2.1', '0.1.9'].filter(version => version !== expected)) {
       const issue = evaluatePluginCompatibility(manifest, {}, other);
       assert.ok(issue, manifest.name + ' must report ' + other + ' as unmet');
       assert.deepEqual(Object.keys(issue.requirements), ['engines.dsh']);
@@ -194,11 +262,85 @@ test('every plugin accepts the pinned runtime and rejects other DSH versions wit
       const irrelevant = evaluatePluginCompatibility(manifest, { [key]: ['9.9.9'] }, other);
       assert.ok(irrelevant, 'a mismatch is still reported');
       assert.equal(irrelevant.exempted, false, 'an exemption for another runtime must not apply');
+      const wrongPlugin = evaluatePluginCompatibility(manifest, { [manifest.name + '@0.0.0']: [other] }, other);
+      assert.ok(wrongPlugin);
+      assert.equal(wrongPlugin.exempted, false, 'an exemption for another plugin version must not apply');
       const exact = evaluatePluginCompatibility(manifest, { [key]: [other] }, other);
       assert.ok(exact, 'the exact pair is still reported');
       assert.equal(exact.exempted, true, 'only the exact plugin/runtime pair is exempted');
     }
   }
+});
+
+test('leaf SDK checks reject root fallback and mixed installed versions while allowing a matching root', async (t) => {
+  const directory = await realpath(await mkdtemp(resolve(tmpdir(), 'dsh-sdk-tooling-')));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const leaf = resolve(directory, 'packages/better-copilot');
+  const worktrees = resolve(directory, 'packages/worktrees');
+  await mkdir(leaf, { recursive: true });
+  await mkdir(worktrees, { recursive: true });
+  const rootManifest = sdkFixtureManifest('private-root', '0.2.2-rc.1');
+  const manifest = sdkFixtureManifest('new-leaf', '0.2.2-rc.2');
+  const worktreesManifest = sdkFixtureManifest('old-leaf', '0.2.2-rc.1');
+  const manifestFile = resolve(leaf, 'package.json');
+  await writeFile(resolve(directory, 'package.json'), JSON.stringify(rootManifest));
+  await writeFile(manifestFile, JSON.stringify(manifest));
+  await writeFile(resolve(worktrees, 'package.json'), JSON.stringify(worktreesManifest));
+  await installedFixture(directory, '@deepseek-ai/dsh-app-boot', '0.2.2-rc.1');
+  await installedFixture(directory, '@deepseek-ai/dsh-agent', '0.2.2-rc.1');
+  const oldRuntime = await assertDshSdk(resolve(worktrees, 'package.json'), worktreesManifest);
+  assert.equal(oldRuntime.getDshRuntimeVersion(), '0.2.2-rc.1', 'matching root fallback is valid for Worktrees');
+  await assert.rejects(assertDshSdk(manifestFile, manifest), /resolved SDK runtime is 0\.2\.2-rc\.1, expected exactly 0\.2\.2-rc\.2/u);
+  await installedFixture(leaf, '@deepseek-ai/dsh-app-boot', '0.2.2-rc.2');
+  await assert.rejects(assertDshSdk(manifestFile, manifest), /resolved SDK @deepseek-ai\/dsh-agent is 0\.2\.2-rc\.1, expected exactly 0\.2\.2-rc\.2/u);
+  await installedFixture(leaf, '@deepseek-ai/dsh-agent', '0.2.2-rc.2');
+  const runtime = await assertDshSdk(manifestFile, manifest);
+  assert.equal(runtime.getDshRuntimeVersion(), '0.2.2-rc.2');
+  const rootRuntime = await assertDshSdk(resolve(directory, 'package.json'), rootManifest);
+  assert.equal(rootRuntime.getDshRuntimeVersion(), '0.2.2-rc.1', 'newer leaf resolution must not retarget the root');
+  for (const field of ['dependencies', 'devDependencies', 'peerDependencies'] as const) {
+    const mixed = { ...manifest, [field]: { '@deepseek-ai/dsh-agent': '0.2.2-rc.1' } };
+    await assert.rejects(assertDshSdk(manifestFile, mixed), /SDK @deepseek-ai\/dsh-agent must be exactly 0\.2\.2-rc\.2/u);
+  }
+  for (const version of [undefined, '', '^0.2.2-rc.2', '>=0.2.2-rc.2', 'workspace:*']) {
+    const invalid: PackageManifest = { ...manifest, engines: version === undefined ? {} : { dsh: version } };
+    await assert.rejects(assertDshSdk(manifestFile, invalid), /one exact engines\.dsh version/u);
+  }
+});
+
+test('pi probes select Better Copilot by default, not the private root adapter', () => {
+  const expected = createRequire(resolve(root, 'packages/better-copilot/package.json')).resolve('@deepseek-ai/dsh-llm-pi-ai');
+  assert.equal(adapterEntryForPackage(), expected);
+  assert.equal(adapterPiVersion(), '1.3.0');
+});
+
+test('package-targeted pi probes follow the nested adapter dependency rather than a wrong root', async (t) => {
+  const directory = await realpath(await mkdtemp(resolve(tmpdir(), 'dsh-pi-tooling-')));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const leaf = resolve(directory, 'packages/better-copilot');
+  await mkdir(leaf, { recursive: true });
+  const rootFile = resolve(directory, 'package.json');
+  const leafFile = resolve(leaf, 'package.json');
+  await writeFile(rootFile, JSON.stringify({ private: true }));
+  await writeFile(leafFile, JSON.stringify({ name: 'leaf' }));
+  const rootEntry = await installedFixture(directory, '@deepseek-ai/dsh-llm-pi-ai', '0.2.2-rc.1');
+  const leafEntry = await installedFixture(leaf, '@deepseek-ai/dsh-llm-pi-ai', '0.2.2-rc.2');
+  await installedFixture(directory, '@earendil-works/pi-ai', '1.1.0');
+  await installedFixture(leaf, '@earendil-works/pi-ai', '9.9.9');
+  const nested = await installedFixture(dirname(leafEntry), '@earendil-works/pi-ai', '1.3.0');
+  assert.equal(adapterEntryForPackage(rootFile), rootEntry);
+  assert.equal(adapterEntryForPackage(leafFile), leafEntry);
+  assert.equal(adapterPiVersion(adapterEntryForPackage(rootFile)), '1.1.0', 'the wrong root would pass the old minimum');
+  assert.equal(adapterPiRoot(leafEntry), dirname(nested));
+  assert.equal(adapterPiVersion(adapterEntryForPackage(leafFile)), '1.3.0', 'only the nested Better adapter is certified');
+});
+
+test('CI pins and probes the Better rc2 minimum without weakening recursive verification', async () => {
+  const workflow = await readFile(resolve(root, '.github/workflows/ci.yml'), 'utf8');
+  assert.match(workflow, /'@deepseek-ai\/dsh-llm-pi-ai@0\.2\.2-rc\.2>@earendil-works\/pi-ai': 1\.3\.0/u);
+  assert.match(workflow, /run: pnpm exec tsx scripts\/check-pi\.ts 1\.3\.0 packages\/better-copilot/u);
+  assert.doesNotMatch(workflow, /pi-ai.*1\.1\.0/u);
+  assert.equal(workflow.match(/run: pnpm run verify/gu)?.length, 2);
 });
 
 test('credential audit catches Copilot tokens, JWTs and static backtick credentials without echoing values', () => {

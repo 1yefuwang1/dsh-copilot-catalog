@@ -19,7 +19,7 @@ const resultBody = () => ({ status: 'completed', output: [
   ] } },
   { id: 'msg_synthetic', type: 'message', status: 'completed', content: [{ type: 'output_text', text: 'Synthetic answer', annotations: [] }] },
 ] });
-/** Parse the same plain provider ids the shipped cordis.patch.yml supplies; rc.5 yields live volatile refs. */
+/** Parse the same plain provider ids the shipped cordis.patch.yml supplies; rc.2 yields live volatile refs. */
 const webConfig = () => WebRuntime.Config({ searchProvider: COPILOT_SEARCH_PROVIDER_ID, fetchProvider: 'http' });
 
 /** The merged plugin also injects a web service and installs guard/identity seams. */
@@ -100,7 +100,7 @@ test('GHE search resolves and refreshes real public auth through the actual DSH 
   } finally { dispose(); }
 });
 
-test('rc.5 web selection and account credentials are resolved again without remounting', async () => {
+test('rc.2 web selection and account credentials are resolved again without remounting', async () => {
   const runtime = await loadRuntime();
   const host = new Context();
   const config = webConfig();
@@ -139,10 +139,13 @@ test('rc.5 web selection and account credentials are resolved again without remo
   } finally { dispose(); }
 });
 
-test('actual DSH web seam selects the Copilot provider, caps results, and disposes registration', async () => {
+test('rc.2 web directory lists Copilot and reports search registration/disposal while preserving result limits', async () => {
   const runtime = await loadRuntime();
   const host = new Context();
+  let directoryChanges = 0;
+  host.on('web/providers-changed', () => { directoryChanges++; });
   const web = new WebRuntime(host, webConfig());
+  assert.deepEqual(web.listProviders(), { search: [], fetch: [] });
   const fixture = credentialFixture(grant());
   const registrations: (() => void)[] = [];
   const requests: SearchBody[] = [];
@@ -157,6 +160,9 @@ test('actual DSH web seam selects the Copilot provider, caps results, and dispos
     requests.push(JSON.parse(init.body));
     return Response.json(resultBody());
   }) })).apply(ctx, Config({ search: { model: 'synthetic-responses-model' } }));
+  assert.deepEqual(web.listProviders().search.map(({ id }) => id), [COPILOT_SEARCH_PROVIDER_ID]);
+  assert.deepEqual(web.listProviders().fetch, []);
+  assert.equal(directoryChanges, 1);
   const result = await web.search({ query: 'synthetic query', maxResults: 1 });
   assert.equal(requests.length, 1);
   assert.deepEqual(requests[0]!.tools, [{ type: 'web_search' }]);
@@ -164,5 +170,7 @@ test('actual DSH web seam selects the Copilot provider, caps results, and dispos
   assert.equal(result.truncated, true);
   assert.equal(fixture.stats.writes, 0);
   registrations[0]!();
+  assert.deepEqual(web.listProviders(), { search: [], fetch: [] });
+  assert.equal(directoryChanges, 2);
   await assert.rejects(web.search({ query: 'after disposal' }), (error) => error instanceof Error && 'code' in error && error.code === 'WEB_PROVIDER_CONFIGURED_MISSING');
 });

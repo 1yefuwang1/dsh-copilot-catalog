@@ -1,6 +1,7 @@
 import { readFile, realpath } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { resolve, relative, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export interface ReleaseCandidate {
   path: string;
@@ -39,12 +40,70 @@ export interface WorkspacePackage extends ReleaseCandidate {
 export const root = fileURLToPath(new URL('../', import.meta.url));
 export const workspacePaths = Object.freeze(['packages/better-copilot', 'packages/worktrees']);
 
+type DshRuntime = Pick<typeof import('@deepseek-ai/dsh-app-boot'), 'getDshRuntimeVersion' | 'evaluatePluginCompatibility'>;
+
+/** Resolve SDK packages from this manifest, not from the tooling's private root. */
+export async function assertDshSdk(
+  manifestFile: string,
+  manifest: PackageManifest,
+  version = manifest.engines?.dsh,
+): Promise<DshRuntime> {
+  if (typeof version !== 'string' || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(version)) {
+    throw new Error(`${manifest.name} must declare one exact engines.dsh version`);
+  }
+  const require = createRequire(manifestFile);
+  const sdk = new Set<string>();
+  for (const field of ['dependencies', 'devDependencies', 'peerDependencies'] as const) {
+    for (const [name, declared] of Object.entries(manifest[field] ?? {})) {
+      if (name !== '@deepseek-ai/dsh' && !name.startsWith('@deepseek-ai/dsh-')) continue;
+      if (declared !== version) throw new Error(`${manifest.name} ${field} SDK ${name} must be exactly ${version}`);
+      sdk.add(name);
+    }
+  }
+  const runtime: DshRuntime = await import(pathToFileURL(require.resolve('@deepseek-ai/dsh-app-boot')).href);
+  const installed = runtime.getDshRuntimeVersion();
+  if (installed !== version) {
+    throw new Error(`${manifest.name} resolved SDK runtime is ${installed}, expected exactly ${version}; reinstall from the frozen lockfile`);
+  }
+  for (const name of sdk) {
+    const installedManifest: { version?: unknown } = JSON.parse(await readFile(require.resolve(`${name}/package.json`), 'utf8'));
+    if (installedManifest.version !== version) {
+      throw new Error(`${manifest.name} resolved SDK ${name} is ${String(installedManifest.version)}, expected exactly ${version}`);
+    }
+  }
+  return runtime;
+}
+
 /** Git may check out YAML with CRLF on Windows; validate complete rows, not LF substrings. */
 export function assertWorkspaceDefinition(definition: string): void {
   const lines = definition.split(/\r\n|\n|\r/u);
   for (const path of workspacePaths) {
     if (!lines.includes(`  - ${path}`)) throw new Error(`Missing pnpm workspace: ${path}`);
   }
+}
+
+/** pnpm 11 applies only the first matching package rule; keep one finite exact-version union per name. */
+export function minimumReleaseAgeExclusions(definition: string): ReadonlyMap<string, readonly string[]> {
+  const lines = definition.split(/\r\n|\n|\r/u);
+  const start = lines.indexOf('minimumReleaseAgeExclude:');
+  if (start === -1) throw new Error('Missing minimumReleaseAgeExclude policy');
+  const rules = new Map<string, readonly string[]>();
+  for (const line of lines.slice(start + 1)) {
+    if (!line.trim() || /^\s*#/u.test(line)) continue;
+    if (!/^\s/u.test(line)) break;
+    const selector = /^  - '([^']+)'$/u.exec(line)?.[1];
+    const match = selector?.match(/^((?:@[a-z0-9._-]+\/)?[a-z0-9._-]+)@(.+)$/u);
+    if (!match) throw new Error('Release-age exclusions must be quoted package names with finite exact version unions');
+    const name = match[1]!;
+    const versions = match[2]!.split(' || ');
+    if (versions.some(version => !/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u.test(version) ||
+      version.split('+')[0]!.split('-').slice(1).join('-').split('.').some(identifier => /^0\d+$/u.test(identifier)))) {
+      throw new Error(`${name} release-age exclusion must use finite exact semver version unions`);
+    }
+    if (rules.has(name)) throw new Error(`Duplicate release-age package rule shadows later versions: ${name}`);
+    rules.set(name, versions);
+  }
+  return rules;
 }
 
 /** Resolve only the explicitly registered publishable leaves, never the private root or arbitrary paths. */
