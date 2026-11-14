@@ -42,7 +42,7 @@ unintended credential writes privately to [the maintainer](https://github.com/1y
 Use [GitHub's private vulnerability reporting](https://github.com/1yefuwang1/dsh-copilot-catalog/security/advisories/new)
 if enabled; do not open a public issue containing sensitive details.
 
-Better Copilot `0.5.0` targets exact DSH/DSH peers `0.2.2-rc.2`, pi-ai peer
+Better Copilot `0.5.1` targets exact DSH/DSH peers `0.2.2-rc.3`, pi-ai peer
 `^1.3.0` (tested baseline `1.3.0`) and Zod `4.6.6`. Worktrees and the root
 development SDK remain on DSH `0.2.2-rc.1`; these are separate runtime baselines,
 not interchangeable host support. Do not use compatibility exemptions. The DSH
@@ -50,7 +50,7 @@ CLI/host requires Node.js `>=24.9.0`; the plugin library/helper minimum remains
 `>=22.19.0` and does not lower the host requirement. Review lockfile changes and
 restart the host after upgrading/removing a backend plugin.
 
-Version `0.5.0` is staged for npm under the package-specific release workflow.
+Version `0.5.1` is staged for npm under the package-specific release workflow.
 No live GUI or account testing is claimed. Existing configuration, cache domain/format version
 and credential record keys are preserved; no persisted account-cache migration
 is required.

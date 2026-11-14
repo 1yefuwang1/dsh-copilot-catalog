@@ -23,12 +23,12 @@ for the exact migration table.
 
 | Scope | Runtime baseline |
 | --- | --- |
-| Better Copilot `0.5.0` | Exact DSH and DSH peers `0.2.2-rc.2`; `@earendil-works/pi-ai` peer `^1.3.0`, tested baseline `1.3.0`; Zod `4.6.6` |
+| Better Copilot `0.5.1` | Exact DSH and DSH peers `0.2.2-rc.3`; `@earendil-works/pi-ai` peer `^1.3.0`, tested baseline `1.3.0`; Zod `4.6.6` |
 | Worktrees and root development SDK | DSH and DSH peers `0.2.2-rc.1`; unchanged by the Better Copilot migration |
 
 These are separate runtime baselines, not a claim that both plugins support the
 same host. Use each leaf's declared host version; do not use compatibility
-exemptions to load a mismatched plugin. Better Copilot's leaf checks use its rc.2
+exemptions to load a mismatched plugin. Better Copilot's leaf checks use its rc.3
 peers even though shared root development SDK pins remain rc.1.
 
 - DSH CLI/host runtime: Node.js `>=24.9.0`.
@@ -68,7 +68,7 @@ instead of assuming a registry release exists.
 - It explicitly selects `github-copilot-search`, keeping the shipped HTTP fetch
   provider. Preserve custom fetch selection in a higher-priority override.
 - It uses DSH's ordinary `web_search` tool independently of the conversation model.
-  DSH rc.2 provides a native search-provider picker and provider directory; use
+  DSH rc.3 provides a native search-provider picker and provider directory; use
   that native UI rather than expecting a plugin-specific chooser.
 - A missing web service, a throwing guard registration, a throwing search
   registration and a throwing identity installer each degrade only that capability;
@@ -207,7 +207,7 @@ A release selects **one package**, never the root or multiple packages at once:
 - `@1yefuwang1/dsh-worktrees-vX.Y.Z`
 
 The tag must match its leaf version and repository identity. `dsh-better-copilot` is
-`0.5.0`, prepared locally for exact DSH `0.2.2-rc.2`, pi-ai peer `^1.3.0`
+`0.5.1`, prepared locally for exact DSH `0.2.2-rc.3`, pi-ai peer `^1.3.0`
 (tested baseline `1.3.0`) and Zod `4.6.6`. It is staged for npm under the
 package-specific release workflow; no live GUI or account testing is claimed.
 It retains persistent

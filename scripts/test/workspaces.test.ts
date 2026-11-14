@@ -91,14 +91,14 @@ test('release-age exclusions accept finite exact unions and reject shadowing, gl
   const policy = (...rules: string[]): string => ['minimumReleaseAgeExclude:', ...rules.map(rule => `  - '${rule}'`), 'onlyBuiltDependencies: []'].join('\n');
   const name = '@deepseek-ai/dsh-agent';
   for (const ending of ['\n', '\r\n', '\r']) {
-    const parsed = minimumReleaseAgeExclusions(policy(`${name}@0.2.2-rc.1 || 0.2.2-rc.2`, 'unscoped@1.2.3+build').replaceAll('\n', ending));
-    assert.deepEqual([...parsed], [[name, ['0.2.2-rc.1', '0.2.2-rc.2']], ['unscoped', ['1.2.3+build']]]);
+    const parsed = minimumReleaseAgeExclusions(policy(`${name}@0.2.2-rc.1 || 0.2.2-rc.3`, 'unscoped@1.2.3+build').replaceAll('\n', ending));
+    assert.deepEqual([...parsed], [[name, ['0.2.2-rc.1', '0.2.2-rc.3']], ['unscoped', ['1.2.3+build']]]);
   }
-  assert.throws(() => minimumReleaseAgeExclusions(policy(`${name}@0.2.2-rc.1`, `${name}@0.2.2-rc.2`)), /Duplicate release-age package rule shadows/u);
-  for (const version of ['*', '^0.2.2-rc.2', '~0.2.2', '>=0.2.2', '0.2', 'latest', '0.2.x', 'workspace:*', '0.2.2-rc.1 || *', '0.2.2 ||', '01.2.3', '0.2.2-rc.01']) {
+  assert.throws(() => minimumReleaseAgeExclusions(policy(`${name}@0.2.2-rc.1`, `${name}@0.2.2-rc.3`)), /Duplicate release-age package rule shadows/u);
+  for (const version of ['*', '^0.2.2-rc.3', '~0.2.2', '>=0.2.2', '0.2', 'latest', '0.2.x', 'workspace:*', '0.2.2-rc.1 || *', '0.2.2 ||', '01.2.3', '0.2.2-rc.01']) {
     assert.throws(() => minimumReleaseAgeExclusions(policy(`${name}@${version}`)), /finite exact/u, version);
   }
-  for (const rule of ['@deepseek-ai/*@0.2.2-rc.2', name]) {
+  for (const rule of ['@deepseek-ai/*@0.2.2-rc.3', name]) {
     assert.throws(() => minimumReleaseAgeExclusions(policy(rule)), /finite exact/u);
   }
 });
@@ -109,7 +109,7 @@ test('first applicable release-age rules cover both unchanged root rc1 and leaf-
   const rootManifest: PackageManifest = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'));
   assert.equal(rootManifest.devDependencies?.['@deepseek-ai/dsh-agent'], '0.2.2-rc.1');
   const leaves = await packages();
-  assert.equal(leaves.find(leaf => leaf.path === 'packages/better-copilot')?.manifest.engines?.dsh, '0.2.2-rc.2');
+  assert.equal(leaves.find(leaf => leaf.path === 'packages/better-copilot')?.manifest.engines?.dsh, '0.2.2-rc.3');
   assert.equal(leaves.find(leaf => leaf.path === 'packages/worktrees')?.manifest.engines?.dsh, '0.2.2-rc.1');
   for (const manifest of [rootManifest, ...leaves.map(leaf => leaf.manifest)]) {
     for (const field of ['dependencies', 'devDependencies', 'peerDependencies'] as const) {
@@ -234,7 +234,7 @@ test('root and every plugin use their own exact installed runtime and preserve e
   const rootRuntime = await assertDshSdk(rootFile, rootManifest, pinned);
   assert.equal(rootRuntime.getDshRuntimeVersion(), pinned, 'the private tooling must remain on rc1');
   const baselines: Record<string, string> = {
-    'packages/better-copilot': '0.2.2-rc.2',
+    'packages/better-copilot': '0.2.2-rc.3',
     'packages/worktrees': '0.2.2-rc.1',
   };
   for (const { path, directory, manifest } of await packages()) {
@@ -246,13 +246,13 @@ test('root and every plugin use their own exact installed runtime and preserve e
     assert.equal(evaluatePluginCompatibility(manifest), undefined,
       manifest.name + ' must install on its own runtime without an exemption');
     if (path === 'packages/better-copilot') {
-      assert.equal(manifest.version, '0.5.0');
+      assert.equal(manifest.version, '0.5.1');
       assert.equal(manifest.devDependencies?.['@deepseek-ai/dsh-app-boot'], expected);
       assert.equal(manifest.devDependencies?.['@deepseek-ai/dsh-storage-json'], expected);
       assert.equal(manifest.peerDependencies?.['@earendil-works/pi-ai'], '^1.3.0');
       assert.equal(manifest.devDependencies?.['@earendil-works/pi-ai'], '1.3.0');
     }
-    for (const other of ['0.2.0-rc.2', '0.2.1-rc.5', '0.2.2-rc.1', '0.2.2-rc.2', '0.2.2', '0.2.1', '0.1.9'].filter(version => version !== expected)) {
+    for (const other of ['0.2.0-rc.2', '0.2.1-rc.5', '0.2.2-rc.1', '0.2.2-rc.2', '0.2.2-rc.3', '0.2.2', '0.2.1', '0.1.9'].filter(version => version !== expected)) {
       const issue = evaluatePluginCompatibility(manifest, {}, other);
       assert.ok(issue, manifest.name + ' must report ' + other + ' as unmet');
       assert.deepEqual(Object.keys(issue.requirements), ['engines.dsh']);
@@ -280,7 +280,7 @@ test('leaf SDK checks reject root fallback and mixed installed versions while al
   await mkdir(leaf, { recursive: true });
   await mkdir(worktrees, { recursive: true });
   const rootManifest = sdkFixtureManifest('private-root', '0.2.2-rc.1');
-  const manifest = sdkFixtureManifest('new-leaf', '0.2.2-rc.2');
+  const manifest = sdkFixtureManifest('new-leaf', '0.2.2-rc.3');
   const worktreesManifest = sdkFixtureManifest('old-leaf', '0.2.2-rc.1');
   const manifestFile = resolve(leaf, 'package.json');
   await writeFile(resolve(directory, 'package.json'), JSON.stringify(rootManifest));
@@ -290,19 +290,19 @@ test('leaf SDK checks reject root fallback and mixed installed versions while al
   await installedFixture(directory, '@deepseek-ai/dsh-agent', '0.2.2-rc.1');
   const oldRuntime = await assertDshSdk(resolve(worktrees, 'package.json'), worktreesManifest);
   assert.equal(oldRuntime.getDshRuntimeVersion(), '0.2.2-rc.1', 'matching root fallback is valid for Worktrees');
-  await assert.rejects(assertDshSdk(manifestFile, manifest), /resolved SDK runtime is 0\.2\.2-rc\.1, expected exactly 0\.2\.2-rc\.2/u);
-  await installedFixture(leaf, '@deepseek-ai/dsh-app-boot', '0.2.2-rc.2');
-  await assert.rejects(assertDshSdk(manifestFile, manifest), /resolved SDK @deepseek-ai\/dsh-agent is 0\.2\.2-rc\.1, expected exactly 0\.2\.2-rc\.2/u);
-  await installedFixture(leaf, '@deepseek-ai/dsh-agent', '0.2.2-rc.2');
+  await assert.rejects(assertDshSdk(manifestFile, manifest), /resolved SDK runtime is 0\.2\.2-rc\.1, expected exactly 0\.2\.2-rc\.3/u);
+  await installedFixture(leaf, '@deepseek-ai/dsh-app-boot', '0.2.2-rc.3');
+  await assert.rejects(assertDshSdk(manifestFile, manifest), /resolved SDK @deepseek-ai\/dsh-agent is 0\.2\.2-rc\.1, expected exactly 0\.2\.2-rc\.3/u);
+  await installedFixture(leaf, '@deepseek-ai/dsh-agent', '0.2.2-rc.3');
   const runtime = await assertDshSdk(manifestFile, manifest);
-  assert.equal(runtime.getDshRuntimeVersion(), '0.2.2-rc.2');
+  assert.equal(runtime.getDshRuntimeVersion(), '0.2.2-rc.3');
   const rootRuntime = await assertDshSdk(resolve(directory, 'package.json'), rootManifest);
   assert.equal(rootRuntime.getDshRuntimeVersion(), '0.2.2-rc.1', 'newer leaf resolution must not retarget the root');
   for (const field of ['dependencies', 'devDependencies', 'peerDependencies'] as const) {
     const mixed = { ...manifest, [field]: { '@deepseek-ai/dsh-agent': '0.2.2-rc.1' } };
-    await assert.rejects(assertDshSdk(manifestFile, mixed), /SDK @deepseek-ai\/dsh-agent must be exactly 0\.2\.2-rc\.2/u);
+    await assert.rejects(assertDshSdk(manifestFile, mixed), /SDK @deepseek-ai\/dsh-agent must be exactly 0\.2\.2-rc\.3/u);
   }
-  for (const version of [undefined, '', '^0.2.2-rc.2', '>=0.2.2-rc.2', 'workspace:*']) {
+  for (const version of [undefined, '', '^0.2.2-rc.3', '>=0.2.2-rc.3', 'workspace:*']) {
     const invalid: PackageManifest = { ...manifest, engines: version === undefined ? {} : { dsh: version } };
     await assert.rejects(assertDshSdk(manifestFile, invalid), /one exact engines\.dsh version/u);
   }
@@ -324,7 +324,7 @@ test('package-targeted pi probes follow the nested adapter dependency rather tha
   await writeFile(rootFile, JSON.stringify({ private: true }));
   await writeFile(leafFile, JSON.stringify({ name: 'leaf' }));
   const rootEntry = await installedFixture(directory, '@deepseek-ai/dsh-llm-pi-ai', '0.2.2-rc.1');
-  const leafEntry = await installedFixture(leaf, '@deepseek-ai/dsh-llm-pi-ai', '0.2.2-rc.2');
+  const leafEntry = await installedFixture(leaf, '@deepseek-ai/dsh-llm-pi-ai', '0.2.2-rc.3');
   await installedFixture(directory, '@earendil-works/pi-ai', '1.1.0');
   await installedFixture(leaf, '@earendil-works/pi-ai', '9.9.9');
   const nested = await installedFixture(dirname(leafEntry), '@earendil-works/pi-ai', '1.3.0');
@@ -335,9 +335,9 @@ test('package-targeted pi probes follow the nested adapter dependency rather tha
   assert.equal(adapterPiVersion(adapterEntryForPackage(leafFile)), '1.3.0', 'only the nested Better adapter is certified');
 });
 
-test('CI pins and probes the Better rc2 minimum without weakening recursive verification', async () => {
+test('CI pins and probes the Better rc3 minimum without weakening recursive verification', async () => {
   const workflow = await readFile(resolve(root, '.github/workflows/ci.yml'), 'utf8');
-  assert.match(workflow, /'@deepseek-ai\/dsh-llm-pi-ai@0\.2\.2-rc\.2>@earendil-works\/pi-ai': 1\.3\.0/u);
+  assert.match(workflow, /'@deepseek-ai\/dsh-llm-pi-ai@0\.2\.2-rc\.3>@earendil-works\/pi-ai': 1\.3\.0/u);
   assert.match(workflow, /run: pnpm exec tsx scripts\/check-pi\.ts 1\.3\.0 packages\/better-copilot/u);
   assert.doesNotMatch(workflow, /pi-ai.*1\.1\.0/u);
   assert.equal(workflow.match(/run: pnpm run verify/gu)?.length, 2);

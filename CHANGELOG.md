@@ -1,5 +1,17 @@
 # Monorepo changelog
 
+## Better Copilot 0.5.1 — DSH 0.2.2-rc.3 compatibility (local preparation)
+
+- Target exact DSH and DSH peer packages `0.2.2-rc.3` for Better Copilot only.
+  Worktrees and the root development SDK remain on `0.2.2-rc.1`.
+- Keep pi-ai peer `^1.3.0` (tested baseline `1.3.0`), Zod `4.6.6`, existing
+  configuration, catalog cache domain/format and credential record keys unchanged.
+- Verify the existing adapter, search, storage, Auto review and subagent badge
+  contracts against rc.3; no runtime API shim or persisted-data migration is needed.
+  Update exact-host regression checks and the CI minimum-pi adapter override.
+- Prepare `0.5.1` for the package-specific release workflow; no publication,
+  profile installation, live GUI testing or account testing is performed.
+
 ## Better Copilot 0.5.0 — DSH 0.2.2-rc.2 migration (local preparation)
 
 - Target exact DSH/DSH peers `0.2.2-rc.2`, pi-ai peer `^1.3.0` (tested
@@ -379,8 +391,8 @@
 
 Package history and versions are independent:
 
-- [Better Copilot changelog](<packages/better-copilot/CHANGELOG.md>) — `0.5.0`,
-  prepared locally for exact DSH `0.2.2-rc.2`, retaining the `0.4.0` persistent
+- [Better Copilot changelog](<packages/better-copilot/CHANGELOG.md>) — `0.5.1`,
+  prepared locally for exact DSH `0.2.2-rc.3`, retaining the `0.4.0` persistent
   catalog/live-refresh behavior and the consolidated catalog `0.2.9`, search
   `0.1.5` and tool schema `0.1.3` capabilities. Staged for npm.
 - The predecessor packages no longer exist in this repository; their release notes

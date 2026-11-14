@@ -45,12 +45,12 @@ jobs:
         with:
           version: 11.7.0
           run_install: false
-      # Better Copilot's rc2 adapter and published peer range require ^1.3.0.
+      # Better Copilot's rc3 adapter and published peer range require ^1.3.0.
       # Pin its oldest supported pi-ai, leaving Worktrees/root rc1 independent.
       # This scoped override exists only in CI; pnpm 11 reads it from the workspace.
       - name: Pin the minimum supported pi-ai in this checkout only
         run: |
-          printf "overrides:\n  '@deepseek-ai/dsh-llm-pi-ai@0.2.2-rc.2>@earendil-works/pi-ai': 1.3.0\n" >> pnpm-workspace.yaml
+          printf "overrides:\n  '@deepseek-ai/dsh-llm-pi-ai@0.2.2-rc.3>@earendil-works/pi-ai': 1.3.0\n" >> pnpm-workspace.yaml
           pnpm install --no-frozen-lockfile --ignore-scripts
       - name: Assert the Better Copilot adapter-resolved pi-ai version
         run: pnpm exec tsx scripts/check-pi.ts 1.3.0 packages/better-copilot

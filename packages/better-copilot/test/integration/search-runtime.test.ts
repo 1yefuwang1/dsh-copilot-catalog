@@ -19,7 +19,7 @@ const resultBody = () => ({ status: 'completed', output: [
   ] } },
   { id: 'msg_synthetic', type: 'message', status: 'completed', content: [{ type: 'output_text', text: 'Synthetic answer', annotations: [] }] },
 ] });
-/** Parse the same plain provider ids the shipped cordis.patch.yml supplies; rc.2 yields live volatile refs. */
+/** Parse the same plain provider ids the shipped cordis.patch.yml supplies; rc.3 yields live volatile refs. */
 const webConfig = () => WebRuntime.Config({ searchProvider: COPILOT_SEARCH_PROVIDER_ID, fetchProvider: 'http' });
 
 /** The merged plugin also injects a web service and installs guard/identity seams. */
@@ -100,7 +100,7 @@ test('GHE search resolves and refreshes real public auth through the actual DSH 
   } finally { dispose(); }
 });
 
-test('rc.2 web selection and account credentials are resolved again without remounting', async () => {
+test('rc.3 web selection and account credentials are resolved again without remounting', async () => {
   const runtime = await loadRuntime();
   const host = new Context();
   const config = webConfig();
@@ -139,7 +139,7 @@ test('rc.2 web selection and account credentials are resolved again without remo
   } finally { dispose(); }
 });
 
-test('rc.2 web directory lists Copilot and reports search registration/disposal while preserving result limits', async () => {
+test('rc.3 web directory lists Copilot and reports search registration/disposal while preserving result limits', async () => {
   const runtime = await loadRuntime();
   const host = new Context();
   let directoryChanges = 0;

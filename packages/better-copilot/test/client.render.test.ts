@@ -118,7 +118,7 @@ test('the settled selection is used when the projection carries no pending route
   assert.deepEqual(plain(real.selectedOf({ lastUsed: high, next: { provider: 'deepseek-account', model: 'deepseek-flash' } })), { provider: 'deepseek-account', model: 'deepseek-flash' });
 });
 
-test('the rc.2 host projection retains the next wire field for pending and settled child routes', () => {
+test('the rc.3 host projection retains the next wire field for pending and settled child routes', () => {
   const projection = modelSelectionProjectionDefinition;
   for (const raw of [{ lastUsed: null, pending: high }, { lastUsed: high, pending: null }]) {
     const state = projection.stateSchema.parse(raw);

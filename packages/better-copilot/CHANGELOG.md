@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.1 — DSH 0.2.2-rc.3 compatibility (local preparation)
+
+- Target exact DSH and DSH peer packages `0.2.2-rc.3` for Better Copilot only.
+  Worktrees and the root development SDK remain on `0.2.2-rc.1`.
+- Keep pi-ai peer `^1.3.0` (tested baseline `1.3.0`), Zod `4.6.6`, existing
+  configuration, catalog cache domain/format and credential record keys unchanged.
+- Verify the existing adapter, search, storage, Auto review and subagent badge
+  contracts against rc.3; no runtime API shim or persisted-data migration is needed.
+  Update exact-host regression checks and the CI minimum-pi adapter override.
+- Prepare `0.5.1` for the package-specific release workflow; no publication,
+  profile installation, live GUI testing or account testing is performed.
+
 ## 0.5.0 — DSH 0.2.2-rc.2 migration (local preparation)
 
 - Target exact DSH and DSH peer packages `0.2.2-rc.2`, pi-ai peer `^1.3.0`
