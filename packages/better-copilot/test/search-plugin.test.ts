@@ -158,6 +158,7 @@ test('volatile settings are snapshotted once per call and update only the next r
     search,
     autoReview: Config().autoReview,
     toolSchema: { providers: { get: () => ['github-copilot'] }, families: { get: () => ['gemini'] }, logFixes: { get: () => false } },
+    streamGuard: Config().streamGuard,
   };
   await createPlugin(dependencies({ fetcher: mockFetch(async (url, init) => {
     if (String(url).endsWith('/models')) return Response.json({ data: [accountItem('gpt-6-sol')] });

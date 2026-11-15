@@ -22,9 +22,10 @@ import { installAutoReviewRouting } from './auto-review.js';
 import { normalizeCopilotTemperature } from './temperature.js';
 import { createCatalogController } from './catalog-controller.js';
 import { openCatalogStore } from './catalog-store.js';
-import { adapterContext } from './catalog-adapter.js';
+import { adapterContext, type StreamGuardOptions } from './catalog-adapter.js';
 import type { CatalogCache } from './catalog-types.js';
 import type { DomainFacility } from '@deepseek-ai/dsh-storage-domain';
+import { DEFAULT_STREAM_IDLE_TIMEOUT_MS } from './stream-guard.js';
 
 export const name = 'better-copilot';
 
@@ -71,6 +72,27 @@ type CredentialRef = Parameters<Parameters<OriginalAdapter['apply']>[0]['credent
 /** One settings snapshot per assembly: the guard never mixes configuration revisions. */
 function guardSettings(config: BetterCopilotConfig['toolSchema']): GuardSettings {
   return { providers: config.providers.get(), families: config.families.get(), logFixes: config.logFixes.get() };
+}
+
+/**
+ * Read live stream-guard settings. An explicit timeout wins. Otherwise the
+ * route's own stream idle timeout is the bound, so the guard is not stricter
+ * than the adapter's existing watchdog unless the configuration asks for it.
+ * @param config - the resolved plugin configuration.
+ * @returns the guard policy consumed by the adapter decorator.
+ */
+export function createStreamGuardPolicy(config: BetterCopilotConfig): StreamGuardOptions {
+  return {
+    enabled: (provider) => config.streamGuard.enabled.get() && config.streamGuard.providers.get().includes(provider),
+    timeoutMs: (provider) => {
+      const configured = config.streamGuard.noProgressTimeoutMs.get();
+      if (configured !== undefined) return configured;
+      const route = config.providers.get()[provider]?.streamIdleTimeoutMs;
+      return typeof route === 'number' && Number.isFinite(route) && route > 0
+        ? route
+        : DEFAULT_STREAM_IDLE_TIMEOUT_MS;
+    },
+  };
 }
 
 /**
@@ -302,7 +324,7 @@ export function createPlugin(dependencies: BetterCopilotDependencies): BetterCop
         log('info', 'Copilot catalog synced: %d enabled models; unsupported new IDs: %s', result.count, JSON.stringify(result.unsupported));
       }
       if (accountEndpoint) log('info', 'Copilot runtime endpoint: %s', accountEndpoint);
-      return original.apply(adapterContext(ctx, controller.ensure), {
+      return original.apply(adapterContext(ctx, controller.ensure, createStreamGuardPolicy(config)), {
         providers: providersFacade(config.providers, () => accountEndpoint, () => revision),
       } as unknown as PluginConfig);
     },

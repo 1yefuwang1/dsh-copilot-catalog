@@ -16,6 +16,8 @@ One DeepSeek Harness plugin for GitHub Copilot:
   changing the conversation model or the builtin authorization policy.
 - **Temperature compatibility** — omits unsupported sampling controls on the
   Copilot wire, including the builtin reviewer's hard-coded zero.
+- **Bounded stream-progress retry** — aborts an attempt that emits only empty
+  control events and lets DSH's ordinary retry policy schedule the next one.
 
 The plugin is a replacement for, and superset of, the earlier separate
 `dsh-copilot-catalog`, `dsh-copilot-search` and `dsh-copilot-tool-schema`
@@ -23,7 +25,7 @@ packages. Their behaviour is consolidated here; see the migration notes below.
 
 ## Compatibility
 
-- Better Copilot `0.5.1`: exact DSH and DSH peer packages `0.2.2-rc.3`.
+- Better Copilot `0.5.2`: exact DSH and DSH peer packages `0.2.2-rc.3`.
 - `@earendil-works/pi-ai`: peer `^1.3.0`, tested baseline `1.3.0`.
 - Zod: `4.6.6`.
 - DSH CLI/host runtime: Node.js `>=24.9.0`.
@@ -42,7 +44,7 @@ affiliated with GitHub, DeepSeek or the pi-ai maintainers.
 ## Installation
 
 Install or link this leaf package, not the monorepo root. Its package name is
-`dsh-better-copilot`. Version `0.5.1` is staged for npm under the package-specific
+`dsh-better-copilot`. Version `0.5.2` is staged for npm under the package-specific
 release workflow; no live GUI or account testing is claimed. Until that staged
 version is approved, use an explicitly built local tarball or workspace link only
 if you intend to change a profile. Restart the DSH host after installing or
@@ -88,16 +90,46 @@ The bundle patch:
       # Optional: leave unset for Terra on Copilot, current model otherwise
       # model: gpt-6.1-terra
       # reasoningEffort: high
+    streamGuard:
+      enabled: true
+      providers: [github-copilot]
+      # noProgressTimeoutMs: 300000  # default: the route's streamIdleTimeoutMs
 ```
 
 `providers` is the pi-ai adapter's own schema, reused unchanged, so every
 provider setting behaves exactly as it does with the stock adapter. `search`
 configures the web-search provider; `toolSchema` configures the Gemini guard;
-`autoReview` configures the builtin review request only.
+`autoReview` configures the builtin review request only; `streamGuard` bounds a
+model attempt by stream progress.
 
 Loader patches replace a row's `config` wholesale, not key by key: an override
 must restate every non-default group it needs together. Omitted `catalog`,
-`search`, `toolSchema` and `autoReview` groups resolve their defaults.
+`search`, `toolSchema`, `autoReview` and `streamGuard` groups resolve their
+defaults.
+
+## Stream guard
+
+`streamGuard` bounds one model attempt by progress instead of by chunk arrival.
+The pi-ai adapter's idle watchdog resets whenever any chunk arrives, so a
+provider that emits empty reasoning blocks can keep an attempt alive until the
+transport fails. The guard counts only chunks that carry output or accounting: non-whitespace
+text or reasoning deltas, tool-call deltas with a name or argument bytes, a
+completed non-empty text or reasoning block, a completed tool call, and usage.
+Block starts and empty block ends do not count.
+
+The timer runs only while a provider read is outstanding, so time the UI spends
+rendering between chunks does not count. On expiry the guard aborts the attempt,
+closes the inner stream with a time limit, and throws `TIMEOUT`. DSH's retry
+policy can then schedule the next attempt and record it in the normal retry
+chain. A caller abort remains `ABORTED` and is never retried. A terminal finish
+chunk is delivered immediately and is never converted into a retry, so a
+completed tool call is not repeated.
+
+`noProgressTimeoutMs` defaults to the route profile's `streamIdleTimeoutMs`,
+which is five minutes unless the profile sets it. The guard is therefore not
+stricter than the existing idle watchdog by default. Set it lower to retry
+chatty empty streams sooner, or set `streamGuard.enabled: false` to disable the
+guard. `providers` defaults to `['github-copilot']`.
 
 ## Persistent model catalog
 

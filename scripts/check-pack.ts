@@ -9,11 +9,12 @@ export interface PackedPackage { name: string; version: string; files: { path: s
 
 const policies: Record<string, Policy> = {
   'dsh-better-copilot': {
-    modules: ['index', 'plugin', 'config', 'runtime', 'catalog', 'catalog-adapter', 'catalog-cache', 'catalog-controller', 'catalog-store', 'discovery', 'identity', 'catalog-types', 'auth', 'endpoint', 'errors', 'provider', 'refresh', 'responses', 'search', 'search-types', 'schema', 'guard', 'guard-types', 'auto-review', 'temperature'],
+    modules: ['index', 'plugin', 'config', 'runtime', 'catalog', 'catalog-adapter', 'catalog-cache', 'catalog-controller', 'catalog-store', 'discovery', 'identity', 'catalog-types', 'auth', 'endpoint', 'errors', 'provider', 'refresh', 'responses', 'search', 'search-types', 'schema', 'guard', 'guard-types', 'auto-review', 'temperature', 'stream-guard'],
     // The three predecessor allowlists total 196,755 bytes; the merged leaf keeps
     // bounded headroom below their combined 450,000-byte bound. The read-only
-    // subagent route badge adds the package's first browser bundle.
-    extras: ['dist/client.js'], maxBytes: 230_000,
+    // subagent route badge adds the package's first browser bundle; the stream
+    // guard and its documented configuration add about 13k.
+    extras: ['dist/client.js'], maxBytes: 260_000,
   },
   '@1yefuwang1/dsh-worktrees': {
     modules: ['index', 'types', 'errors', 'runtime', 'schema', 'store', 'sessions', 'context', 'service', 'branch-release', 'git', 'naming', 'rpc', 'projects', 'project-store', 'project-rpc', 'project-context', 'quiet-rpc', 'first-message', 'cleanup-store', 'cleanup', 'recovery-rpc'],

@@ -1,5 +1,19 @@
 # Monorepo changelog
 
+## Better Copilot 0.5.2 — bounded stream-progress retry
+
+- Add `streamGuard` with `enabled`, `providers` and an optional
+  `noProgressTimeoutMs`. It defaults to enabled for `github-copilot` and to the
+  route's `streamIdleTimeoutMs`, so it is not stricter than the existing idle
+  watchdog unless configured.
+- Count only content-bearing chunks as progress, so empty reasoning blocks and
+  other control-only events cannot keep one attempt alive. On expiry, abort the
+  attempt, close the inner iterator with a time limit and throw `TIMEOUT` so
+  DSH's retry policy schedules the next attempt.
+- Preserve caller cancellation as `ABORTED`, deliver a terminal finish chunk
+  before any stall handling, and wrap both the direct and prepared adapter
+  stream paths. Add unit and `LlmRuntime` integration coverage.
+
 ## Better Copilot 0.5.1 — DSH 0.2.2-rc.3 compatibility (local preparation)
 
 - Target exact DSH and DSH peer packages `0.2.2-rc.3` for Better Copilot only.

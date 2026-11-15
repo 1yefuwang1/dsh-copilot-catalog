@@ -1,17 +1,24 @@
 import { LlmAdapter } from '@deepseek-ai/dsh-llm';
 import type { GenerateOptions, PreparedAdapterCall, StreamChunk } from '@deepseek-ai/dsh-llm';
 import type { PluginContext } from './catalog-types.js';
+import { guardStream } from './stream-guard.js';
 
 /** Refresh the owning account's catalog before the adapter captures connection/model facts. */
 type EnsureCatalog = (model: string | undefined, signal?: AbortSignal) => Promise<void>;
 const COPILOT = 'github-copilot';
+
+/** Live policy for bounding one model attempt by stream progress. */
+export interface StreamGuardOptions {
+  enabled(provider: string): boolean;
+  timeoutMs(provider: string): number;
+}
 
 /**
  * Decorate the public adapter seam, not its private registry/snapshot state.
  * In particular, AgentLoop prepares its call before the llm/stream waterfall,
  * so waiting only in that waterfall cannot refresh a prepared call's metadata.
  */
-export function createCatalogAdapter(adapter: LlmAdapter, ensure: EnsureCatalog): LlmAdapter {
+export function createCatalogAdapter(adapter: LlmAdapter, ensure: EnsureCatalog, guard?: StreamGuardOptions): LlmAdapter {
   return new class extends LlmAdapter {
     override providerInfo(...args: Parameters<LlmAdapter['providerInfo']>) {
       return adapter.providerInfo(...args);
@@ -37,11 +44,31 @@ export function createCatalogAdapter(adapter: LlmAdapter, ensure: EnsureCatalog)
       if (provider === COPILOT) await ensure(model, signal);
       // Preserve the adapter-owned generation and its stream receiver exactly.
       // Refreshing again at prepared dispatch would break capability/wire binding.
-      return adapter.prepareCall(provider, model, signal);
+      const prepared = await adapter.prepareCall(provider, model, signal);
+      if (guard === undefined || !guard.enabled(provider)) return prepared;
+      return {
+        model: prepared.model,
+        stream: (options) => {
+          if (!guard.enabled(provider)) return prepared.stream(options);
+          return guardStream(
+            (next) => prepared.stream(next),
+            options,
+            guard.timeoutMs(provider),
+          );
+        },
+      };
     }
     override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
       if (options.provider === COPILOT) await ensure(options.model, options.signal);
-      yield* adapter.stream(options);
+      if (guard === undefined || !guard.enabled(options.provider)) {
+        yield* adapter.stream(options);
+        return;
+      }
+      yield* guardStream(
+        (next) => adapter.stream(next),
+        options,
+        guard.timeoutMs(options.provider),
+      );
     }
   }();
 }
@@ -51,7 +78,7 @@ export function createCatalogAdapter(adapter: LlmAdapter, ensure: EnsureCatalog)
  * decorated, while Cordis still owns registration/disposal on the original ctx.
  * It is not a new context/service and must not be installed into the profile.
  */
-export function adapterContext(ctx: PluginContext, ensure: EnsureCatalog): PluginContext {
+export function adapterContext(ctx: PluginContext, ensure: EnsureCatalog, guard?: StreamGuardOptions): PluginContext {
   const llm = ctx.llm;
   // Existing plugin doubles (and optional-service callers) have no LLM seam.
   if (!llm || typeof llm.registerAdapter !== 'function') return ctx;
@@ -62,7 +89,7 @@ export function adapterContext(ctx: PluginContext, ensure: EnsureCatalog): Plugi
     // A dormant/non-Copilot registration may gain the Copilot route through
     // its public handle.replace(). Decorate once now so that handle stays intact;
     // the adapter itself gates refresh strictly by the requested provider.
-    createCatalogAdapter(adapter, ensure),
+    createCatalogAdapter(adapter, ensure, guard),
   ]);
   const methods = new Map<PropertyKey, { original: Function; bound: Function }>();
   const service = new Proxy(llm, {

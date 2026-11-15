@@ -63,6 +63,24 @@ test('builtin review overrides are optional volatile leaves with an enabled defa
   assert.throws(() => Config({ autoReview: { reasoningEffort: '' } }));
 });
 
+test('stream guard settings enable Copilot by default and bound the override', () => {
+  const defaults = Config({ providers: {} });
+  assert.equal(defaults.streamGuard.enabled.get(), true);
+  assert.deepEqual(defaults.streamGuard.providers.get(), ['github-copilot']);
+  assert.equal(defaults.streamGuard.noProgressTimeoutMs.get(), undefined);
+
+  const overridden = Config({
+    streamGuard: { enabled: false, providers: ['github-copilot', 'other'], noProgressTimeoutMs: 120_000 },
+  });
+  assert.equal(overridden.streamGuard.enabled.get(), false);
+  assert.deepEqual(overridden.streamGuard.providers.get(), ['github-copilot', 'other']);
+  assert.equal(overridden.streamGuard.noProgressTimeoutMs.get(), 120_000);
+
+  for (const noProgressTimeoutMs of [0, -1, 1.5, 2_147_483_648]) {
+    assert.throws(() => Config({ streamGuard: { noProgressTimeoutMs } }));
+  }
+});
+
 test('catalog cache settings are volatile with bounded demand-refresh defaults', () => {
   const defaults = Config();
   assert.equal(defaults.catalog.cache.get(), true);

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import z from '@deepseek-ai/schemastery';
 import { createConfig } from '../dist/config.js';
-import { createPlugin, providersFacade } from '../dist/plugin.js';
+import { createPlugin, createStreamGuardPolicy, providersFacade } from '../dist/plugin.js';
 import { accountItem, catalogFixture, discoveryFixture, fetchRequest, runtimeDependencies, type FixtureOptions, type FixtureCredentials } from './catalog-helpers.js';
 
 interface ProviderProfile { baseURL?: string; apiKeyEnv?: string }
@@ -77,6 +77,29 @@ test('the merged plugin replaces the adapter and preserves its provider schema',
   assert.equal(invocation[2].providers.get()['github-copilot']!.baseURL, 'https://api.enterprise.githubcopilot.com');
   assert.equal(f.config.providers.get()['github-copilot']!.baseURL, undefined);
   assert.deepEqual(invocation[3], ['gpt-6-sol']);
+});
+
+test('stream guard policy derives its bound from the route and honors overrides', () => {
+  const defaults = createStreamGuardPolicy(Config({ providers: { 'github-copilot': {} } }));
+  assert.equal(defaults.enabled('github-copilot'), true);
+  assert.equal(defaults.enabled('openai'), false);
+  assert.equal(defaults.timeoutMs('github-copilot'), 300_000);
+
+  const route = createStreamGuardPolicy(Config({ providers: { 'github-copilot': { streamIdleTimeoutMs: 42_000 } } }));
+  assert.equal(route.timeoutMs('github-copilot'), 42_000);
+
+  const override = createStreamGuardPolicy(Config({
+    providers: { 'github-copilot': { streamIdleTimeoutMs: 42_000 } },
+    streamGuard: { noProgressTimeoutMs: 1_000 },
+  }));
+  assert.equal(override.timeoutMs('github-copilot'), 1_000);
+
+  const disabled = createStreamGuardPolicy(Config({ streamGuard: { enabled: false } }));
+  assert.equal(disabled.enabled('github-copilot'), false);
+
+  const other = createStreamGuardPolicy(Config({ streamGuard: { providers: ['other'] } }));
+  assert.equal(other.enabled('other'), true);
+  assert.equal(other.enabled('github-copilot'), false);
 });
 
 test('wire identity is installed by default and released with the plugin effect', async (t) => {

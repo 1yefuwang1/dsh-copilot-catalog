@@ -7,7 +7,7 @@ export const DEFAULT_SEARCH_MODEL = 'gpt-6.1-sol';
 export interface Volatile<T> { get(): T }
 
 /** One adapter provider profile; only the fields this plugin reads are named here. */
-export interface ProviderProfile { baseURL?: string; apiKeyEnv?: string }
+export interface ProviderProfile { baseURL?: string; apiKeyEnv?: string; streamIdleTimeoutMs?: number }
 
 /** The adapter's provider map as the host hands it to a mounted plugin. */
 export interface ProvidersValue { get(): Record<string, ProviderProfile> }
@@ -43,6 +43,14 @@ export interface CatalogSettings {
   refreshIntervalMs: Volatile<number>;
 }
 
+/** Bound one model attempt by stream progress instead of chunk arrival. */
+export interface StreamGuardSettings {
+  enabled: Volatile<boolean>;
+  providers: Volatile<string[]>;
+  /** Omitted uses the provider route's streamIdleTimeoutMs, then five minutes. */
+  noProgressTimeoutMs: Volatile<number | undefined>;
+}
+
 /** The one configuration object every capability reads from. */
 export interface BetterCopilotConfig {
   providers: ProvidersValue;
@@ -50,6 +58,7 @@ export interface BetterCopilotConfig {
   search: SearchSettings;
   toolSchema: GuardConfigValue;
   autoReview: AutoReviewSettings;
+  streamGuard: StreamGuardSettings;
 }
 
 /** User-facing configuration: plain values, before volatile resolution. */
@@ -76,6 +85,11 @@ export interface BetterCopilotConfigInput {
     enabled?: boolean;
     model?: string;
     reasoningEffort?: string;
+  };
+  streamGuard?: {
+    enabled?: boolean;
+    providers?: string[];
+    noProgressTimeoutMs?: number;
   };
 }
 
@@ -126,6 +140,16 @@ export const CatalogConfig = z.object({
   refreshIntervalMs: z.number().step(1).min(60_000).max(86_400_000).default(900_000).volatile(),
 });
 
+/** A progress timeout is a timeout, so zero is rejected rather than disabling the guard. */
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
+
+/** Bounded model-attempt progress guard; providers default to the Copilot route. */
+export const StreamGuardConfig = z.object({
+  enabled: z.boolean().default(true).volatile(),
+  providers: z.array(z.string()).default(['github-copilot']).volatile(),
+  noProgressTimeoutMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS).volatile(),
+});
+
 /** Only the builtin reviewer is affected; exact model/effort ids are validated by LLM dispatch. */
 export const AutoReviewConfig = z.object({
   enabled: z.boolean().default(true).volatile(),
@@ -165,5 +189,6 @@ export function createConfig(originalConfig: unknown): BetterCopilotConfigSchema
     search: SearchConfig,
     toolSchema: GuardConfig,
     autoReview: AutoReviewConfig,
+    streamGuard: StreamGuardConfig,
   }) as unknown as BetterCopilotConfigSchema;
 }

@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
 import { Context } from '@deepseek-ai/cordis';
 import {
-  LlmAdapter, LlmRuntime, type AdapterRegistrationHandle, type GenerateOptions,
+  LlmAdapter, LlmError, LlmRuntime, type AdapterRegistrationHandle, type GenerateOptions,
   type LlmResolvedModelInfo, type PreparedAdapterCall, type StreamChunk,
 } from '@deepseek-ai/dsh-llm';
 import * as original from '@deepseek-ai/dsh-llm-pi-ai';
@@ -19,6 +20,28 @@ const drain = async (stream: AsyncIterable<StreamChunk>) => {
   for await (const chunk of stream) chunks.push(chunk);
   return chunks;
 };
+const emptyChatter = (): AsyncIterable<StreamChunk> => (async function* () {
+  for (let index = 0; ; index++) {
+    yield { type: 'block-start', index, blockType: 'reasoning' };
+    await delay(5);
+    yield { type: 'block-end', index, block: { type: 'reasoning', text: '' } };
+    await delay(5);
+  }
+})();
+
+/** A provider that never terminates and never produces content. */
+class StallingAdapter extends LlmAdapter {
+  override providerInfo(provider: string) {
+    return { id: provider, name: 'Stalling provider' };
+  }
+  override async prepareCall(provider: string, model: string): Promise<PreparedAdapterCall> {
+    return { model: { provider, id: model, name: model }, stream: () => emptyChatter() };
+  }
+  override stream(): AsyncIterable<StreamChunk> {
+    return emptyChatter();
+  }
+}
+
 const deferred = () => {
   let resolve!: () => void;
   const promise = new Promise<void>((done) => { resolve = done; });
@@ -248,6 +271,36 @@ test('public LlmRuntime.stream refreshes at its adapter preparation boundary exa
       ['prepareCall', 'preparedStream']);
     assert.ok(chunks.at(-1)?.type === 'finish');
     assert.equal(original.calls.at(-1)!.args[1], 2000);
+  } finally { registration(); }
+});
+
+test('guard bounds both the direct and prepared stream paths', async () => {
+  const guard = { enabled: () => true, timeoutMs: () => 30 };
+  const wrapped = createCatalogAdapter(new StallingAdapter(), async () => {}, guard);
+  await assert.rejects(
+    drain(wrapped.stream(request())),
+    (error) => error instanceof LlmError && error.failure.code === 'TIMEOUT',
+  );
+  const prepared = await wrapped.prepareCall(COPILOT, 'm');
+  await assert.rejects(
+    drain(prepared.stream(request())),
+    (error) => error instanceof LlmError && error.failure.code === 'TIMEOUT',
+  );
+});
+
+test('a guarded timeout becomes a retryable finish through LlmRuntime', async () => {
+  const host = new Context();
+  const llm = new LlmRuntime(host);
+  const guard = { enabled: () => true, timeoutMs: () => 30 };
+  const registration = llm.registerAdapter([COPILOT], createCatalogAdapter(new StallingAdapter(), async () => {}, guard));
+  try {
+    const prepared = await llm.prepareCall({ provider: COPILOT, model: 'm' });
+    const chunks = await drain(prepared.stream({ ...request(), ...prepared.config }));
+    assert.ok(chunks.some((chunk) => chunk.type === 'block-end'), 'the failed attempt keeps its partial frames');
+    const finish = chunks.at(-1);
+    assert.ok(finish?.type === 'finish');
+    assert.equal(finish.reason.kind, 'error');
+    assert.equal(finish.reason.kind === 'error' ? finish.reason.failure.code : undefined, 'TIMEOUT');
   } finally { registration(); }
 });
 

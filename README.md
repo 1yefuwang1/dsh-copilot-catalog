@@ -9,7 +9,7 @@ of the staged release.
 
 | Package | Purpose | DSH behavior |
 | --- | --- | --- |
-| [dsh-better-copilot](<packages/better-copilot/README.md>) | One Copilot plugin: model discovery, wire identity, native web search, Gemini guard and builtin review overrides | Replaces the standard pi-ai adapter (one row, one config: `providers`, `search`, `toolSchema`, `autoReview`), registers `github-copilot-search`, normalizes wire compatibility and selects the builtin reviewer model/effort |
+| [dsh-better-copilot](<packages/better-copilot/README.md>) | One Copilot plugin: model discovery, wire identity, native web search, Gemini guard, builtin review overrides and a bounded stream-progress retry guard | Replaces the standard pi-ai adapter (one row, one config: `providers`, `search`, `toolSchema`, `autoReview`, `streamGuard`), registers `github-copilot-search`, normalizes wire compatibility, selects the builtin reviewer model/effort and bounds an attempt that emits only empty control events |
 | [@1yefuwang1/dsh-worktrees](<packages/worktrees/README.md>) | Multi-folder projects with Local/worktree threads | Adds metadata-only project grouping, main-folder defaults/reminders, native first-Send worktree setup and branch naming, configurable inactivity cleanup, explicit branch-choice Local recovery with staged input and exact-ID reuse, and guarded handoff; no core or LLM adapter changes |
 
 The repository root is **private development tooling**, not a DSH plugin. Install
@@ -23,7 +23,7 @@ for the exact migration table.
 
 | Scope | Runtime baseline |
 | --- | --- |
-| Better Copilot `0.5.1` | Exact DSH and DSH peers `0.2.2-rc.3`; `@earendil-works/pi-ai` peer `^1.3.0`, tested baseline `1.3.0`; Zod `4.6.6` |
+| Better Copilot `0.5.2` | Exact DSH and DSH peers `0.2.2-rc.3`; `@earendil-works/pi-ai` peer `^1.3.0`, tested baseline `1.3.0`; Zod `4.6.6` |
 | Worktrees and root development SDK | DSH and DSH peers `0.2.2-rc.1`; unchanged by the Better Copilot migration |
 
 These are separate runtime baselines, not a claim that both plugins support the
@@ -207,7 +207,7 @@ A release selects **one package**, never the root or multiple packages at once:
 - `@1yefuwang1/dsh-worktrees-vX.Y.Z`
 
 The tag must match its leaf version and repository identity. `dsh-better-copilot` is
-`0.5.1`, prepared locally for exact DSH `0.2.2-rc.3`, pi-ai peer `^1.3.0`
+`0.5.2`, prepared locally for exact DSH `0.2.2-rc.3`, pi-ai peer `^1.3.0`
 (tested baseline `1.3.0`) and Zod `4.6.6`. It is staged for npm under the
 package-specific release workflow; no live GUI or account testing is claimed.
 It retains persistent
