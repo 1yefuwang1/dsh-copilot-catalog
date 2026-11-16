@@ -100,12 +100,13 @@ function protocolCompat(api: CopilotApi, reasoning: boolean, adaptiveThinking: b
   switch (api) {
     case 'openai-responses': return {
       supportsDeveloperRole: false,
-      supportsStrictMode: false,
+      // Emit "strict": false rather than omitting the key (omission triggers Copilot strict normalization).
+      supportsStrictMode: true,
       supportsLongCacheRetention: false,
     };
     case 'openai-completions': return {
       supportsDeveloperRole: false,
-      supportsStrictMode: false,
+      supportsStrictMode: true,
       supportsStore: false,
       supportsUsageInStreaming: false,
       supportsLongCacheRetention: false,

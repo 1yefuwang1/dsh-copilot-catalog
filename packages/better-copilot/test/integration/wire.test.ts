@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
+import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy';
 import { normalizeContext } from '@earendil-works/pi-ai/utils/transcript';
+import { selectAccountModels } from '../../dist/catalog.js';
+import { accountItem } from '../catalog-helpers.js';
 import { normalizeToolSchemas } from '../../dist/index.js';
 import * as fixtures from '../guard-fixtures.js';
 import { normalizeCopilotTemperature, withCopilotTemperatureSupport } from '../../dist/temperature.js';
@@ -116,4 +119,35 @@ test('negative control: the same declarations without the guard reach the wire w
   assert.equal(tools.length, 2);
   assert.equal(hasBucket(tools[0]!.function.parameters), false);
   assert.equal(hasBucket(tools[1]!.function.parameters), true);
+});
+
+test('discovered Responses models serialize strict: false rather than omitting strict on the wire', async () => {
+  const model = selectAccountModels({ data: [accountItem('gpt-6.1-terra')] }, {}).models['gpt-6.1-terra']!;
+  let capturedBody: { tools?: Array<{ name?: string; strict?: unknown; parameters?: { required?: unknown } }> } | undefined;
+  const sse = 'data: {"type":"response.completed","response":{"id":"r1","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}\n\n';
+  const fetcher = async (_url: unknown, init: { body?: string }) => {
+    capturedBody = JSON.parse(init.body ?? '{}');
+    return new Response(sse, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  };
+  const tools = [{
+    name: 'run_code',
+    description: 'Run code',
+    parameters: {
+      type: 'object' as const,
+      properties: {
+        code: { type: 'string' },
+        sandbox_permissions: { type: 'string' },
+      },
+      required: ['code'],
+    },
+  }] as unknown as NonNullable<Parameters<typeof normalizeContext>[0]['tools']>;
+  const stream = openAIResponsesApi().stream(
+    model as Parameters<ReturnType<typeof openAIResponsesApi>['stream']>[0],
+    normalizeContext({ messages: [{ role: 'user', content: 'hi', timestamp: 0 }], tools }),
+    { apiKey: 'unused', fetch: fetcher as unknown as typeof fetch },
+  );
+  try { for await (const _chunk of stream) { /* drain synthetic stream */ } } catch { /* capturedBody is verified below */ }
+  assert.ok(capturedBody?.tools?.length === 1);
+  assert.equal(capturedBody!.tools![0]!.strict, false);
+  assert.deepEqual(capturedBody!.tools![0]!.parameters?.required, ['code']);
 });

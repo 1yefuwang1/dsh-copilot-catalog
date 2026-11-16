@@ -1,5 +1,14 @@
 # Monorepo changelog
 
+## Better Copilot 0.5.3 — explicit non-strict Responses defaults
+
+- Default ordinary function tools to `strict: false` on trusted Copilot Responses
+  requests, consistently across bundled, discovered and fallback models. Preserve
+  explicit strict settings, custom/grammar tools and native tools.
+- Enable explicit strict-field serialization for dynamically discovered OpenAI
+  routes. Verify local plugin regression tests and live Copilot tool calls on
+  GPT-6.1 Terra, GPT-6.1 Sol and Grok 4.7. No cache-hit benchmark is claimed.
+
 ## Better Copilot 0.5.2 — bounded stream-progress retry
 
 - Add `streamGuard` with `enabled`, `providers` and an optional

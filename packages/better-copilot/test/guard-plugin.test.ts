@@ -7,6 +7,38 @@ import * as fixtures from './guard-fixtures.js';
 import { minimalDependencies } from './merged-fixtures.js';
 
 const Config = createConfig(minimalDependencies().original.Config);
+
+test('Responses defaults cover every model without catalog discovery and preserve explicit tools', async () => {
+  await withPlugin(Config({ toolSchema: { families: [] } }), async ({ captures }) => {
+    for (const model of ['gpt-6.1-sol', 'gpt-6.1-terra', 'grok-4.7', 'opaque-future']) {
+      const parameters = { type: 'object', properties: { code: { type: 'string' }, optional: { type: 'string' } }, required: ['code'] };
+      const tools = [
+        { type: 'function', name: 'ordinary', parameters },
+        { type: 'function', name: 'strict', parameters, strict: true },
+        { type: 'function', name: 'non-strict', parameters, strict: false },
+        { type: 'custom', name: 'grammar', format: { type: 'grammar', syntax: 'regex', definition: '.*' } },
+        { type: 'web_search' },
+      ];
+      const body = JSON.stringify({ model, tools, input: 'unchanged' });
+      for (const origin of ['https://api.individual.githubcopilot.com', 'https://api.enterprise.githubcopilot.com', 'https://copilot-api.example.ghe.com']) {
+        await fetch(origin + '/responses', { method: 'POST', body });
+        const sent = JSON.parse(String(captures.at(-1)!.init!.body));
+        assert.deepEqual(sent, { model, tools: [{ ...tools[0], strict: false }, ...tools.slice(1)], input: 'unchanged' });
+        const normalized = String(captures.at(-1)!.init!.body);
+        await fetch(origin + '/responses', { method: 'POST', body: normalized });
+        assert.equal(captures.at(-1)!.init!.body, normalized, 'already normalized requests stay byte-identical');
+      }
+      for (const url of [COPILOT_URL, 'https://api.individual.githubcopilot.com/v1/messages', 'https://api.individual.githubcopilot.com/responses-other', 'https://foreign.example/responses']) {
+        await fetch(url, { method: 'POST', body });
+        assert.equal(captures.at(-1)!.init!.body, body);
+      }
+    }
+    for (const body of ['not json', '{}', '{"tools":null}', '{"tools":[]}', '{"tools":[null,{}, {"type":"web_search"}]}']) {
+      await fetch('https://api.individual.githubcopilot.com/responses', { method: 'POST', body });
+      assert.equal(captures.at(-1)!.init!.body, body);
+    }
+  });
+});
 const COPILOT_URL = 'https://api.individual.githubcopilot.com/chat/completions';
 const OTHER_URL = 'https://api.deepseek.com/chat/completions';
 

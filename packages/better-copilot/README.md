@@ -25,7 +25,7 @@ packages. Their behaviour is consolidated here; see the migration notes below.
 
 ## Compatibility
 
-- Better Copilot `0.5.2`: exact DSH and DSH peer packages `0.2.2-rc.3`.
+- Better Copilot `0.5.3`: exact DSH and DSH peer packages `0.2.2-rc.3`.
 - `@earendil-works/pi-ai`: peer `^1.3.0`, tested baseline `1.3.0`.
 - Zod: `4.6.6`.
 - DSH CLI/host runtime: Node.js `>=24.9.0`.
@@ -44,8 +44,10 @@ affiliated with GitHub, DeepSeek or the pi-ai maintainers.
 ## Installation
 
 Install or link this leaf package, not the monorepo root. Its package name is
-`dsh-better-copilot`. Version `0.5.2` is staged for npm under the package-specific
-release workflow; no live GUI or account testing is claimed. Until that staged
+`dsh-better-copilot`. Version `0.5.3` is staged for npm under the package-specific
+release workflow. The non-strict tool default was checked with live Copilot
+requests on GPT-6.1 Terra, GPT-6.1 Sol and Grok 4.7; no live GUI or cache-hit
+benchmark is claimed. Until that staged
 version is approved, use an explicitly built local tarball or workspace link only
 if you intend to change a profile. Restart the DSH host after installing or
 removing a host plugin.

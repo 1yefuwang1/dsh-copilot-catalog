@@ -82,9 +82,11 @@ test('arbitrary new model IDs need no bundled siblings or model-family guesses',
     assert.equal(model.maxTokens, 128000);
     assert.deepEqual(model.input, ['text', 'image']);
     assert.deepEqual(model.cost, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
-    assert.equal(modelCompat(model, 'supportsStrictMode'), false);
+    assert.equal(modelCompat(model, 'supportsStrictMode'), true);
     assert.deepEqual(getSupportedThinkingLevels(model), ['medium', 'high', 'xhigh', 'max']);
   }
+  const chatModel = select([accountItem('future-chat', { supported_endpoints: ['/chat/completions'] })], {}).models['future-chat']!;
+  assert.equal(modelCompat(chatModel, 'supportsStrictMode'), true);
 });
 
 test('both formerly special-cased IDs are handled exactly like arbitrary IDs', () => {
@@ -127,7 +129,7 @@ test('new descriptors do not inherit another model\'s compat, limits, pricing, o
   assert.equal(model.api, 'openai-responses');
   assert.equal(model.baseUrl, 'https://api.enterprise.githubcopilot.com');
   assert.notEqual(model.compat, catalog['gpt-6-sol'].compat);
-  assert.equal(modelCompat(model, 'supportsStrictMode'), false);
+  assert.equal(modelCompat(model, 'supportsStrictMode'), true);
   assert.equal(model.headers!.Authorization, undefined);
   assert.equal(model.headers!['Editor-Version'], 'vscode/test');
   assert.deepEqual(model.cost, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });

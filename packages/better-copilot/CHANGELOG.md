@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.3 — explicit non-strict Responses defaults
+
+- Default ordinary function tools to explicit `strict: false` on trusted Copilot
+  Responses requests, for bundled, discovered and fallback models alike. Preserve
+  explicit strict settings, custom/grammar tools and native tools; other API
+  surfaces and providers are unaffected by this wire default.
+
 ## 0.5.2 — bounded stream-progress retry
 
 - Add `streamGuard` with `enabled`, `providers` and an optional

@@ -20,6 +20,7 @@ import type { CopilotSearchOptions, SearchContext, SearchRuntime } from './searc
 import type { GuardSettings } from './guard-types.js';
 import { installAutoReviewRouting } from './auto-review.js';
 import { normalizeCopilotTemperature } from './temperature.js';
+import { normalizeCopilotResponsesStrict } from './strict.js';
 import { createCatalogController } from './catalog-controller.js';
 import { openCatalogStore } from './catalog-store.js';
 import { adapterContext, type StreamGuardOptions } from './catalog-adapter.js';
@@ -177,17 +178,18 @@ export function createPlugin(dependencies: BetterCopilotDependencies): BetterCop
         });
       }
 
-      // 2. Gemini tool-declaration guard: one contained wire transform. The
+      // 2. Copilot tool defaults and Gemini guard: one contained wire transform. The
       //    assembly waterfall no longer sees provider-owned declarations, so the
       //    guard rewrites the serialized request at the boundary that measures
       //    the defect. It is installed even when wire identity is opted out.
       contain('tool-schema guard', 'Gemini tool-schema normalization', () => {
-        const transform: CopilotRequestTransform = ({ body }) => {
+        const transform: CopilotRequestTransform = ({ url, body }) => {
           let normalized: string | undefined;
           try {
-            normalized = normalizeCopilotTemperature(body, dependencies.catalog);
+            normalized = normalizeCopilotResponsesStrict(url, body);
+            normalized = normalizeCopilotTemperature(normalized ?? body, dependencies.catalog) ?? normalized;
           } catch {
-            log('warn', 'better-copilot: skipped temperature normalization after an internal error');
+            log('warn', 'better-copilot: skipped request defaults after an internal error');
           }
           try {
             const settings = guardSettings(config.toolSchema);
