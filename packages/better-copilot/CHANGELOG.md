@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.4 — provider-aware subagent route badge
+
+- Show the subagent's complete route inline in the Web session header:
+  `github-copilot/gpt-6.1-sol · high` instead of only `gpt-6.1-sol · high`.
+  Provider and model remain the Host's verbatim ids; an adapter-defaulted effort
+  still renders as `default`.
+- Size the badge for the longest advertised provider/model route and state in the
+  tooltip and accessible name that provider, model and effort are fixed for the
+  child's lifetime.
+- Let the client render test read an installed `dist/client.js` through
+  `BC_CLIENT_BUNDLE`, so release verification covers the packaged browser half
+  as well as the workspace build.
+
 ## 0.5.3 — explicit non-strict Responses defaults
 
 - Default ordinary function tools to explicit `strict: false` on trusted Copilot

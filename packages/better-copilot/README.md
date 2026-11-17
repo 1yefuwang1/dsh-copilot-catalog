@@ -25,7 +25,7 @@ packages. Their behaviour is consolidated here; see the migration notes below.
 
 ## Compatibility
 
-- Better Copilot `0.5.3`: exact DSH and DSH peer packages `0.2.2-rc.3`.
+- Better Copilot `0.5.4`: exact DSH and DSH peer packages `0.2.2-rc.3`.
 - `@earendil-works/pi-ai`: peer `^1.3.0`, tested baseline `1.3.0`.
 - Zod: `4.6.6`.
 - DSH CLI/host runtime: Node.js `>=24.9.0`.
@@ -44,11 +44,12 @@ affiliated with GitHub, DeepSeek or the pi-ai maintainers.
 ## Installation
 
 Install or link this leaf package, not the monorepo root. Its package name is
-`dsh-better-copilot`. Version `0.5.3` is staged for npm under the package-specific
-release workflow. The non-strict tool default was checked with live Copilot
-requests on GPT-6.1 Terra, GPT-6.1 Sol and Grok 4.7; no live GUI or cache-hit
-benchmark is claimed. Until that staged
-version is approved, use an explicitly built local tarball or workspace link only
+`dsh-better-copilot`. Version `0.5.4` is staged for npm under the package-specific
+release workflow. The provider-aware subagent badge is covered by render tests;
+no live GUI testing is claimed for it. The 0.5.3 non-strict tool default was
+checked with live Copilot requests on GPT-6.1 Terra, GPT-6.1 Sol and Grok 4.7;
+no live GUI or cache-hit benchmark is claimed. Until that staged version is
+approved, use an explicitly built local tarball or workspace link only
 if you intend to change a profile. Restart the DSH host after installing or
 removing a host plugin.
 
@@ -239,24 +240,29 @@ leaves every other byte of the request untouched. It never replaces an adapter o
 another plugin's settings, and a guard failure preserves the body after any
 successful temperature normalization.
 
-## Subagent model badge (Web)
+## Subagent route badge (Web)
 
-The package now carries a small browser client half. When a subagent
+The package carries a small browser client half. When a subagent
 conversation is open in the Web GUI, the session header shows the child's
 effective route as muted text next to the title — for example
-`gpt-6.1-sol · high`. The label is read-only: the plugin renders no selector and
+`github-copilot/gpt-6.1-sol · high`. The visible label carries the provider,
+model and reasoning effort together, so a delegated route can be checked without
+opening a tooltip. The label is read-only: the plugin renders no selector and
 writes nothing back, because the Host fixes a child's provider, model and
 reasoning effort when the subagent is created and reuses the recorded route on
 resume. An adapter-defaulted effort appears as `default`, and the tooltip and
-accessible name say that the route is fixed.
+accessible name say that the complete route is fixed.
 
 The badge reads the child Session's `modelSelection` projection; it adds no Host
-service, configuration field or RPC. Ids are shown exactly as the Host records
-them, because catalog display names are not exposed to third-party client
-plugins. Ordinary conversations are unchanged, and the subagent catalog
-dropdown is untouched: DSH renders those rows in its own client package rather
-than through an extension slot. The browser half is published as `./client`
-and declared through `dsh.client`; no additional wiring is needed.
+service, configuration field or RPC. Provider and model ids are shown exactly as
+the Host records them; the badge reads only the session projection and does not
+load the model catalog just to resolve display names. It is sized for the longest
+advertised provider/model route; on a narrow window the header clips
+title-adjacent actions before they can crowd the utilities. Ordinary
+conversations are unchanged, and the subagent catalog dropdown is untouched: DSH
+renders those rows in its own client package rather than through an extension
+slot. The browser half is published as `./client` and declared through
+`dsh.client`; no additional wiring is needed.
 
 ## Migration from the three predecessor packages
 

@@ -37,7 +37,9 @@ interface ClientFactoryResult {
 }
 
 const high: Selection = { provider: 'github-copilot', model: 'gpt-6.1-sol', reasoningEffort: 'high' };
-const source = await readFile(new URL('../dist/client.js', import.meta.url), 'utf8');
+/** The built bundle, or an installed copy selected by BC_CLIENT_BUNDLE for release verification. */
+const installed = process.env.BC_CLIENT_BUNDLE;
+const source = await readFile(installed === undefined ? new URL('../dist/client.js', import.meta.url) : installed, 'utf8');
 const marker = /^[ \t]*inject:/gm;
 assert.equal([...source.matchAll(marker)].length, 1, 'the client factory has exactly one export seam');
 let loaded: ClientModule | undefined;
@@ -80,12 +82,13 @@ function render(overrides: Partial<BadgeProps> = {}): string {
   return renderToStaticMarkup(React.createElement(real.SubagentModelBadge, props(overrides)));
 }
 
-test('a subagent route renders as read-only muted text with a fixed-route explanation', () => {
+test('a subagent route renders provider, model and effort as read-only muted text', () => {
   const markup = render();
   assert.match(markup, /^<span /u);
-  assert.match(markup, /gpt-6\.1-sol · high/u);
-  assert.match(markup, /title="github-copilot\/gpt-6\.1-sol · high — Model and effort are fixed/u);
-  assert.match(markup, /aria-label="Subagent model gpt-6\.1-sol from github-copilot, reasoning effort high\./u);
+  assert.match(markup, /max-width:42ch/u);
+  assert.match(markup, />github-copilot\/gpt-6\.1-sol · high</u);
+  assert.match(markup, /title="github-copilot\/gpt-6\.1-sol · high — Provider, model and effort are fixed/u);
+  assert.match(markup, /aria-label="Subagent route github-copilot\/gpt-6\.1-sol, reasoning effort high\./u);
   assert.doesNotMatch(markup, /<button|<a |tabindex|role=|onclick/iu);
 });
 
@@ -107,14 +110,14 @@ test('a malformed projection never reaches the header', () => {
 
 test('an adapter-defaulted effort renders as default without inventing a level', () => {
   const markup = render({ useProjection: () => ({ next: { provider: 'github-copilot', model: 'gpt-6.1-sol' } }) });
-  assert.match(markup, /gpt-6\.1-sol · default/u);
-  assert.match(markup, /title="github-copilot\/gpt-6\.1-sol — /u);
+  assert.match(markup, />github-copilot\/gpt-6\.1-sol · default</u);
+  assert.match(markup, /title="github-copilot\/gpt-6\.1-sol · default — /u);
   assert.match(markup, /reasoning effort default\./u);
 });
 
 test('the settled selection is used when the projection carries no pending route', () => {
   const markup = render({ useProjection: () => ({ lastUsed: high, next: null }) });
-  assert.match(markup, /gpt-6\.1-sol · high/u);
+  assert.match(markup, />github-copilot\/gpt-6\.1-sol · high</u);
   assert.deepEqual(plain(real.selectedOf({ lastUsed: high, next: { provider: 'deepseek-account', model: 'deepseek-flash' } })), { provider: 'deepseek-account', model: 'deepseek-flash' });
 });
 
@@ -128,7 +131,7 @@ test('the rc.3 host projection retains the next wire field for pending and settl
     assert.match(render({ useProjection: (key) => {
       assert.equal(key, 'modelSelection');
       return view;
-    } }), /gpt-6\.1-sol · high/u);
+    } }), />github-copilot\/gpt-6\.1-sol · high</u);
   }
   const empty = projection.stateSchema.parse({ lastUsed: null, pending: null });
   assert.equal(render({ useProjection: () => projection.wire.view(empty) }), '');
@@ -146,16 +149,27 @@ test('a nested child reads only its own projected route', () => {
     } }),
     useProjection: () => view,
   });
-  assert.match(markup, /gpt-6\.1-sol · high/u);
+  assert.match(markup, />github-copilot\/gpt-6\.1-sol · high</u);
 });
 
-test('the badge formatter keeps the provider in the tooltip, not the inline label', () => {
+test('the badge formatter keeps the provider, model and effort in the inline label and tooltip', () => {
   assert.deepEqual(plain(real.subagentBadge(high, t)), {
-    label: 'gpt-6.1-sol · high',
-    title: "github-copilot/gpt-6.1-sol · high — Model and effort are fixed for this subagent's lifetime.",
-    aria: "Subagent model gpt-6.1-sol from github-copilot, reasoning effort high. Model and effort are fixed for this subagent's lifetime.",
+    label: 'github-copilot/gpt-6.1-sol · high',
+    title: "github-copilot/gpt-6.1-sol · high — Provider, model and effort are fixed for this subagent's lifetime.",
+    aria: "Subagent route github-copilot/gpt-6.1-sol, reasoning effort high. Provider, model and effort are fixed for this subagent's lifetime.",
   });
-  assert.deepEqual(real.subagentBadge({ provider: 'deepseek-account', model: 'deepseek-flash' }, t).title.split(' — ')[0], 'deepseek-account/deepseek-flash');
+  assert.deepEqual(real.subagentBadge({ provider: 'deepseek-account', model: 'deepseek-flash' }, t).title.split(' — ')[0], 'deepseek-account/deepseek-flash · default');
+  assert.deepEqual(plain(real.subagentBadge({ provider: 'opencode-go', model: 'deepseek-v4.1-flash' }, t)), {
+    label: 'opencode-go/deepseek-v4.1-flash · default',
+    title: "opencode-go/deepseek-v4.1-flash · default — Provider, model and effort are fixed for this subagent's lifetime.",
+    aria: "Subagent route opencode-go/deepseek-v4.1-flash, reasoning effort default. Provider, model and effort are fixed for this subagent's lifetime.",
+  });
+  // The live DeepSeek Flash badge smoke test route: provider, model and explicit effort.
+  assert.deepEqual(plain(real.subagentBadge({ provider: 'opencode-go', model: 'deepseek-v4.1-flash', reasoningEffort: 'high' }, t)), {
+    label: 'opencode-go/deepseek-v4.1-flash · high',
+    title: "opencode-go/deepseek-v4.1-flash · high — Provider, model and effort are fixed for this subagent's lifetime.",
+    aria: "Subagent route opencode-go/deepseek-v4.1-flash, reasoning effort high. Provider, model and effort are fixed for this subagent's lifetime.",
+  });
 });
 
 test('apply registers one read-only header cell under the declared namespace', () => {
@@ -199,7 +213,7 @@ test('apply registers one read-only header cell under the declared namespace', (
   assert.deepEqual(Object.keys(dictionaries.dictionaries.en ?? {}).sort(), Object.keys(dictionaries.dictionaries.zh ?? {}).sort());
 });
 
-test('both registered locales carry a fixed-route explanation', () => {
+test('both registered locales carry a provider-aware fixed-route explanation', () => {
   for (const dict of [real.en, real.zh]) {
     assert.equal(typeof dict['badge.defaultEffort'], 'string');
     assert.equal(typeof dict['badge.fixed'], 'string');
@@ -207,5 +221,7 @@ test('both registered locales carry a fixed-route explanation', () => {
     assert.match(dict['badge.aria'] ?? '', /\{provider\}/u);
     assert.match(dict['badge.aria'] ?? '', /\{effort\}/u);
   }
+  assert.match(real.en['badge.fixed'] ?? '', /Provider, model and effort/u);
+  assert.match(real.zh['badge.fixed'] ?? '', /提供方、模型与推理强度/u);
   assert.match(real.zh['badge.fixed'] ?? '', /固定/u);
 });

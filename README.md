@@ -23,7 +23,7 @@ for the exact migration table.
 
 | Scope | Runtime baseline |
 | --- | --- |
-| Better Copilot `0.5.3` | Exact DSH and DSH peers `0.2.2-rc.3`; `@earendil-works/pi-ai` peer `^1.3.0`, tested baseline `1.3.0`; Zod `4.6.6` |
+| Better Copilot `0.5.4` | Exact DSH and DSH peers `0.2.2-rc.3`; `@earendil-works/pi-ai` peer `^1.3.0`, tested baseline `1.3.0`; Zod `4.6.6` |
 | Worktrees and root development SDK | DSH and DSH peers `0.2.2-rc.1`; unchanged by the Better Copilot migration |
 
 These are separate runtime baselines, not a claim that both plugins support the
@@ -207,11 +207,12 @@ A release selects **one package**, never the root or multiple packages at once:
 - `@1yefuwang1/dsh-worktrees-vX.Y.Z`
 
 The tag must match its leaf version and repository identity. `dsh-better-copilot` is
-`0.5.3`, prepared locally for exact DSH `0.2.2-rc.3`, pi-ai peer `^1.3.0`
+`0.5.4`, prepared locally for exact DSH `0.2.2-rc.3`, pi-ai peer `^1.3.0`
 (tested baseline `1.3.0`) and Zod `4.6.6`. It is staged for npm under the
-package-specific release workflow. The non-strict Responses tool default was
-checked with live Copilot requests on GPT-6.1 Terra, GPT-6.1 Sol and Grok 4.7;
-no live GUI or cache-hit benchmark is claimed.
+package-specific release workflow. The provider-aware subagent badge is covered
+by render tests; no live GUI testing is claimed for it. The 0.5.3 non-strict
+Responses tool default was checked with live Copilot requests on GPT-6.1 Terra,
+GPT-6.1 Sol and Grok 4.7; no live GUI or cache-hit benchmark is claimed.
 It retains persistent
 account-scoped model catalogs, live registry refresh, native Responses search,
 wire identity, Gemini schema guarding, temperature normalization, builtin Auto

@@ -1,5 +1,17 @@
 # Monorepo changelog
 
+## Better Copilot 0.5.4 — provider-aware subagent route badge
+
+- Show the subagent's complete route inline in the Web session header:
+  `github-copilot/gpt-6.1-sol · high` instead of only `gpt-6.1-sol · high`.
+  Provider and model remain the Host's verbatim ids; an adapter-defaulted effort
+  still renders as `default`.
+- Size the badge for the longest advertised provider/model route and state in the
+  tooltip and accessible name that provider, model and effort are fixed for the
+  child's lifetime. Render tests cover the label, tooltip, accessible name and
+  both locales, and `BC_CLIENT_BUNDLE` points them at an installed
+  `dist/client.js`; no live GUI testing is claimed.
+
 ## Better Copilot 0.5.3 — explicit non-strict Responses defaults
 
 - Default ordinary function tools to `strict: false` on trusted Copilot Responses

@@ -1,8 +1,9 @@
 /// <reference path="./client.types.d.ts" />
 /* Read-only subagent route badge for the Web conversation header.
  * The Host fixes a subagent's provider, model and reasoning effort when the
- * child is created, so this client half only presents them. It never renders a
- * selection control and writes nothing back to the Session.
+ * child is created, so this client half only presents the complete route:
+ * provider/model beside the reasoning effort. It never renders a selection
+ * control and writes nothing back to the Session.
  */
 window.__ModuleLoader__.load({
   id: 'dsh-better-copilot',
@@ -15,13 +16,13 @@ window.__ModuleLoader__.load({
 
     const en: BC.LocaleDict = {
       'badge.defaultEffort': 'default',
-      'badge.fixed': "Model and effort are fixed for this subagent's lifetime.",
-      'badge.aria': 'Subagent model {model} from {provider}, reasoning effort {effort}. {fixed}',
+      'badge.fixed': "Provider, model and effort are fixed for this subagent's lifetime.",
+      'badge.aria': 'Subagent route {provider}/{model}, reasoning effort {effort}. {fixed}',
     };
     const zh: BC.LocaleDict = {
       'badge.defaultEffort': '默认',
-      'badge.fixed': '该子智能体的模型与推理强度在创建时已固定。',
-      'badge.aria': '子智能体模型 {model}（{provider}），推理强度 {effort}。{fixed}',
+      'badge.fixed': '该子智能体的提供方、模型与推理强度在创建时已固定。',
+      'badge.aria': '子智能体路由 {provider}/{model}，推理强度 {effort}。{fixed}',
     };
 
     /** Validate one projected selection; anything malformed is not rendered. */
@@ -44,16 +45,14 @@ window.__ModuleLoader__.load({
       return readSelection(projected.next) ?? readSelection(projected.lastUsed);
     }
 
-    /** Compose the visible label, tooltip and accessible name for one route. */
+    /** Compose the visible provider/model route, effort, tooltip and accessible name. */
     function subagentBadge(selection: BC.Selection, t: BC.Translate): BC.Badge {
       const explicit = selection.reasoningEffort;
       const effort = explicit === undefined ? t('badge.defaultEffort') : explicit;
-      const route = explicit === undefined
-        ? `${selection.provider}/${selection.model}`
-        : `${selection.provider}/${selection.model} · ${explicit}`;
+      const route = `${selection.provider}/${selection.model}`;
       return {
-        label: `${selection.model} · ${effort}`,
-        title: `${route} — ${t('badge.fixed')}`,
+        label: `${route} · ${effort}`,
+        title: `${route} · ${effort} — ${t('badge.fixed')}`,
         aria: t('badge.aria', {
           provider: selection.provider,
           model: selection.model,
@@ -65,7 +64,8 @@ window.__ModuleLoader__.load({
 
     const badgeStyle: BC.CSSProperties = {
       display: 'inline-block',
-      maxWidth: '26ch',
+      /* Fits the longest advertised provider/model route plus its effort. */
+      maxWidth: '42ch',
       overflow: 'hidden',
       color: 'var(--dsw-alias-label-tertiary)',
       fontSize: '12px',
