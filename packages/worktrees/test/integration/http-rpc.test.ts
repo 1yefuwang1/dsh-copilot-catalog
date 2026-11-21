@@ -164,20 +164,37 @@ test('actual client-request framing correlates failures and success; wrong metho
 
 
 
+/** What the sender observed when the carrier refused its still-open upload. */
+type RefusalOutcome = { status: number | undefined; body: string; sentBytes: number; finishedSending: boolean; reset: boolean };
+
 test('a real HTTP carrier answers a chunked foreign-owner upload before the sender finishes', { timeout: 15000 }, async t => {
   const f = await fixture(t); let calls = 0, pulled = 0;
   const stop = registerQuietRpcRoute(f.owner.ctx, PROJECT_RPC_ENDPOINT, async () => { calls++; return { ok: true, value: true }; });
   t.after(async () => { await stop(); });
   // Mirror the carrier contract: mode lookup, streaming body handout, then the route.
   const shared = f.connection.createSharedFetchHandler('/api');
+  // The carrier answers and then tears down a connection whose upload is still open: the real bridge
+  // destroys the request after writing the refusal, and node's server does the same once a
+  // `connection: close` response ends over an unread body. That teardown can abort bytes the sender
+  // has not read yet, so record the answer the carrier actually wrote, not just its delivery.
+  let answered: { status: number; body: string; unread: boolean } | undefined;
   const server = createServer(async (incoming, outgoing) => {
     const url = new URL(incoming.url ?? '/', 'http://carrier.invalid');
     const mode = shared.requestBodyMode({ method: incoming.method ?? 'GET', url });
     assert.equal(mode, 'streaming');
+    // Count the handler's reads of the upload: this forwarder pulls only when its consumer pulls, so
+    // a handler that refuses without touching the body pulls nothing and one that peeks pulls
+    // something. (Readable.toWeb already prefetches available body bytes into its own queue without
+    // a reader; that transport buffering is not a handler read.)
+    const upload = (Readable.toWeb(incoming) as ReadableStream<Uint8Array>).getReader();
+    const body = new ReadableStream<Uint8Array>({
+      async pull(controller) { pulled++; const part = await upload.read(); if (part.done) controller.close(); else controller.enqueue(part.value); },
+      cancel: reason => upload.cancel(reason),
+    }, { highWaterMark: 0 }); // A default queue self-pulls once with no consumer, faking a read.
     const request = new Request(url, {
       method: incoming.method ?? 'GET',
       headers: Object.fromEntries(Object.entries(incoming.headers).filter(([, value]) => typeof value === 'string')) as Record<string, string>,
-      body: Readable.toWeb(incoming) as ReadableStream<Uint8Array>,
+      body,
       duplex: 'half',
       signal: AbortSignal.timeout(10000),
     } as RequestInit);
@@ -185,39 +202,65 @@ test('a real HTTP carrier answers a chunked foreign-owner upload before the send
     // route boundary without ever consuming the still-open upload.
     const apiPeer = f.connection.createPeer({ principal: { kind: 'api' } as never });
     const response = await shared.fetch(request, apiPeer);
-    const body = await response.text();
+    const refusal = await response.text();
     const unread = !incoming.readableEnded;
+    answered = { status: response.status, body: refusal, unread };
     outgoing.writeHead(response.status, unread ? { 'content-type': 'application/json', connection: 'close' } : { 'content-type': 'application/json' });
-    outgoing.end(body);
+    outgoing.end(refusal);
   });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-  t.after(() => new Promise<void>(resolve => { server.close(() => resolve()); }));
+  t.after(() => new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); }));
   const address = server.address();
   assert.ok(address && typeof address === 'object');
   const authority = '127.0.0.1:' + String(address.port);
-  const result = await new Promise<{ status: number; body: string; sentBytes: number; finishedSending: boolean }>((resolve, reject) => {
+  // A reset the carrier caused after answering loses only the delivery: the request reached the
+  // carrier and was refused, so that is reported as its own outcome instead of a failure. Every
+  // other transport error stays a hard failure.
+  const outcome = await new Promise<RefusalOutcome>((resolve, reject) => {
     const outgoing = httpRequest({ host: '127.0.0.1', port: address.port, path: '/api/' + PROJECT_RPC_ENDPOINT, method: 'POST',
       headers: { host: authority, origin: 'http://' + authority, cookie: COOKIE, 'content-type': 'application/json', 'transfer-encoding': 'chunked' } });
-    let sentBytes = 0, finishedSending = false, settled = false;
-    outgoing.on('error', error => { if (!settled) reject(error); });
+    let sentBytes = 0, finishedSending = false, settled = false, interval: NodeJS.Timeout | undefined;
+    const settle = (settledOutcome: RefusalOutcome) => {
+      if (settled) return;
+      settled = true; clearInterval(interval); resolve(settledOutcome);
+    };
+    const failed = (error: Error) => {
+      if (settled) return;
+      if (answered === undefined || (error as NodeJS.ErrnoException).code !== 'ECONNRESET') { settled = true; clearInterval(interval); reject(error); return; }
+      settle({ status: undefined, body: '', sentBytes, finishedSending, reset: true });
+    };
+    outgoing.on('error', failed);
+    // Nothing ends the upload, so this tripwire must never fire: it proves the sender was still
+    // writing when the answer arrived. A future refactor that completes the request breaks it.
+    outgoing.on('finish', () => { finishedSending = true; });
     outgoing.on('response', response => {
       let body = '';
       response.setEncoding('utf8');
       response.on('data', chunk => { body += chunk; });
-      response.on('end', () => { settled = true; resolve({ status: response.statusCode ?? 0, body, sentBytes, finishedSending }); });
+      response.on('error', failed);
+      response.on('end', () => settle({ status: response.statusCode ?? 0, body, sentBytes, finishedSending, reset: false }));
     });
     const opening = '{"type":"client-request","rpcId":"' + randomUUID() + '","method":"' + PROJECT_RPC_ENDPOINT + '","payload":';
     sentBytes += Buffer.byteLength(opening);
     outgoing.write(opening);
     // Keep the upload open: an unanswered request would stall the test until its timeout.
-    const interval = setInterval(() => { if (!finishedSending) { sentBytes += 1; outgoing.write(' '.repeat(1024)); } }, 20);
+    interval = setInterval(() => { if (!settled && !finishedSending) { sentBytes += 1024; outgoing.write(' '.repeat(1024)); } }, 20);
     outgoing.on('close', () => clearInterval(interval));
   });
-  assert.equal(result.finishedSending, false, 'the sender never completed its upload');
-  assert.equal(result.status, 403, 'the carrier refuses a non-owner principal at the route boundary');
-  assert.equal(result.body, 'forbidden');
-  assert.ok(result.sentBytes > 0, 'bytes were actually in flight when the refusal arrived');
+  assert.equal(outcome.finishedSending, false, 'the sender never completed its upload');
+  assert.deepEqual(answered, { status: 403, body: 'forbidden', unread: true }, 'the carrier refused the still-open upload without reading it');
+  assert.ok(outcome.sentBytes > 0, 'bytes were actually in flight when the refusal arrived');
   assert.equal(calls, 0); assert.equal(pulled, 0);
+  if (outcome.reset) {
+    // The reset races the delivery: when it wins, Windows discards socket data the client has not
+    // read yet, so the already-written refusal surfaces as ECONNRESET instead. Windows can deliver
+    // it too (Node 24 does); no other platform has been observed to lose it. `settle` is first-wins,
+    // so a reset outcome means the response never ended and no complete answer was observed.
+    assert.equal(process.platform, 'win32', 'only Windows has been observed to lose the written refusal');
+  } else {
+    assert.equal(outcome.status, 403, 'the carrier refuses a non-owner principal at the route boundary');
+    assert.equal(outcome.body, 'forbidden');
+  }
 });
 
 test('body bound includes finite envelope headroom and counts actual streamed bytes, not only Content-Length', async t => {
