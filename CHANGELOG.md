@@ -1,5 +1,23 @@
 # Monorepo changelog
 
+## Better Copilot 0.5.5 — DSH 0.2.2-rc.5 compatibility
+
+- Target exact DSH and DSH peer packages `0.2.2-rc.5` for Better Copilot only.
+  Worktrees and the root development SDK remain on `0.2.2-rc.1`.
+- Audit the rc.5 delta: `dsh-web` prefers a route-specific DeepSeek search
+  provider while none is configured and carries `llmProvider` on search requests,
+  `dsh-llm` adds `CONTENT_REFUSED`, and the base profile no longer pins a search
+  provider. The shipped bundle patch still selects `github-copilot-search`
+  explicitly, so selection stays deterministic, and a new integration test
+  registers a usable `deepseek-search-api` provider to prove the pin outranks
+  rc.5's route preference. No runtime shim, configuration change or persisted-data
+  migration is needed.
+- Keep pi-ai peer `^1.3.0` (tested baseline `1.3.0`), Zod `4.6.6`, the existing
+  config shape, the catalog cache domain/format and credential record keys.
+- Publish `0.5.5` through the package-specific staged npm release workflow; the
+  maintainer's 2FA approval makes the exact package live. No live GUI or account
+  testing is claimed for this release.
+
 ## Better Copilot 0.5.4 — provider-aware subagent route badge
 
 - Show the subagent's complete route inline in the Web session header:

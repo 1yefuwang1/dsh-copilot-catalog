@@ -27,18 +27,20 @@ from a leaf, or add a dependency on an unpublished/private workspace package.
 
 ## Runtime boundaries
 
-- Keep runtime baselines separate: Better Copilot `0.5.4` targets exact DSH/DSH
-  peers `0.2.2-rc.3`, pi-ai peer `^1.3.0` (tested baseline `1.3.0`) and Zod
+- Keep runtime baselines separate: Better Copilot `0.5.5` targets exact DSH/DSH
+  peers `0.2.2-rc.5`, pi-ai peer `^1.3.0` (tested baseline `1.3.0`) and Zod
   `4.6.6`; the root development SDK and Worktrees remain on `0.2.2-rc.1`.
   Resolve Better Copilot checks against its leaf peers, not the root SDK. Do not
   add compatibility exemptions or widen host support based on root-only checks.
 - Preserve existing configuration, cache domain/format version and credential
   keys. This migration requires no persisted account-cache conversion or reset.
-  Use rc.3's native search-provider picker/directory, not a new custom UI or
-  metadata feature. Keep the subagent badge read-only while it shows the full
-  provider/model/effort route.
-- Version `0.5.4` is local preparation, not a published or installed release. Do
-  not describe synthetic checks as live GUI or account testing.
+  Use rc.5's native search-provider picker/directory, not a new custom UI or
+  metadata feature. Keep the explicit `searchProvider` pin in the bundle patch:
+  rc.5 prefers a route-specific DeepSeek provider while none is configured. Keep
+  the subagent badge read-only while it shows the full provider/model/effort route.
+- Version `0.5.5` is published through the package-specific staged npm workflow;
+  maintainer 2FA approval makes it live. Do not describe synthetic checks as live
+  GUI or account testing.
 - Never modify signed app files, active profiles or real credential files during
   build/test/install preparation. Synthetic tests must not make live account calls.
 - Resolve DSH/pi-ai public peers from the adapter's installation. Do not use

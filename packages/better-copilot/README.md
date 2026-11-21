@@ -25,7 +25,7 @@ packages. Their behaviour is consolidated here; see the migration notes below.
 
 ## Compatibility
 
-- Better Copilot `0.5.4`: exact DSH and DSH peer packages `0.2.2-rc.3`.
+- Better Copilot `0.5.5`: exact DSH and DSH peer packages `0.2.2-rc.5`.
 - `@earendil-works/pi-ai`: peer `^1.3.0`, tested baseline `1.3.0`.
 - Zod: `4.6.6`.
 - DSH CLI/host runtime: Node.js `>=24.9.0`.
@@ -33,8 +33,8 @@ packages. Their behaviour is consolidated here; see the migration notes below.
 
 The repository root development SDK and the independent Worktrees plugin remain
 on DSH `0.2.2-rc.1`. They do not establish this leaf's runtime baseline: Better
-Copilot's leaf checks use rc.3 peers. Use the exact supported host version, without
-compatibility exemptions; this release does not claim rc.1 host support.
+Copilot's leaf checks use rc.5 peers. Use the exact supported host version, without
+compatibility exemptions; this release does not claim rc.1 or rc.3 host support.
 
 The plugin resolves the same public pi-ai runtime the DSH adapter uses, including
 nested pnpm layouts. It vendors neither DSH nor pi-ai and does not modify
@@ -44,14 +44,14 @@ affiliated with GitHub, DeepSeek or the pi-ai maintainers.
 ## Installation
 
 Install or link this leaf package, not the monorepo root. Its package name is
-`dsh-better-copilot`. Version `0.5.4` is staged for npm under the package-specific
-release workflow. The provider-aware subagent badge is covered by render tests;
-no live GUI testing is claimed for it. The 0.5.3 non-strict tool default was
-checked with live Copilot requests on GPT-6.1 Terra, GPT-6.1 Sol and Grok 4.7;
-no live GUI or cache-hit benchmark is claimed. Until that staged version is
-approved, use an explicitly built local tarball or workspace link only
-if you intend to change a profile. Restart the DSH host after installing or
-removing a host plugin.
+`dsh-better-copilot`. Version `0.5.5` targets exact DSH `0.2.2-rc.5` and is
+published through the package-specific staged release workflow; npm availability
+requires maintainer 2FA approval. The rc.5 retarget is covered by the repository
+suite, including a pinned-search-provider integration test against rc.5's route
+preference; no live GUI or account testing is claimed. Until the staged version
+is approved, use an explicitly built local tarball or workspace link only if you
+intend to change a profile. Restart the DSH host after installing or removing a
+host plugin.
 
 The bundle patch:
 
@@ -174,7 +174,7 @@ discovery. Cache and interval settings are volatile and affect the next refresh;
 disabling persistence does not delete previously saved records. A host restart
 is needed to load an updated plugin implementation, not to adopt a live catalog.
 
-The `0.5.1` rc.3 migration preserves the existing configuration, storage domain,
+The `0.5.5` rc.5 retarget preserves the existing configuration, storage domain,
 cache format version and credential record keys. Persisted account caches need no
 migration or reset; their existing account/endpoint validation and expiry rules
 still apply.
@@ -225,14 +225,16 @@ the interceptor entirely.
 Search uses the stored `llm-pi-ai/github-copilot` credential — inference may use
 either the stock adapter or this wrapper. Sign in through DSH's normal Copilot
 flow. `web_search` is an ordinary tool independent of the conversation model; the
-native rc.3 search-provider picker and provider directory expose provider
-selection. This plugin uses that native UI and adds no custom search chooser.
+native rc.5 search-provider picker and provider directory expose provider
+selection, and a search request may name the model route it serves. The bundled
+patch pins `github-copilot-search` so rc.5's route preference cannot reselect a
+DeepSeek provider; this plugin adds no custom search chooser.
 
 ## Guard
 
 The guard is a Copilot wire-body transform. Since `0.2.2-rc.1`, DSH assembles
 tool declarations outside the presentation waterfall and treats them as
-provider-owned; rc.3 retains this behavior. The supported seam remains the
+provider-owned; rc.5 retains this behavior. The supported seam remains the
 serialized request the adapter dispatches. Inside the same refcounted, trusted-path-checked interceptor that
 carries the wire identity, it adds an empty root `properties` bucket to object
 tool schemas that lack one for a configured Copilot route and model family, and

@@ -19,7 +19,7 @@ const resultBody = () => ({ status: 'completed', output: [
   ] } },
   { id: 'msg_synthetic', type: 'message', status: 'completed', content: [{ type: 'output_text', text: 'Synthetic answer', annotations: [] }] },
 ] });
-/** Parse the same plain provider ids the shipped cordis.patch.yml supplies; rc.3 yields live volatile refs. */
+/** Parse the same plain provider ids the shipped cordis.patch.yml supplies; rc.5 yields live volatile refs. */
 const webConfig = () => WebRuntime.Config({ searchProvider: COPILOT_SEARCH_PROVIDER_ID, fetchProvider: 'http' });
 
 /** The merged plugin also injects a web service and installs guard/identity seams. */
@@ -100,7 +100,7 @@ test('GHE search resolves and refreshes real public auth through the actual DSH 
   } finally { dispose(); }
 });
 
-test('rc.3 web selection and account credentials are resolved again without remounting', async () => {
+test('rc.5 web selection and account credentials are resolved again without remounting', async () => {
   const runtime = await loadRuntime();
   const host = new Context();
   const config = webConfig();
@@ -139,7 +139,7 @@ test('rc.3 web selection and account credentials are resolved again without remo
   } finally { dispose(); }
 });
 
-test('rc.3 web directory lists Copilot and reports search registration/disposal while preserving result limits', async () => {
+test('rc.5 web directory lists Copilot and reports search registration/disposal while preserving result limits', async () => {
   const runtime = await loadRuntime();
   const host = new Context();
   let directoryChanges = 0;
@@ -173,4 +173,47 @@ test('rc.3 web directory lists Copilot and reports search registration/disposal 
   assert.deepEqual(web.listProviders(), { search: [], fetch: [] });
   assert.equal(directoryChanges, 2);
   await assert.rejects(web.search({ query: 'after disposal' }), (error) => error instanceof Error && 'code' in error && error.code === 'WEB_PROVIDER_CONFIGURED_MISSING');
+});
+
+test('rc.5 route-preferred selection still honors the pinned Copilot search provider', async () => {
+  const runtime = await loadRuntime();
+  const host = new Context();
+  // rc.5 makes the seam prefer a DeepSeek provider for the request's model route
+  // while none is configured; the shipped patch pins Copilot search instead.
+  const web = new WebRuntime(host, webConfig());
+  const fixture = credentialFixture(grant());
+  const dispatched: string[] = [];
+  let fallbackCalls = 0;
+  let fallbackDispose!: () => void;
+  let dispose!: () => void;
+  const fallback: WebSearchProvider = {
+    id: 'deepseek-search-api',
+    available: () => true,
+    search: async () => {
+      fallbackCalls++;
+      return { sources: [{ url: 'https://example.invalid/fallback' }], truncated: false };
+    },
+  };
+  const ctx = mergedContext(fixture.service, { registerSearchProvider(provider: WebSearchProvider) {
+    dispose = web.registerSearchProvider(provider);
+    return dispose;
+  } });
+  await createPlugin(runtimeDependencies(runtime, { fetcher: mockFetch(async (url, init) => {
+    if (String(url).endsWith('/models')) return Response.json({ data: [] });
+    dispatched.push(new URL(url).origin);
+    assert.equal(init.headers.get('authorization'), `Bearer ${token()}`);
+    return Response.json(resultBody());
+  }) })).apply(ctx, Config({ search: { model: 'synthetic-responses-model' } }));
+  try {
+    fallbackDispose = web.registerSearchProvider(fallback);
+    const result = await web.search({ query: 'pinned route selection', maxResults: 1, llmProvider: 'github-copilot' });
+    assert.equal(fallbackCalls, 0, 'the explicit searchProvider pin outranks rc.5 route preference');
+    assert.deepEqual(dispatched, [enterprise]);
+    assert.equal(result.sources.length, 1);
+    assert.equal(result.sources[0]?.url, 'https://example.invalid/one');
+    assert.equal(result.truncated, true);
+  } finally {
+    fallbackDispose();
+    dispose();
+  }
 });

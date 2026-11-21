@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.5 — DSH 0.2.2-rc.5 compatibility
+
+- Target exact DSH and DSH peer packages `0.2.2-rc.5`. Worktrees and the root
+  development SDK remain on `0.2.2-rc.1`.
+- Audit the rc.5 delta: `dsh-web` prefers a route-specific DeepSeek search
+  provider while none is configured and adds `llmProvider` to search requests,
+  `dsh-llm` adds `CONTENT_REFUSED`, and the base profile no longer pins a search
+  provider. The bundle patch still pins `searchProvider: github-copilot-search`,
+  and a new integration test registers a usable `deepseek-search-api` provider
+  to prove the pin outranks rc.5's route preference. No runtime shim or
+  persisted-data migration is needed.
+- Keep pi-ai peer `^1.3.0` (tested baseline `1.3.0`), Zod `4.6.6`, configuration,
+  the catalog cache domain/format and credential record keys unchanged.
+- Published through the package-specific staged npm release workflow; npm
+  availability requires maintainer 2FA approval. No live GUI or account testing
+  is claimed.
+
 ## 0.5.4 — provider-aware subagent route badge
 
 - Show the subagent's complete route inline in the Web session header:

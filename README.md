@@ -23,12 +23,12 @@ for the exact migration table.
 
 | Scope | Runtime baseline |
 | --- | --- |
-| Better Copilot `0.5.4` | Exact DSH and DSH peers `0.2.2-rc.3`; `@earendil-works/pi-ai` peer `^1.3.0`, tested baseline `1.3.0`; Zod `4.6.6` |
+| Better Copilot `0.5.5` | Exact DSH and DSH peers `0.2.2-rc.5`; `@earendil-works/pi-ai` peer `^1.3.0`, tested baseline `1.3.0`; Zod `4.6.6` |
 | Worktrees and root development SDK | DSH and DSH peers `0.2.2-rc.1`; unchanged by the Better Copilot migration |
 
 These are separate runtime baselines, not a claim that both plugins support the
 same host. Use each leaf's declared host version; do not use compatibility
-exemptions to load a mismatched plugin. Better Copilot's leaf checks use its rc.3
+exemptions to load a mismatched plugin. Better Copilot's leaf checks use its rc.5
 peers even though shared root development SDK pins remain rc.1.
 
 - DSH CLI/host runtime: Node.js `>=24.9.0`.
@@ -68,8 +68,10 @@ instead of assuming a registry release exists.
 - It explicitly selects `github-copilot-search`, keeping the shipped HTTP fetch
   provider. Preserve custom fetch selection in a higher-priority override.
 - It uses DSH's ordinary `web_search` tool independently of the conversation model.
-  DSH rc.3 provides a native search-provider picker and provider directory; use
-  that native UI rather than expecting a plugin-specific chooser.
+  DSH rc.5 provides a native search-provider picker and provider directory; use
+  that native UI rather than expecting a plugin-specific chooser. The bundle patch
+  still pins `github-copilot-search` explicitly because rc.5 otherwise prefers a
+  route-specific DeepSeek provider while none is configured.
 - A missing web service, a throwing guard registration, a throwing search
   registration and a throwing identity installer each degrade only that capability;
   the adapter still mounts. The guard is a wire-body transform, so a throwing
@@ -207,13 +209,12 @@ A release selects **one package**, never the root or multiple packages at once:
 - `@1yefuwang1/dsh-worktrees-vX.Y.Z`
 
 The tag must match its leaf version and repository identity. `dsh-better-copilot` is
-`0.5.4`, prepared locally for exact DSH `0.2.2-rc.3`, pi-ai peer `^1.3.0`
-(tested baseline `1.3.0`) and Zod `4.6.6`. It is staged for npm under the
-package-specific release workflow. The provider-aware subagent badge is covered
-by render tests; no live GUI testing is claimed for it. The 0.5.3 non-strict
-Responses tool default was checked with live Copilot requests on GPT-6.1 Terra,
-GPT-6.1 Sol and Grok 4.7; no live GUI or cache-hit benchmark is claimed.
-It retains persistent
+`0.5.5`, prepared for exact DSH `0.2.2-rc.5`, pi-ai peer `^1.3.0`
+(tested baseline `1.3.0`) and Zod `4.6.6`. It is published through the
+package-specific staged release workflow; npm availability requires maintainer
+2FA approval. The rc.5 retarget is covered by the repository suite, including a
+pinned-search-provider test against rc.5's route preference; no live GUI or
+account testing is claimed for it. It retains persistent
 account-scoped model catalogs, live registry refresh, native Responses search,
 wire identity, Gemini schema guarding, temperature normalization, builtin Auto
 review overrides and the read-only subagent route badge. Existing configuration,

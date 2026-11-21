@@ -4,7 +4,9 @@
 - id: llm-pi-ai
   name: '@deepseek-ai/dsh-llm-pi-ai'
   disabled: true
-# Select the search provider explicitly: the base profile pins DeepSeek search.
+# Select the search provider explicitly: since DSH 0.2.2-rc.5 the base profile
+# composes no search provider and the web seam prefers a route-specific DeepSeek
+# provider, so pin Copilot search here to keep selection deterministic.
 # This does not replace an LLM adapter or change its model/provider configuration.
 - id: web
   name: '@deepseek-ai/dsh-web'
