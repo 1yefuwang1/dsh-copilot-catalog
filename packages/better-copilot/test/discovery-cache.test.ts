@@ -138,11 +138,21 @@ test('a changed OAuth endpoint invalidates startup cache fallback and reads the 
   assert.deepEqual(Object.keys(f.catalog), Object.keys(f.options.baselineCatalog!));
 });
 
-test('timeout can return already published cache, but late response cannot write or notify registry', async () => {
+test('timeout can return already published cache, but late response cannot write or notify registry', async t => {
+  // The deadline is monotonic-clock based, so a starved runner could cross it before the cache was
+  // adopted and leave nothing to fall back to. Hold the clock and fire the timer explicitly, so the
+  // timeout only ever happens once the cached answer exists and the live fetch is hanging.
+  t.mock.method(performance, 'now', () => 0);
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const f = fixture(); f.seed(); f.options.timeoutMs = 10;
   let release!: (response: DiscoveryResponse) => void;
-  f.options.fetcher = async () => new Promise((resolve) => { release = resolve; });
-  assert.deepEqual(await f.sync(), { status: 'cached', count: 1, unsupported: [], reason: 'TIMEOUT' });
+  let fetching!: () => void;
+  const live = new Promise<void>((resolve) => { fetching = resolve; });
+  f.options.fetcher = async () => { fetching(); return new Promise((resolve) => { release = resolve; }); };
+  const pending = f.sync();
+  await live;
+  t.mock.timers.tick(10);
+  assert.deepEqual(await pending, { status: 'cached', count: 1, unsupported: [], reason: 'TIMEOUT' });
   release({ ok: true, json: async () => ({ data: [accountItem('late-live-model')] }) });
   await nextTurn();
   assert.deepEqual(f.seen, ['cache:synthetic-cached-model']);

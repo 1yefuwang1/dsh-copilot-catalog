@@ -25,7 +25,9 @@ function fixture() {
     credentials: { readRecord: async () => record },
     oauth: { refresh: async value => value, toAuth: async value => ({ apiKey: value.access, baseUrl: 'https://api.individual.githubcopilot.com' }) },
     authOptions: () => ({}), cache: () => undefined, refreshIntervalMs: () => 900_000,
-    now: () => time, fetcher: async () => { requests++; return response(); }, timeoutMs: 100,
+    // Generous bound: these tests exercise caching, not the deadline, and a loaded runner must not
+    // turn discovery's own real-clock deadline into a spurious TIMEOUT.
+    now: () => time, fetcher: async () => { requests++; return response(); }, timeoutMs: 5_000,
     changed(value) { revision++; endpoint = value; }, diagnostic(code) { diagnostics.push(code); },
   });
   return { controller, catalog, diagnostics, get requests() { return requests; }, get revision() { return revision; }, get endpoint() { return endpoint; },
