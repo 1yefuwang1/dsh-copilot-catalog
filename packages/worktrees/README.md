@@ -589,7 +589,7 @@ protection, identity, and activity checks.
 
 ## Install from this repository
 
-Requires DSH/DSH peers `0.2.2-rc.1`, Node.js `>=22.19.0`, a suitable local Git
+Requires DSH/DSH peers `0.2.2-rc.1`, Node.js `>=24.9.0`, a suitable local Git
 executable, and the ordinary session/filesystem/subprocess/sandbox/preset/plan
 capabilities. The manifest names `@deepseek-ai/dsh-agent-preset-registry` and
 `@deepseek-ai/dsh-plan-mode`; the Web Client mounts beside the existing

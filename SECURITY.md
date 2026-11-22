@@ -46,9 +46,9 @@ Better Copilot `0.5.5` targets exact DSH/DSH peers `0.2.2-rc.5`, pi-ai peer
 `^1.3.0` (tested baseline `1.3.0`) and Zod `4.6.6`. Worktrees and the root
 development SDK remain on DSH `0.2.2-rc.1`; these are separate runtime baselines,
 not interchangeable host support. Do not use compatibility exemptions. The DSH
-CLI/host requires Node.js `>=24.9.0`; the plugin library/helper minimum remains
-`>=22.19.0` and does not lower the host requirement. Review lockfile changes and
-restart the host after upgrading/removing a backend plugin.
+CLI/host and both plugins require Node.js `>=24.9.0`; there is no lower library
+floor. Review lockfile changes and restart the host after upgrading/removing a
+backend plugin.
 
 Version `0.5.5` is published through the package-specific staged release
 workflow; npm availability requires maintainer 2FA approval. No live GUI or

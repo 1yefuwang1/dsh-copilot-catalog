@@ -32,7 +32,7 @@ exemptions to load a mismatched plugin. Better Copilot's leaf checks use its rc.
 peers even though shared root development SDK pins remain rc.1.
 
 - DSH CLI/host runtime: Node.js `>=24.9.0`.
-- Plugin library/helper minimum: Node.js `>=22.19.0`; this is not the DSH CLI minimum.
+- Both plugins require the same Node.js `>=24.9.0`; there is no lower library floor.
 - Development package manager: **pnpm `11.7.0`**, pinned in the root manifest.
 
 The Copilot plugin resolves the same public pi-ai runtime the DSH adapter uses,

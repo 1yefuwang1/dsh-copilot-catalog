@@ -75,7 +75,7 @@
     "url": "https://github.com/1yefuwang1/dsh-copilot-catalog/issues"
   },
   "engines": {
-    "node": ">=22.19.0",
+    "node": ">=24.9.0",
     "dsh": "0.2.2-rc.5"
   },
   "publishConfig": {

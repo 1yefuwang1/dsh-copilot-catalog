@@ -29,7 +29,7 @@ packages. Their behaviour is consolidated here; see the migration notes below.
 - `@earendil-works/pi-ai`: peer `^1.3.0`, tested baseline `1.3.0`.
 - Zod: `4.6.6`.
 - DSH CLI/host runtime: Node.js `>=24.9.0`.
-- Plugin library/helper minimum: Node.js `>=22.19.0`, not the DSH CLI minimum.
+- Plugin minimum: the same Node.js `>=24.9.0`; there is no lower library floor.
 
 The repository root development SDK and the independent Worktrees plugin remain
 on DSH `0.2.2-rc.1`. They do not establish this leaf's runtime baseline: Better
