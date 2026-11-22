@@ -3,7 +3,9 @@
 Use **pnpm 11.7.0**. The DSH CLI/host requires Node.js **24.9.0+**; the
 plugin library/helper minimum remains **22.19.0+**, which is not sufficient to
 promise a supported DSH CLI environment. Use the host minimum when running DSH
-integration or CLI commands. From the root:
+integration or CLI commands. CI gates Node 24 only: the declared 22.19.0 floor is
+a compatibility claim without a gated job, so do not rely on CI to catch a newer
+Node-only syntax or API. From the root:
 
 ```sh
 pnpm install --frozen-lockfile --ignore-scripts
