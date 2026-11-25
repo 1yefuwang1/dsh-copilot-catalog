@@ -3,9 +3,8 @@ import type { GenerateOptions, PreparedAdapterCall, StreamChunk } from '@deepsee
 import type { PluginContext } from './catalog-types.js';
 import { guardStream } from './stream-guard.js';
 
-/** Refresh the owning account's catalog before the adapter captures connection/model facts. */
-type EnsureCatalog = (model: string | undefined, signal?: AbortSignal) => Promise<void>;
-const COPILOT = 'github-copilot';
+/** Refresh the owning provider's catalog before the adapter captures connection/model facts. */
+type EnsureCatalog = (provider: string, model: string | undefined, signal?: AbortSignal) => Promise<void>;
 
 /** Live policy for bounding one model attempt by stream progress. */
 export interface StreamGuardOptions {
@@ -33,15 +32,15 @@ export function createCatalogAdapter(adapter: LlmAdapter, ensure: EnsureCatalog,
       return adapter.imageRequestTarget(...args);
     }
     override async listModels(provider: string) {
-      if (provider === COPILOT) await ensure(undefined);
+      await ensure(provider, undefined);
       return adapter.listModels(provider);
     }
     override async resolveModel(provider: string, model: string, signal?: AbortSignal) {
-      if (provider === COPILOT) await ensure(model, signal);
+      await ensure(provider, model, signal);
       return adapter.resolveModel(provider, model, signal);
     }
     override async prepareCall(provider: string, model: string, signal?: AbortSignal): Promise<PreparedAdapterCall> {
-      if (provider === COPILOT) await ensure(model, signal);
+      await ensure(provider, model, signal);
       // Preserve the adapter-owned generation and its stream receiver exactly.
       // Refreshing again at prepared dispatch would break capability/wire binding.
       const prepared = await adapter.prepareCall(provider, model, signal);
@@ -59,7 +58,7 @@ export function createCatalogAdapter(adapter: LlmAdapter, ensure: EnsureCatalog,
       };
     }
     override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
-      if (options.provider === COPILOT) await ensure(options.model, options.signal);
+      await ensure(options.provider, options.model, options.signal);
       if (guard === undefined || !guard.enabled(options.provider)) {
         yield* adapter.stream(options);
         return;

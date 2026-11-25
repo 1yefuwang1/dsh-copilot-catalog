@@ -10,10 +10,12 @@ import { Context } from '@deepseek-ai/cordis';
 import { DomainFacility, type Domain } from '@deepseek-ai/dsh-storage-domain';
 import { JsonStorageBackend } from '@deepseek-ai/dsh-storage-json';
 import { catalogDomain, CATALOG_DOMAIN_NAME, openCatalogStore } from '../dist/catalog-store.js';
-import { catalogCacheScope, createCatalogCacheEntry, CATALOG_CACHE_MAX_AGE_MS } from '../dist/catalog-cache.js';
+import { catalogCacheScope, createCatalogCacheEntry, opencodeCacheScope, CATALOG_CACHE_MAX_AGE_MS } from '../dist/catalog-cache.js';
+import { normalizeOpencodeCatalog } from '../dist/opencode.js';
 import type { CatalogCacheScope, CredentialKey } from '../dist/catalog-types.js';
 import { accountItem, discoveryFixture, discoveryOptions, grantFixture } from './catalog-helpers.js';
 import { syncCopilotCatalog } from '../dist/discovery.js';
+import { opencodeDocument, opencodeItem } from './opencode-helpers.js';
 
 // Public SDK dependency resolution, never an installed profile or credential directory.
 const require = createRequire(import.meta.resolve('@deepseek-ai/dsh-storage-domain'));
@@ -225,4 +227,22 @@ test('the one-second storage-open deadline rejects and closes a late noncooperat
     release({ close: async () => { closed++; } } as unknown as Domain<typeof catalogDomain>);
     await nextTurn(); assert.equal(closed, 1);
   } finally { clearTimeout(keepAlive); }
+});
+
+test('the same domain table stores and reopens OpenCode Go records scoped by listing URL', async t => {
+  const f = await fixture(t);
+  const store = await openCatalogStore(f.facility, live());
+  const current = opencodeCacheScope('https://opencode.ai/inference/go/v1/models');
+  const normalized = normalizeOpencodeCatalog(opencodeDocument(opencodeItem('synthetic-opencode-model')))!;
+  const created = createCatalogCacheEntry(current, { data: normalized.data as unknown as Record<string, unknown>[] },
+    Date.now(), [], 'opencode-go')!;
+  await store.write(current, created, live());
+  await store.close();
+
+  const reopened = await openCatalogStore(f.reopen().facility, live());
+  const read = await reopened.read(current, live());
+  assert.deepEqual(read, created);
+  const other = opencodeCacheScope('https://gateway.example.com/v1/models');
+  assert.equal(await reopened.read(other, live()), undefined);
+  await reopened.close();
 });

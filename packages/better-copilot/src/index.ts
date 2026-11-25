@@ -35,6 +35,14 @@ export { COPILOT_SEARCH_PROVIDER_ID, CopilotSearchProvider } from './provider.js
 export { matchesRoute, normalizeToolSchemas, TOOL_SCHEMA_SKIPPED } from './schema.js';
 export { loadRuntime } from './runtime.js';
 export type { BetterCopilotRuntime, RuntimeOptions } from './runtime.js';
+export {
+  DEFAULT_OPENCODE_GO_MODELS_URL,
+  normalizeOpencodeCatalog,
+  OPENCODE_GO_PROVIDER,
+  opencodeGoListingUrl,
+  selectOpencodeModels,
+} from './opencode.js';
+export type { OpencodeMetadata, OpencodeProtocol, OpencodeSelection } from './opencode.js';
 export type { AutoReviewSettings, CatalogSettings, BetterCopilotConfig, BetterCopilotConfigSchema } from './config.js';
 export type { BetterCopilotDependencies, BetterCopilotPlugin } from './plugin.js';
 export type { AccountModelOptions } from './catalog.js';

@@ -85,9 +85,12 @@ test('catalog cache settings are volatile with bounded demand-refresh defaults',
   const defaults = Config();
   assert.equal(defaults.catalog.cache.get(), true);
   assert.equal(defaults.catalog.refreshIntervalMs.get(), 900_000);
-  const overridden = Config({ catalog: { cache: false, refreshIntervalMs: 60_000 } });
+  assert.deepEqual(defaults.catalog.providers.get(), ['opencode-go']);
+  const overridden = Config({ catalog: { cache: false, refreshIntervalMs: 60_000, providers: ['opencode-go', 'synthetic-other'] } });
   assert.equal(overridden.catalog.cache.get(), false);
   assert.equal(overridden.catalog.refreshIntervalMs.get(), 60_000);
+  assert.deepEqual(overridden.catalog.providers.get(), ['opencode-go', 'synthetic-other']);
+  assert.deepEqual(Config({ catalog: { providers: [] } }).catalog.providers.get(), []);
   for (const refreshIntervalMs of [0, 59_999, 86_400_001, 60_000.5]) {
     assert.throws(() => Config({ catalog: { refreshIntervalMs } }));
   }

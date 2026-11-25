@@ -42,7 +42,7 @@ unintended credential writes privately to [the maintainer](https://github.com/1y
 Use [GitHub's private vulnerability reporting](https://github.com/1yefuwang1/dsh-copilot-catalog/security/advisories/new)
 if enabled; do not open a public issue containing sensitive details.
 
-Better Copilot `0.5.5` targets exact DSH/DSH peers `0.2.2-rc.5`, pi-ai peer
+Better Copilot `0.5.6` targets exact DSH/DSH peers `0.2.2-rc.5`, pi-ai peer
 `^1.3.0` (tested baseline `1.3.0`) and Zod `4.6.6`. Worktrees and the root
 development SDK remain on DSH `0.2.2-rc.1`; these are separate runtime baselines,
 not interchangeable host support. Do not use compatibility exemptions. The DSH
@@ -50,11 +50,14 @@ CLI/host and both plugins require Node.js `>=24.9.0`; there is no lower library
 floor. Review lockfile changes and restart the host after upgrading/removing a
 backend plugin.
 
-Version `0.5.5` is published through the package-specific staged release
+Version `0.5.6` is published through the package-specific staged release
 workflow; npm availability requires maintainer 2FA approval. No live GUI or
 account testing is claimed. Existing configuration, cache domain/format version
 and credential record keys are preserved; no persisted account-cache migration
-is required.
+is required. OpenCode Go discovery fetches only the public model listing and
+never resolves or sends a credential; a custom `baseURL` must be a canonical
+HTTPS origin, and persisted OpenCode records are allowlisted metadata scoped by
+that exact listing URL.
 Native-search entitlement, API options and account policies are not stable public
 contracts; synthetic tests do not prove support for a live account/model. Observe
 GitHub's applicable account/usage policies; auxiliary searches may consume usage.

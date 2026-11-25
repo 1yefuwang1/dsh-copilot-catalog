@@ -41,6 +41,8 @@ export interface AutoReviewSettings {
 export interface CatalogSettings {
   cache: Volatile<boolean>;
   refreshIntervalMs: Volatile<number>;
+  /** Catalog routes (other than Copilot, which is always discovered) refreshed live. */
+  providers: Volatile<string[]>;
 }
 
 /** Bound one model attempt by stream progress instead of chunk arrival. */
@@ -64,7 +66,7 @@ export interface BetterCopilotConfig {
 /** User-facing configuration: plain values, before volatile resolution. */
 export interface BetterCopilotConfigInput {
   providers?: Record<string, { apiKeyEnv?: string; baseURL?: string } & Record<string, unknown>>;
-  catalog?: { cache?: boolean; refreshIntervalMs?: number };
+  catalog?: { cache?: boolean; refreshIntervalMs?: number; providers?: string[] };
   search?: {
     apiKeyEnv?: string;
     baseURL?: string;
@@ -134,10 +136,14 @@ export const GuardConfig = z.object({
   logFixes: z.boolean().default(false).volatile(),
 });
 
+/** Routes whose installed catalog is kept current from the provider's live listing. */
+export const DEFAULT_CATALOG_DISCOVERY_PROVIDERS = ['opencode-go'];
+
 /** Cache can be disabled without disabling account discovery or missing-model refresh. */
 export const CatalogConfig = z.object({
   cache: z.boolean().default(true).volatile(),
   refreshIntervalMs: z.number().step(1).min(60_000).max(86_400_000).default(900_000).volatile(),
+  providers: z.array(z.string()).default(DEFAULT_CATALOG_DISCOVERY_PROVIDERS).volatile(),
 });
 
 /** A progress timeout is a timeout, so zero is rejected rather than disabling the guard. */

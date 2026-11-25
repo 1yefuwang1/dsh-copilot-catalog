@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.5.6 — live OpenCode Go model catalog
+
+- Refresh and cache the `opencode-go` route's chat catalog from OpenCode's public
+  `/models` listing with the same demand-driven policy as the Copilot account
+  catalog: the persisted last-known selection precedes the live request, a
+  15-minute interval or one bounded missing-model retry (60-second cooldown)
+  bounds the next refresh, and a failed request keeps the last successful list.
+- Replace the installed pi-ai OpenCode Go list with the advertised one, so newly
+  released ids such as `kimi-k3.1-pro` appear without a pi-ai bump and withdrawn
+  ids stop being selectable. Known ids keep their installed descriptor; new ids
+  inherit the advertised wire protocol, capacity, image input, cost (including
+  context tiers) and reasoning levels.
+- Add `catalog.providers` (default `['opencode-go']`) for non-Copilot routes that
+  receive live discovery; Copilot discovery remains always-on. Omitting the
+  `opencode-go` profile or setting an empty list disables the listing.
+- Persist OpenCode metadata in the existing storage domain and table as a
+  `kind: 'opencode-go'` record scoped by the exact listing URL. The cache format
+  version is unchanged: legacy Copilot records have no `kind` and remain
+  readable. The public listing is never requested with a credential.
+- Preserve all existing configuration, credential keys, wire behavior and the
+  Copilot catalog format. No migration or reset is required.
+
 ## 0.5.5 — DSH 0.2.2-rc.5 compatibility
 
 - Target exact DSH and DSH peer packages `0.2.2-rc.5`. Worktrees and the root

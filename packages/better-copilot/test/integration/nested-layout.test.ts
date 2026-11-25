@@ -7,9 +7,8 @@ import { loadRuntime } from '../../dist/runtime.js';
 
 /**
  * A layout where the plugin and the adapter resolve different pi-ai copies.
- * The merged runtime imports all three public pi-ai entry points from the
- * adapter's tree: `dist/index.js`, `providers/github-copilot.js` and
- * `providers/github-copilot.models.js`.
+ * The merged runtime imports every public pi-ai entry point from the adapter's
+ * tree: `dist/index.js`, both provider factories and both chat catalogs.
  */
 async function layout() {
   const root = await mkdtemp(join(tmpdir(), 'better-copilot-nested-'));
@@ -37,6 +36,10 @@ async function layout() {
     'export const GITHUB_COPILOT_MODELS = { nested: true };',
     '',
   ].join('\n'));
+  await writeFile(join(pi, 'dist', 'providers', 'opencode-go.models.js'), [
+    'export const OPENCODE_GO_MODELS = { nestedOpencode: true };',
+    '',
+  ].join('\n'));
   await writeFile(join(pi, 'dist', 'providers', 'github-copilot.js'), [
     'const oauth = { refresh: async () => {}, toAuth: async () => ({ apiKey: "nested", baseUrl: "https://api.individual.githubcopilot.com" }) };',
     "export function githubCopilotProvider() { return { id: 'github-copilot', auth: { oauth }, getModels: () => [] }; }",
@@ -53,6 +56,7 @@ test('the merged runtime loads the adapter, catalog, OAuth and factories from th
   assert.equal(runtime.original.name, 'stub-adapter');
   // Catalog, OAuth hooks and factories all come from the adapter's sibling copy.
   assert.deepEqual(runtime.catalog, { nested: true });
+  assert.deepEqual(runtime.opencodeGoCatalog, { nestedOpencode: true });
   assert.equal(typeof runtime.oauth.refresh, 'function');
   assert.equal(typeof runtime.oauth.toAuth, 'function');
   assert.equal(String(runtime.recordKeyFor('github-copilot')), 'nested/github-copilot');
@@ -60,11 +64,13 @@ test('the merged runtime loads the adapter, catalog, OAuth and factories from th
   const created = runtime.createModels({} as never) as unknown as { nested?: boolean };
   assert.equal(created.nested, true, 'createModels comes from the adapter-resolved copy');
   // The plugin-visible workspace copies are different objects and are not what we loaded.
-  const [localCatalog, localPi] = await Promise.all([
+  const [localCatalog, localOpencodeCatalog, localPi] = await Promise.all([
     import('@earendil-works/pi-ai/providers/github-copilot.models'),
+    import('@earendil-works/pi-ai/providers/opencode-go.models'),
     import('@earendil-works/pi-ai'),
   ]);
   assert.notEqual(runtime.catalog, localCatalog.GITHUB_COPILOT_MODELS);
+  assert.notEqual(runtime.opencodeGoCatalog, localOpencodeCatalog.OPENCODE_GO_MODELS);
   assert.notEqual(runtime.createModels, localPi.createModels);
 });
 

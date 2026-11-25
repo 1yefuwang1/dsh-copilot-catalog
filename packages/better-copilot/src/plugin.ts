@@ -22,9 +22,11 @@ import { installAutoReviewRouting } from './auto-review.js';
 import { normalizeCopilotTemperature } from './temperature.js';
 import { normalizeCopilotResponsesStrict } from './strict.js';
 import { createCatalogController } from './catalog-controller.js';
+import { createOpencodeCatalogController } from './opencode-controller.js';
 import { openCatalogStore } from './catalog-store.js';
 import { adapterContext, type StreamGuardOptions } from './catalog-adapter.js';
-import type { CatalogCache } from './catalog-types.js';
+import type { CatalogCache, ModelCatalog } from './catalog-types.js';
+import { OPENCODE_GO_PROVIDER } from './opencode.js';
 import type { DomainFacility } from '@deepseek-ai/dsh-storage-domain';
 import { DEFAULT_STREAM_IDLE_TIMEOUT_MS } from './stream-guard.js';
 
@@ -38,7 +40,9 @@ export const inject = ['llm', 'credentials'];
  * adapter, its catalog and its raw OAuth hooks, so the default factory is just
  * `createPlugin(await loadRuntime())`; tests inject narrower doubles.
  */
-export interface BetterCopilotDependencies extends BetterCopilotRuntime {
+export interface BetterCopilotDependencies extends Omit<BetterCopilotRuntime, 'opencodeGoCatalog'> {
+  /** Applied OpenCode Go chat catalog; narrow test doubles may omit it to disable that discovery. */
+  opencodeGoCatalog?: ModelCatalog;
   fetcher?: typeof globalThis.fetch;
   timeoutMs?: number;
   now?: () => number;
@@ -132,6 +136,8 @@ export function createPlugin(dependencies: BetterCopilotDependencies): BetterCop
   const searchRuntime: SearchRuntime = dependencies.searchRuntime ?? dependencies;
   let accountEndpoint: string | undefined;
   const baselineCatalog = structuredClone(dependencies.catalog);
+  const opencodeBaseline = dependencies.opencodeGoCatalog === undefined
+    ? undefined : structuredClone(dependencies.opencodeGoCatalog);
 
   /** Explicit standalone discovery retains its predecessor semantics. */
   const sync = (credentials?: CredentialReader, authOptions?: CopilotAuthOptions): Promise<SyncResult> => {
@@ -293,6 +299,11 @@ export function createPlugin(dependencies: BetterCopilotDependencies): BetterCop
         };
       };
       let revision = 0;
+      const notifyModels = (provider: string): void => {
+        revision++;
+        // Notify model pickers without mutating stored provider settings.
+        try { ctx.emit('llm/models-updated', provider); } catch { /* diagnostics/UI only */ }
+      };
       const controller = createCatalogController({
         catalog: dependencies.catalog, baseline: baselineCatalog, credentials,
         oauth: dependencies.oauth, recordKey: dependencies.recordKeyFor('github-copilot'),
@@ -301,11 +312,7 @@ export function createPlugin(dependencies: BetterCopilotDependencies): BetterCop
         ...(dependencies.fetcher === undefined ? {} : { fetcher: dependencies.fetcher }),
         ...(dependencies.timeoutMs === undefined ? {} : { timeoutMs: dependencies.timeoutMs }),
         ...(dependencies.now === undefined ? {} : { now: dependencies.now }),
-        changed(endpoint) {
-          accountEndpoint = endpoint; revision++;
-          // Notify model pickers without mutating stored provider settings.
-          try { ctx.emit('llm/models-updated', 'github-copilot'); } catch { /* diagnostics/UI only */ }
-        },
+        changed(endpoint) { accountEndpoint = endpoint; notifyModels('github-copilot'); },
         diagnostic(code) { log('warn', 'Copilot catalog refresh: %s', code); },
       });
       ctx.effect(() => () => controller.dispose(), 'copilot: catalog refresh lifecycle');
@@ -315,18 +322,70 @@ export function createPlugin(dependencies: BetterCopilotDependencies): BetterCop
       ctx.on('credentials/reference-updated', (ref) => {
         if (ref === config.providers.get()['github-copilot']?.apiKeyEnv || ref === 'COPILOT_GITHUB_TOKEN') controller.invalidate();
       });
+
+      // OpenCode Go uses the same demand-driven policy for its public catalog. Its
+      // selection replaces the installed pi-ai list, so newly released models
+      // appear without a pi-ai bump and withdrawn ones stop being selectable.
+      const catalogProviders = (): readonly string[] => config.catalog.providers.get();
+      const opencodeRoute = () => config.providers.get()[OPENCODE_GO_PROVIDER];
+      const opencodeEnabled = (): boolean => catalogProviders().includes(OPENCODE_GO_PROVIDER);
+      const opencodeActive = (): boolean => opencodeBaseline !== undefined && opencodeEnabled() && opencodeRoute() !== undefined;
+      const opencodeBaseUrl = (): string | undefined => {
+        const baseURL = opencodeRoute()?.baseURL;
+        return typeof baseURL === 'string' && baseURL ? baseURL : undefined;
+      };
+      const opencodeController = opencodeBaseline === undefined || dependencies.opencodeGoCatalog === undefined
+        ? undefined
+        : createOpencodeCatalogController({
+          catalog: dependencies.opencodeGoCatalog, baseline: opencodeBaseline,
+          cache: () => config.catalog.cache.get() ? persistentCache : undefined,
+          refreshIntervalMs: () => config.catalog.refreshIntervalMs.get(),
+          active: opencodeActive, baseUrl: opencodeBaseUrl,
+          ...(dependencies.fetcher === undefined ? {} : { fetcher: dependencies.fetcher }),
+          ...(dependencies.timeoutMs === undefined ? {} : { timeoutMs: dependencies.timeoutMs }),
+          ...(dependencies.now === undefined ? {} : { now: dependencies.now }),
+          changed() { notifyModels(OPENCODE_GO_PROVIDER); },
+          diagnostic(code) { log('warn', 'OpenCode Go catalog refresh: %s', code); },
+        });
+      if (opencodeController) ctx.effect(() => () => opencodeController.dispose(), 'opencode: catalog refresh lifecycle');
+      for (const provider of catalogProviders()) {
+        if (provider !== OPENCODE_GO_PROVIDER && provider !== 'github-copilot') {
+          log('warn', 'better-copilot: unsupported catalog provider "%s" ignored', provider);
+        }
+      }
+
       let previousProfile = config.providers.get()['github-copilot'];
+      let previousOpencode = { profile: opencodeRoute(), enabled: opencodeEnabled() };
       // The loader owns this event; it is not a runtime dependency of this Host-only wrapper.
       (ctx as unknown as { on(event: 'loader/volatile-update', listener: () => void): unknown }).on('loader/volatile-update', () => {
         const profile = config.providers.get()['github-copilot'];
         if (profile !== previousProfile) { previousProfile = profile; controller.invalidate(); }
+        const opencodeProfile = opencodeRoute();
+        const enabled = opencodeEnabled();
+        if (opencodeProfile !== previousOpencode.profile || enabled !== previousOpencode.enabled) {
+          previousOpencode = { profile: opencodeProfile, enabled };
+          opencodeController?.invalidate();
+        }
       });
-      const result = await controller.refresh();
+
+      // Two independent catalogs, one bounded mount wait. Each controller keeps
+      // its own last-known selection when its refresh fails.
+      const [result, opencodeResult] = await Promise.all([
+        controller.refresh(),
+        opencodeController === undefined ? Promise.resolve(undefined) : opencodeController.refresh(),
+      ]);
       if (result?.status === 'synced') {
         log('info', 'Copilot catalog synced: %d enabled models; unsupported new IDs: %s', result.count, JSON.stringify(result.unsupported));
       }
+      if (opencodeResult?.status === 'synced') {
+        log('info', 'OpenCode Go catalog synced: %d chat models; unsupported IDs: %s', opencodeResult.count, JSON.stringify(opencodeResult.unsupported));
+      }
       if (accountEndpoint) log('info', 'Copilot runtime endpoint: %s', accountEndpoint);
-      return original.apply(adapterContext(ctx, controller.ensure, createStreamGuardPolicy(config)), {
+      const ensureCatalog = async (provider: string, model: string | undefined, signal?: AbortSignal): Promise<void> => {
+        if (provider === 'github-copilot') { await controller.ensure(model, signal); return; }
+        if (provider === OPENCODE_GO_PROVIDER) await opencodeController?.ensure(model, signal);
+      };
+      return original.apply(adapterContext(ctx, ensureCatalog, createStreamGuardPolicy(config)), {
         providers: providersFacade(config.providers, () => accountEndpoint, () => revision),
       } as unknown as PluginConfig);
     },

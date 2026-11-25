@@ -15,7 +15,7 @@ export const catalogDomain = {
     const scope = entry && typeof entry.accountKey === 'string' && typeof entry.endpoint === 'string'
       ? { accountKey: entry.accountKey, endpoint: entry.endpoint } : undefined;
     const parsed = scope ? readCatalogCacheEntry(value, scope, Date.now()) : undefined;
-    if (!parsed) { ctx.addIssue({ code: 'custom', message: 'Invalid or expired Copilot catalog cache' }); return z.NEVER; }
+    if (!parsed) { ctx.addIssue({ code: 'custom', message: 'Invalid or expired provider catalog cache' }); return z.NEVER; }
     return parsed;
   }) } },
 };

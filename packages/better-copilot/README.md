@@ -1,10 +1,12 @@
 # dsh-better-copilot
 
-One DeepSeek Harness plugin for GitHub Copilot:
+One DeepSeek Harness plugin for GitHub Copilot and OpenCode Go:
 
 - **Account-aware model discovery** — reads the stored Copilot OAuth grant (or an
   explicit API-key reference), lists the account's models, and keeps the bundled
   catalog only as a fallback.
+- **Live OpenCode Go catalog** — refreshes and caches the public OpenCode Go chat
+  list, so its model picker tracks the provider without a pi-ai upgrade.
 - **Copilot-compatible wire identity** — installs a refcounted `fetch` header
   interceptor while mounted so the pi-ai adapter presents Copilot client
   identity headers.
@@ -25,7 +27,7 @@ packages. Their behaviour is consolidated here; see the migration notes below.
 
 ## Compatibility
 
-- Better Copilot `0.5.5`: exact DSH and DSH peer packages `0.2.2-rc.5`.
+- Better Copilot `0.5.6`: exact DSH and DSH peer packages `0.2.2-rc.5`.
 - `@earendil-works/pi-ai`: peer `^1.3.0`, tested baseline `1.3.0`.
 - Zod: `4.6.6`.
 - DSH CLI/host runtime: Node.js `>=24.9.0`.
@@ -44,14 +46,14 @@ affiliated with GitHub, DeepSeek or the pi-ai maintainers.
 ## Installation
 
 Install or link this leaf package, not the monorepo root. Its package name is
-`dsh-better-copilot`. Version `0.5.5` targets exact DSH `0.2.2-rc.5` and is
+`dsh-better-copilot`. Version `0.5.6` targets exact DSH `0.2.2-rc.5` and is
 published through the package-specific staged release workflow; npm availability
-requires maintainer 2FA approval. The rc.5 retarget is covered by the repository
-suite, including a pinned-search-provider integration test against rc.5's route
-preference; no live GUI or account testing is claimed. Until the staged version
-is approved, use an explicitly built local tarball or workspace link only if you
-intend to change a profile. Restart the DSH host after installing or removing a
-host plugin.
+requires maintainer 2FA approval. `0.5.6` adds live OpenCode Go catalog discovery
+and caching; synthetic unit and real-DSH integration tests cover discovery, cache
+validation, refresh policy and catalog publication, but no live GUI or account
+testing is claimed. Until the staged version is approved, use an explicitly built
+local tarball or workspace link only if you intend to change a profile. Restart
+the DSH host after installing or removing a host plugin.
 
 The bundle patch:
 
@@ -75,6 +77,7 @@ The bundle patch:
     catalog:
       cache: true
       refreshIntervalMs: 900000 # refresh on use after 15 minutes
+      providers: [opencode-go]  # non-Copilot routes with live discovery
     search:
       model: gpt-6.1-sol
       maxTokens: 4096
@@ -100,7 +103,9 @@ The bundle patch:
 ```
 
 `providers` is the pi-ai adapter's own schema, reused unchanged, so every
-provider setting behaves exactly as it does with the stock adapter. `search`
+provider setting behaves exactly as it does with the stock adapter. `catalog`
+controls persistent caching, the demand-refresh interval and which non-Copilot
+routes receive live discovery; Copilot discovery is always enabled. `search`
 configures the web-search provider; `toolSchema` configures the Gemini guard;
 `autoReview` configures the builtin review request only; `streamGuard` bounds a
 model attempt by stream progress.
@@ -134,10 +139,13 @@ stricter than the existing idle watchdog by default. Set it lower to retry
 chatty empty streams sooner, or set `streamGuard.enabled: false` to disable the
 guard. `providers` defaults to `['github-copilot']`.
 
-## Persistent model catalog
+## Persistent model catalogs
 
-By default, the plugin retains the **last successfully discovered account catalog**
-in DSH's storage domain `dsh_better_copilot_catalog`, table `catalogs`. DSH's
+By default, the plugin retains the **last successfully discovered catalog** for
+each managed route in DSH's storage domain `dsh_better_copilot_catalog`, table
+`catalogs`. OpenCode Go uses the same domain and retention rules with its own
+URL-scoped records (see [below](#opencode-go-model-catalog)); the account-scoped
+rules in this section describe the Copilot catalog. DSH's
 configured storage backend determines the physical location; nothing is written
 into this repository or the profile's plugin configuration. The optional
 `storageDomain` service is required for persistence. If it is absent or cannot
@@ -174,10 +182,51 @@ discovery. Cache and interval settings are volatile and affect the next refresh;
 disabling persistence does not delete previously saved records. A host restart
 is needed to load an updated plugin implementation, not to adopt a live catalog.
 
-The `0.5.5` rc.5 retarget preserves the existing configuration, storage domain,
-cache format version and credential record keys. Persisted account caches need no
-migration or reset; their existing account/endpoint validation and expiry rules
-still apply.
+`0.5.6` preserves all existing configuration, credential record keys and the
+persisted Copilot cache format. OpenCode Go records add a `kind` discriminator
+inside the same version-1 cache envelope, so no migration or reset is required;
+the default `catalog.providers` includes `opencode-go`, and discovery only runs
+when that route profile exists.
+
+## OpenCode Go model catalog
+
+When the `opencode-go` route is configured, the plugin keeps its chat catalog in
+sync with OpenCode's public listing at
+`https://opencode.ai/inference/go/v1/models`. The listing is read without a
+credential: discovery never resolves or sends `OPENCODE_API_KEY`. An explicit
+`providers['opencode-go'].baseURL` redirects both inference and the listing (a URL
+with no version segment gains `/v1/models`); endpoints must be canonical HTTPS
+origins, and redirects are refused.
+
+- A persisted selection for the exact listing URL is published first, then the
+  live listing replaces it. A failed live request keeps the last successful
+  selection, or the installed pi-ai list when nothing was ever cached, and
+  reports a controlled diagnostic such as `FETCH_FAILED` or
+  `CACHE_FALLBACK:FETCH_FAILED`.
+- The live result **replaces** the installed list: ids OpenCode no longer
+  advertises disappear, and ids it newly advertises become selectable. Known ids
+  keep their installed descriptor, including its richer wire compatibility; new
+  ids are described from the listing.
+- New descriptors use the advertised protocol (`chat-completions` →
+  `openai-completions`, `messages` → `anthropic-messages`, `responses` →
+  `openai-responses`, `generate-content` → `google-generative-ai`), capacity,
+  image input, cost (including the cheapest advertised cache-write retention and
+  context tiers) and reasoning levels. Decision, embedding, unknown-protocol and
+  tool-less entries are reported instead of guessed. Audio and video input
+  modalities are not advertised because pi-ai chat models take text and images.
+- Records carry `kind: 'opencode-go'` and a scope digest of the exact listing URL
+  in the same domain/table. The cache format version is unchanged; records from
+  before this release have no `kind` and remain readable as Copilot catalogs. The
+  same 7-day expiry, 15-minute interval, one-retry missing-model refresh and
+  60-second miss cooldown apply.
+- `catalog.providers` selects non-Copilot routes that receive discovery. The
+  default is `['opencode-go']`; set it to `[]` to keep the installed OpenCode
+  list, or omit the `opencode-go` profile to skip the route entirely. The listing
+  is public, so it may advertise a model the account's plan does not serve; a
+  rejected request stays an ordinary provider error and no entitlement probe is
+  attempted.
+- Each successful publication emits `llm/models-updated` for the route, so open
+  model pickers refresh without restarting the host.
 
 ## Builtin Auto review
 

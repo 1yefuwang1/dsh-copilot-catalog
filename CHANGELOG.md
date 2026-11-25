@@ -1,5 +1,26 @@
 # Monorepo changelog
 
+## Better Copilot 0.5.6 — live OpenCode Go model catalog
+
+- Discover, replace and persist the `opencode-go` chat catalog from OpenCode's
+  public `/models` listing. These are the same demand-driven rules as the Copilot
+  account catalog: persisted-before-live startup, a 15-minute refresh interval,
+  one bounded missing-model retry with a 60-second cooldown, and last-known
+  retention when the listing fails.
+- Newly released models (for example `kimi-k3.1-pro`) become selectable without a
+  pi-ai upgrade; withdrawn ids stop being selectable. Installed descriptors are
+  kept for known ids and built from listed protocol/capacity/cost/reasoning
+  metadata for new ones.
+- Add `catalog.providers` (default `['opencode-go']`); `catalog.cache` and
+  `catalog.refreshIntervalMs` now govern both catalogs. Omitting the
+  `opencode-go` route profile or an empty list disables its discovery.
+- Keep the storage domain, cache format version and credential keys unchanged;
+  OpenCode records add a `kind` discriminator and legacy Copilot records remain
+  readable. The public listing sends no credential.
+- Publish `0.5.6` through the package-specific staged npm release workflow; the
+  maintainer's 2FA approval makes the exact package live. No live GUI or account
+  testing is claimed for this release.
+
 ## Better Copilot 0.5.5 — DSH 0.2.2-rc.5 compatibility
 
 - Target exact DSH and DSH peer packages `0.2.2-rc.5` for Better Copilot only.

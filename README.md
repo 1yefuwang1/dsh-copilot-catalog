@@ -9,7 +9,7 @@ of the staged release.
 
 | Package | Purpose | DSH behavior |
 | --- | --- | --- |
-| [dsh-better-copilot](<packages/better-copilot/README.md>) | One Copilot plugin: model discovery, wire identity, native web search, Gemini guard, builtin review overrides and a bounded stream-progress retry guard | Replaces the standard pi-ai adapter (one row, one config: `providers`, `search`, `toolSchema`, `autoReview`, `streamGuard`), registers `github-copilot-search`, normalizes wire compatibility, selects the builtin reviewer model/effort and bounds an attempt that emits only empty control events |
+| [dsh-better-copilot](<packages/better-copilot/README.md>) | One Copilot and OpenCode Go plugin: model discovery, live OpenCode Go catalogs, wire identity, native web search, Gemini guard, builtin review overrides and a bounded stream-progress retry guard | Replaces the standard pi-ai adapter (one row, one config: `providers`, `catalog`, `search`, `toolSchema`, `autoReview`, `streamGuard`), registers `github-copilot-search`, refreshes the configured `opencode-go` route from its public listing, normalizes wire compatibility, selects the builtin reviewer model/effort and bounds an attempt that emits only empty control events |
 | [@1yefuwang1/dsh-worktrees](<packages/worktrees/README.md>) | Multi-folder projects with Local/worktree threads | Adds metadata-only project grouping, main-folder defaults/reminders, native first-Send worktree setup and branch naming, configurable inactivity cleanup, explicit branch-choice Local recovery with staged input and exact-ID reuse, and guarded handoff; no core or LLM adapter changes |
 
 The repository root is **private development tooling**, not a DSH plugin. Install
@@ -23,7 +23,7 @@ for the exact migration table.
 
 | Scope | Runtime baseline |
 | --- | --- |
-| Better Copilot `0.5.5` | Exact DSH and DSH peers `0.2.2-rc.5`; `@earendil-works/pi-ai` peer `^1.3.0`, tested baseline `1.3.0`; Zod `4.6.6` |
+| Better Copilot `0.5.6` | Exact DSH and DSH peers `0.2.2-rc.5`; `@earendil-works/pi-ai` peer `^1.3.0`, tested baseline `1.3.0`; Zod `4.6.6` |
 | Worktrees and root development SDK | DSH and DSH peers `0.2.2-rc.1`; unchanged by the Better Copilot migration |
 
 These are separate runtime baselines, not a claim that both plugins support the
@@ -82,12 +82,20 @@ instead of assuming a registry release exists.
   after 15 minutes and missing models trigger one bounded, deduplicated refresh.
   The active adapter registry updates without resetting already-prepared calls.
   `catalog.cache` and `catalog.refreshIntervalMs` configure this behavior.
+- The configured `opencode-go` route keeps its chat catalog in sync with
+  OpenCode's public `/models` listing under the same policy: the persisted
+  selection precedes the live request, the live list replaces the installed one,
+  and failure keeps the last successful selection. New ids such as
+  `kimi-k3.1-pro` become selectable without a pi-ai upgrade; known ids keep their
+  installed descriptor. `catalog.providers` selects non-Copilot routes (default
+  `['opencode-go']`); the public listing is fetched without a credential.
 - Builtin Auto review uses `autoReview.model` and `autoReview.reasoningEffort`
   overrides. Without a model override, Copilot reviews use `gpt-6.1-terra`, while
   DeepSeek Flash stays on Flash; omitted effort uses the review model's adapter
   default. This does not enable Auto review or alter its authorization policy.
 - Loader patches replace a row's `config` wholesale: restate `providers` and all
-  non-default `search`, `toolSchema` and `autoReview` settings together.
+  non-default `catalog`, `search`, `toolSchema` and `autoReview` settings
+  together.
 - Restart the DSH host after host-plugin installation/removal. Search-provider
   selection applies to the next operation. Better Copilot retains its existing
   read-only subagent badge; this migration adds no custom UI or metadata feature.
@@ -209,17 +217,21 @@ A release selects **one package**, never the root or multiple packages at once:
 - `@1yefuwang1/dsh-worktrees-vX.Y.Z`
 
 The tag must match its leaf version and repository identity. `dsh-better-copilot` is
-`0.5.5`, prepared for exact DSH `0.2.2-rc.5`, pi-ai peer `^1.3.0`
+`0.5.6`, prepared for exact DSH `0.2.2-rc.5`, pi-ai peer `^1.3.0`
 (tested baseline `1.3.0`) and Zod `4.6.6`. It is published through the
 package-specific staged release workflow; npm availability requires maintainer
-2FA approval. The rc.5 retarget is covered by the repository suite, including a
-pinned-search-provider test against rc.5's route preference; no live GUI or
-account testing is claimed for it. It retains persistent
-account-scoped model catalogs, live registry refresh, native Responses search,
-wire identity, Gemini schema guarding, temperature normalization, builtin Auto
-review overrides and the read-only subagent route badge. Existing configuration,
-cache domain/version and credential keys are unchanged; persisted account caches
-need no migration. It consolidates catalog `0.2.9`, search `0.1.5` and tool schema
+2FA approval. `0.5.6` adds live OpenCode Go catalog discovery and caching: the
+public listing replaces the installed list under the same persisted-before-live,
+15-minute, one-missing-model-retry policy, so new ids appear and withdrawn ids
+disappear without a pi-ai upgrade. Synthetic unit and real-DSH integration tests
+cover discovery, caching, refresh and adapter snapshot rebuilds; no live GUI or
+account testing is claimed. It retains persistent account-scoped Copilot
+catalogs, live registry refresh, native Responses search, wire identity, Gemini
+schema guarding, temperature normalization, builtin Auto review overrides and
+the read-only subagent route badge. Existing configuration, cache domain/version
+and credential keys are unchanged; persisted Copilot caches need no migration,
+and OpenCode records add only a `kind` discriminator to the same version-1
+envelope. It consolidates catalog `0.2.9`, search `0.1.5` and tool schema
 `0.1.3`; those three npm versions remain published but are no longer built here.
 Published versions cannot be republished. Worktrees is
 `@1yefuwang1/dsh-worktrees@0.2.28`, which hides the starting-branch picker while a

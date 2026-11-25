@@ -133,8 +133,8 @@ test('awaits refresh before any public asynchronous method captures a snapshot',
       const gate = deferred();
       const signal = new AbortController().signal;
       const refreshes: unknown[][] = [];
-      const wrapped = createCatalogAdapter(original, async (model, suppliedSignal) => {
-        refreshes.push([model, suppliedSignal]);
+      const wrapped = createCatalogAdapter(original, async (provider, model, suppliedSignal) => {
+        refreshes.push([provider, model, suppliedSignal]);
         await gate.promise;
         original.generation = 2;
       });
@@ -143,7 +143,7 @@ test('awaits refresh before any public asynchronous method captures a snapshot',
         : method === 'listModels' ? wrapped.listModels(COPILOT)
           : wrapped[method](COPILOT, options.model, signal);
       assert.equal(original.calls.length, 0, 'no adapter operation before refresh settles');
-      assert.deepEqual(refreshes, [[method === 'listModels' ? undefined : options.model,
+      assert.deepEqual(refreshes, [[COPILOT, method === 'listModels' ? undefined : options.model,
         method === 'listModels' ? undefined : signal]]);
       gate.resolve();
       const result = await pending;
@@ -158,9 +158,10 @@ test('awaits refresh before any public asynchronous method captures a snapshot',
   }
 });
 
-test('all non-Copilot routes bypass refresh including lookalike provider names', async () => {
+test('forwards every provider id to the catalog policy, including lookalike names', async () => {
   const original = new RecordingAdapter();
-  const wrapped = createCatalogAdapter(original, async () => { assert.fail('only the exact github-copilot route refreshes'); });
+  const visited: string[] = [];
+  const wrapped = createCatalogAdapter(original, async (provider) => { visited.push(provider); });
   for (const provider of ['openai', 'github-copilot-other', 'GitHub-Copilot']) {
     await wrapped.resolveModel(provider, 'm');
     await wrapped.listModels(provider);
@@ -168,6 +169,12 @@ test('all non-Copilot routes bypass refresh including lookalike provider names',
     await drain(prepared.stream(request(provider, 'm')));
     await drain(wrapped.stream(request(provider, 'm')));
   }
+  // The policy decides which routes refresh; the wrapper neither guesses nor rewrites ids.
+  assert.deepEqual(visited, [
+    'openai', 'openai', 'openai', 'openai',
+    'github-copilot-other', 'github-copilot-other', 'github-copilot-other', 'github-copilot-other',
+    'GitHub-Copilot', 'GitHub-Copilot', 'GitHub-Copilot', 'GitHub-Copilot',
+  ]);
   assert.equal(original.calls.length, 15);
 });
 
@@ -211,7 +218,7 @@ test('refresh errors and caller cancellation reject before underlying adapter wo
   await assert.rejects(wrapped.prepareCall(COPILOT, 'm'), (error) => error === failure);
   await assert.rejects(drain(wrapped.stream(request())), (error) => error === failure);
   const abort = new AbortController();
-  const cancelled = createCatalogAdapter(original, async (_model, signal) => {
+  const cancelled = createCatalogAdapter(original, async (_provider, _model, signal) => {
     assert.equal(signal, abort.signal);
     await new Promise<void>((_resolve, reject) => {
       signal!.addEventListener('abort', () => reject(signal!.reason), { once: true });
@@ -322,8 +329,8 @@ test('context facade preserves context functions/properties and handles, gating 
   }
   const service = new Service();
   const ctx = { llm: service, get() { return this; }, effect() {}, token: {} };
-  let refreshes = 0;
-  const facade = adapterContext(ctx as unknown as PluginContext, async () => { refreshes++; });
+  const visited: string[] = [];
+  const facade = adapterContext(ctx as unknown as PluginContext, async (provider) => { visited.push(provider); });
   assert.notEqual(facade, ctx);
   assert.equal(facade.get, ctx.get);
   assert.equal(facade.effect, ctx.effect);
@@ -333,7 +340,7 @@ test('context facade preserves context functions/properties and handles, gating 
   assert.equal(facade.llm.registerAdapter(['openai'], original), handle);
   assert.notEqual(registrations[0]!.adapter, original);
   await registrations[0]!.adapter.listModels('openai');
-  assert.equal(refreshes, 0, 'non-Copilot registration forwards without refreshing');
+  assert.deepEqual(visited, ['openai'], 'the policy sees the real provider id and decides');
   assert.equal(facade.llm.registerAdapter([COPILOT, 'anthropic'], original), handle);
   assert.notEqual(registrations[1]!.adapter, original);
   assert.equal(registrations.length, 2, 'one underlying registration per call');
@@ -350,7 +357,7 @@ test('Cordis fiber owns facade registrations and replace/disposal without duplic
   let handle!: AdapterRegistrationHandle;
   let refreshes = 0;
   const fiber = host.plugin({ name: 'catalog-context-owner', inject: ['llm'], apply(ctx: Context) {
-    const facade = adapterContext(ctx, async () => { refreshes++; });
+    const facade = adapterContext(ctx, async (provider) => { if (provider === COPILOT) refreshes++; });
     assert.equal(facade.fiber, ctx.fiber);
     assert.equal(facade.root, ctx.root);
     handle = facade.llm.registerAdapter(['synthetic-other'], original);
@@ -359,7 +366,7 @@ test('Cordis fiber owns facade registrations and replace/disposal without duplic
   try {
     assert.deepEqual(llm.listProviders().map((provider) => provider.id), ['synthetic-other']);
     await llm.listModels('synthetic-other');
-    assert.equal(refreshes, 0);
+    assert.equal(refreshes, 0, 'the policy ignores routes it does not manage');
     handle.replace([COPILOT, 'synthetic-other']);
     assert.deepEqual(llm.listProviders().map((provider) => provider.id), [COPILOT, 'synthetic-other']);
     await llm.listModels(COPILOT);

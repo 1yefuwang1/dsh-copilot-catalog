@@ -7,6 +7,7 @@ import { createSafeCopilotRefresh } from './refresh.js';
 import type { SearchRuntime } from './search-types.js';
 
 type CatalogModule = typeof import('@earendil-works/pi-ai/providers/github-copilot.models');
+type OpencodeCatalogModule = typeof import('@earendil-works/pi-ai/providers/opencode-go.models');
 type PiModule = typeof import('@earendil-works/pi-ai');
 type ProviderModule = typeof import('@earendil-works/pi-ai/providers/github-copilot');
 
@@ -22,6 +23,8 @@ const DEFAULT_HEADERS: Readonly<Record<string, string>> = Object.freeze({
 export interface BetterCopilotRuntime {
   original: OriginalAdapter;
   catalog: ModelCatalog;
+  /** Installed OpenCode Go chat catalog; live discovery mutates this same object. */
+  opencodeGoCatalog: ModelCatalog;
   /** Raw pi-ai hooks: discovery keeps its existing unguarded refresh behaviour. */
   oauth: OAuthAuth;
   recordKeyFor: SearchRuntime['recordKeyFor'];
@@ -55,11 +58,13 @@ export async function loadRuntime(options: RuntimeOptions = {}): Promise<BetterC
   const piRoot = dirname(piManifest);
   // These are the public providers/* export targets in supported pi-ai >=1.3.0.
   // No private OAuth module or platform-specific application path is imported.
-  const [original, pi, { githubCopilotProvider }, { GITHUB_COPILOT_MODELS: catalog }] = await Promise.all([
+  const [original, pi, { githubCopilotProvider }, { GITHUB_COPILOT_MODELS: catalog },
+    { OPENCODE_GO_MODELS: opencodeGoCatalog }] = await Promise.all([
     import(adapterUrl.href) as Promise<OriginalAdapter>,
     import(pathToFileURL(join(piRoot, 'dist/index.js')).href) as Promise<PiModule>,
     import(pathToFileURL(join(piRoot, 'dist/providers/github-copilot.js')).href) as Promise<ProviderModule>,
     import(pathToFileURL(join(piRoot, 'dist/providers/github-copilot.models.js')).href) as Promise<CatalogModule>,
+    import(pathToFileURL(join(piRoot, 'dist/providers/opencode-go.models.js')).href) as Promise<OpencodeCatalogModule>,
   ]);
   const provider = githubCopilotProvider();
   const oauth = provider.auth?.oauth;
@@ -68,6 +73,9 @@ export async function loadRuntime(options: RuntimeOptions = {}): Promise<BetterC
       typeof pi.createModels !== 'function' ||
       typeof oauth?.refresh !== 'function' || typeof oauth.toAuth !== 'function') {
     throw new Error('Incompatible DSH/pi-ai runtime; see the supported versions in README');
+  }
+  if (!opencodeGoCatalog || Object.keys(opencodeGoCatalog).length === 0) {
+    throw new Error('Incompatible DSH/pi-ai runtime: no installed OpenCode Go catalog; see the supported versions in README');
   }
   const headers = { ...DEFAULT_HEADERS };
   for (const model of provider.getModels()) {
@@ -89,6 +97,7 @@ export async function loadRuntime(options: RuntimeOptions = {}): Promise<BetterC
   return {
     original,
     catalog: catalog as ModelCatalog,
+    opencodeGoCatalog: opencodeGoCatalog as ModelCatalog,
     oauth,
     recordKeyFor: original.recordKeyFor as SearchRuntime['recordKeyFor'],
     createModels: pi.createModels as SearchRuntime['createModels'],

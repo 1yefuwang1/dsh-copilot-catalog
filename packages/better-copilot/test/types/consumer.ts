@@ -8,8 +8,11 @@ import {
   inject,
   liveCost,
   name,
+  normalizeOpencodeCatalog,
   normalizeToolSchemas,
+  opencodeGoListingUrl,
   selectAccountModels,
+  selectOpencodeModels,
   syncCopilotCatalog,
   TOOL_SCHEMA_SKIPPED,
   type AccountSelection,
@@ -44,6 +47,7 @@ declare const context: Parameters<typeof apply>[0];
 const pluginName: string = name;
 const pluginInject: string[] = inject;
 const defaults = Config({ providers: {}, search: {}, toolSchema: {} });
+const liveCatalogs: string[] = defaults.catalog.providers.get();
 const configured: BetterCopilotConfig = Config({
   providers: { 'github-copilot': { apiKeyEnv: 'COPILOT_ACCESS_TOKEN' } },
   search: { model: DEFAULT_SEARCH_MODEL, maxTokens: 8192, searchMode: 'live' },
@@ -67,6 +71,9 @@ const searchAuth: SearchAuthOptions = { apiKeyEnv: 'COPILOT_ACCESS_TOKEN', baseU
 
 // Area subpaths keep their per-capability surfaces.
 const selection: AccountSelection = selectAccountModels({ data: [] }, catalog);
+const opencodeListing: URL = opencodeGoListingUrl();
+const opencodeCandidates = normalizeOpencodeCatalog({ data: [] });
+const opencodeSelection = selectOpencodeModels([], catalog);
 const sameSelection: AccountSelection = selectFromCatalogSubpath({ data: [] }, catalog);
 const cost = liveCost(undefined, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
 const tools: ToolSchema[] = [{ name: 'tool', description: 'd', parameters: { type: 'object' } }];
@@ -109,4 +116,5 @@ async function usePlugin(): Promise<void> {
 
 void [pluginName, pluginInject, searchModel, guardFamilies, reviewModel, reviewEffort, reviewRequest, temperatureBody, pending, configuredSync, lowLevel, catalogAuth, searchAuth, selection,
   sameSelection, cost, normalized, skipped, matched, wireIdentity, providerId, providerType, provider, nativeResult, sse,
+  liveCatalogs, opencodeListing, opencodeCandidates, opencodeSelection,
   invalidMode, invalidResolver, usePlugin];

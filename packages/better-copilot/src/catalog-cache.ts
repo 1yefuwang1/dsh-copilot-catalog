@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { asRecord, type CatalogCacheEntry, type CatalogCacheScope, type CopilotGrant, type CredentialKey } from './catalog-types.js';
+import { asRecord, type CatalogCacheEntry, type CatalogCacheKind, type CatalogCacheScope, type CopilotGrant, type CredentialKey } from './catalog-types.js';
+import { canonicalOpencodeMetadata, OPENCODE_GO_MAX_MODELS, OPENCODE_GO_PROVIDER } from './opencode.js';
 
 export const CATALOG_CACHE_VERSION = 1;
 /** Offline availability is useful, but an old account allowlist is not authoritative forever. */
@@ -19,9 +20,19 @@ function trustedOrigin(endpoint: string): boolean {
   } catch { return false; }
 }
 
-function validScope(scope: CatalogCacheScope): boolean {
+/** A public catalog may live behind a custom gateway; only its canonical HTTPS origin is storable. */
+function canonicalOrigin(endpoint: string): boolean {
+  try {
+    const url = new URL(endpoint);
+    return endpoint === url.origin && url.protocol === 'https:' && !url.username && !url.password && !url.port;
+  } catch { return false; }
+}
+
+const trustedFor = (kind: CatalogCacheKind) => kind === 'github-copilot' ? trustedOrigin : canonicalOrigin;
+
+function validScope(scope: CatalogCacheScope, kind: CatalogCacheKind): boolean {
   return typeof scope.accountKey === 'string' && /^[a-f0-9]{64}$/u.test(scope.accountKey) &&
-    typeof scope.endpoint === 'string' && trustedOrigin(scope.endpoint);
+    typeof scope.endpoint === 'string' && trustedFor(kind)(scope.endpoint);
 }
 
 /** Never persist this input: only the digest leaves this function. OAuth access tokens are deliberately ignored. */
@@ -32,6 +43,23 @@ export function catalogCacheScope(recordKey: CredentialKey, endpoint: string,
     ? ['oauth', recordKey, identity.credential.refresh, identity.credential.enterpriseUrl ?? '', endpoint]
     : ['api-key', recordKey, identity.apiKey, endpoint];
   return { accountKey: createHash('sha256').update(JSON.stringify(parts)).digest('hex'), endpoint };
+}
+
+/**
+ * The OpenCode Go listing is public and endpoint-scoped, not account-scoped.
+ * The digest includes the exact listing URL so a changed route cannot read an
+ * older endpoint's models; only the origin is persisted as the scope endpoint.
+ */
+export function opencodeCacheScope(listingUrl: string): CatalogCacheScope {
+  let url: URL;
+  try { url = new URL(listingUrl); } catch { throw new TypeError('Invalid OpenCode Go cache endpoint'); }
+  if (url.protocol !== 'https:' || url.username || url.password || url.port || !canonicalOrigin(url.origin)) {
+    throw new TypeError('Invalid OpenCode Go cache endpoint');
+  }
+  return {
+    accountKey: createHash('sha256').update(JSON.stringify([OPENCODE_GO_PROVIDER, url.href])).digest('hex'),
+    endpoint: url.origin,
+  };
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -60,7 +88,7 @@ function numericFields(value: unknown, fields: readonly string[]): Record<string
 }
 
 /** Allowlist only /models selection metadata. No arbitrary nested objects, headers, URLs, credentials or token strings. */
-export function sanitizeCatalogMetadata(value: unknown, forbiddenValues: readonly string[] = []): CatalogCacheEntry['raw'] | undefined {
+function sanitizeCopilotMetadata(value: unknown, forbiddenValues: readonly string[] = []): CatalogCacheEntry['raw'] | undefined {
   const data = record(value)?.data;
   if (!Array.isArray(data) || data.length === 0 || data.length > CATALOG_CACHE_MAX_MODELS) return undefined;
   const output: Record<string, unknown>[] = [];
@@ -117,28 +145,55 @@ export function sanitizeCatalogMetadata(value: unknown, forbiddenValues: readonl
   return output.length > 0 && Buffer.byteLength(JSON.stringify(raw), 'utf8') <= CATALOG_CACHE_MAX_BYTES ? raw : undefined;
 }
 
+/**
+ * The OpenCode Go catalog is persisted as an already-normalized document, so
+ * validation is an exact canonical-shape check rather than a provider allowlist.
+ * Any unknown field, malformed value or non-canonical order fails closed.
+ */
+export function sanitizeOpencodeMetadata(value: unknown): CatalogCacheEntry['raw'] | undefined {
+  const data = record(value)?.data;
+  if (!Array.isArray(data) || data.length === 0 || data.length > OPENCODE_GO_MAX_MODELS) return undefined;
+  const output: Record<string, unknown>[] = [];
+  for (const raw of data) {
+    const entry = canonicalOpencodeMetadata(raw);
+    if (!entry) return undefined;
+    output.push(entry as unknown as Record<string, unknown>);
+  }
+  const sanitized: CatalogCacheEntry['raw'] = { data: output };
+  return Buffer.byteLength(JSON.stringify(sanitized), 'utf8') <= CATALOG_CACHE_MAX_BYTES ? sanitized : undefined;
+}
+
+/** The selector is the record kind, so one storage table safely holds both catalogs. */
+export function sanitizeCatalogMetadata(value: unknown, forbiddenValues: readonly string[] = [],
+  kind: CatalogCacheKind = 'github-copilot'): CatalogCacheEntry['raw'] | undefined {
+  return kind === 'opencode-go' ? sanitizeOpencodeMetadata(value) : sanitizeCopilotMetadata(value, forbiddenValues);
+}
+
 export function createCatalogCacheEntry(scope: CatalogCacheScope, value: unknown, savedAt: number,
-  forbiddenValues: readonly string[] = []): CatalogCacheEntry | undefined {
-  const raw = sanitizeCatalogMetadata(value, forbiddenValues);
-  if (!raw || !validScope(scope) || !Number.isSafeInteger(savedAt) || savedAt < 0) return undefined;
-  return { version: CATALOG_CACHE_VERSION, accountKey: scope.accountKey, endpoint: scope.endpoint, savedAt, raw };
+  forbiddenValues: readonly string[] = [], kind: CatalogCacheKind = 'github-copilot'): CatalogCacheEntry | undefined {
+  const raw = sanitizeCatalogMetadata(value, forbiddenValues, kind);
+  if (!raw || !validScope(scope, kind) || !Number.isSafeInteger(savedAt) || savedAt < 0) return undefined;
+  return { version: CATALOG_CACHE_VERSION, kind, accountKey: scope.accountKey, endpoint: scope.endpoint, savedAt, raw };
 }
 
 /** Reject foreign, future, stale, malformed or unsanitized records; return a detached copy. */
 export function readCatalogCacheEntry(value: unknown, scope: CatalogCacheScope, now: number): CatalogCacheEntry | undefined {
   try {
     const entry = record(value);
-    if (!entry || entry.version !== CATALOG_CACHE_VERSION || !validScope(scope) ||
+    if (!entry || entry.version !== CATALOG_CACHE_VERSION) return undefined;
+    const kind = entry.kind === undefined ? 'github-copilot' : entry.kind;
+    if (kind !== 'github-copilot' && kind !== 'opencode-go') return undefined;
+    if (!validScope(scope, kind) ||
         entry.accountKey !== scope.accountKey || entry.endpoint !== scope.endpoint ||
         !Number.isSafeInteger(entry.savedAt) || (entry.savedAt as number) < 0 || !Number.isSafeInteger(now) ||
         (entry.savedAt as number) > now || now - (entry.savedAt as number) > CATALOG_CACHE_MAX_AGE_MS ||
-        Object.keys(entry).some((key) => !['version', 'accountKey', 'endpoint', 'savedAt', 'raw'].includes(key))) return undefined;
+        Object.keys(entry).some((key) => !['version', 'kind', 'accountKey', 'endpoint', 'savedAt', 'raw'].includes(key))) return undefined;
     const encoded = JSON.stringify(entry.raw);
     if (Buffer.byteLength(encoded, 'utf8') > CATALOG_CACHE_MAX_BYTES) return undefined;
-    const raw = sanitizeCatalogMetadata(entry.raw);
+    const raw = sanitizeCatalogMetadata(entry.raw, [], kind);
     // The cache must already be an allowlisted document, not a bag of secrets we quietly strip on read.
     if (!raw || JSON.stringify(raw) !== encoded) return undefined;
-    return { version: CATALOG_CACHE_VERSION, accountKey: scope.accountKey, endpoint: scope.endpoint,
+    return { version: CATALOG_CACHE_VERSION, kind, accountKey: scope.accountKey, endpoint: scope.endpoint,
       savedAt: entry.savedAt as number, raw };
   } catch { return undefined; }
 }

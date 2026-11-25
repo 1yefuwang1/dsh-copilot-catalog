@@ -26,8 +26,13 @@ export interface CatalogCacheScope {
   endpoint: string;
 }
 
+/** Which provider catalog a persisted record describes. Legacy records are Copilot catalogs. */
+export type CatalogCacheKind = 'github-copilot' | 'opencode-go';
+
 export interface CatalogCacheEntry extends CatalogCacheScope {
   version: 1;
+  /** Absent in records written before OpenCode Go support existed; those are Copilot catalogs. */
+  kind?: CatalogCacheKind;
   savedAt: number;
   /** Bounded, allowlisted /models metadata. No descriptors, headers or authentication data. */
   raw: { data: Record<string, unknown>[] };
