@@ -34,6 +34,7 @@ test('the bundle patch inserts exactly one merged row and keeps the two override
   assert.match(patch, /^ {10}github-copilot: \{\}$/mu);
   assert.match(patch, /^ {8}search: \{\}$/mu);
   assert.match(patch, /^ {8}toolSchema: \{\}$/mu);
+  assert.match(patch, /^ {8}messages: \{\}$/mu);
 
   // Never select a different fetch provider or a second adapter row.
   assert.equal((patch.match(/^- id: llm-pi-ai$/gmu) ?? []).length, 1);

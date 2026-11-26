@@ -23,7 +23,7 @@ for the exact migration table.
 
 | Scope | Runtime baseline |
 | --- | --- |
-| Better Copilot `0.5.6` | Exact DSH and DSH peers `0.2.2-rc.5`; `@earendil-works/pi-ai` peer `^1.3.0`, tested baseline `1.3.0`; Zod `4.6.6` |
+| Better Copilot `0.5.7` | Exact DSH and DSH peers `0.2.2-rc.5`; `@earendil-works/pi-ai` peer `^1.3.0`, tested baseline `1.3.0`; Zod `4.6.6` |
 | Worktrees and root development SDK | DSH and DSH peers `0.2.2-rc.1`; unchanged by the Better Copilot migration |
 
 These are separate runtime baselines, not a claim that both plugins support the
@@ -217,23 +217,24 @@ A release selects **one package**, never the root or multiple packages at once:
 - `@1yefuwang1/dsh-worktrees-vX.Y.Z`
 
 The tag must match its leaf version and repository identity. `dsh-better-copilot` is
-`0.5.6`, prepared for exact DSH `0.2.2-rc.5`, pi-ai peer `^1.3.0`
+`0.5.7`, prepared for exact DSH `0.2.2-rc.5`, pi-ai peer `^1.3.0`
 (tested baseline `1.3.0`) and Zod `4.6.6`. It is published through the
 package-specific staged release workflow; npm availability requires maintainer
-2FA approval. `0.5.6` adds live OpenCode Go catalog discovery and caching: the
-public listing replaces the installed list under the same persisted-before-live,
-15-minute, one-missing-model-retry policy, so new ids appear and withdrawn ids
-disappear without a pi-ai upgrade. Synthetic unit and real-DSH integration tests
-cover discovery, caching, refresh and adapter snapshot rebuilds; no live GUI or
-account testing is claimed. It retains persistent account-scoped Copilot
+2FA approval. `0.5.7` repairs the `chat/completions` request Copilot rejects when
+a content-less retry turn is persisted and then serialized as an empty user
+content string, and runs every wire stage — Responses strictness, temperature
+omission, empty-text removal and tool-declaration defaults — over a single parse
+instead of one parse each. Synthetic unit and real-DSH integration tests cover
+the repair, its composition, and each stage's scope and body-size bound; no live
+GUI or account testing is claimed. It retains persistent account-scoped Copilot
 catalogs, live registry refresh, native Responses search, wire identity, Gemini
 schema guarding, temperature normalization, builtin Auto review overrides and
 the read-only subagent route badge. Existing configuration, cache domain/version
-and credential keys are unchanged; persisted Copilot caches need no migration,
-and OpenCode records add only a `kind` discriminator to the same version-1
-envelope. It consolidates catalog `0.2.9`, search `0.1.5` and tool schema
-`0.1.3`; those three npm versions remain published but are no longer built here.
-Published versions cannot be republished. Worktrees is
+and credential keys are unchanged; the new `messages` group defaults to repairing
+the wire, and persisted caches need no migration. It consolidates catalog
+`0.2.9`, search `0.1.5` and tool schema `0.1.3`; those three npm versions remain
+published but are no longer built here. Published versions cannot be republished.
+Worktrees is
 `@1yefuwang1/dsh-worktrees@0.2.28`, which hides the starting-branch picker while a
 thread is Local: a Local send runs in the current checkout and never chooses,
 switches or creates a branch, so Local mode shows that checkout's current branch

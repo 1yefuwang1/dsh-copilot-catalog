@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.5.7 — empty-text turn repair and a single-pass wire
+
+- Repair the Copilot `chat/completions` rejection that reports only
+  `400 {"error":{"message":"invalid request body","code":"invalid_request_body"}}`.
+  The route refuses a whole request when a `user`, `system` or `developer`
+  message carries the empty string as its content, and the error names neither
+  the message nor the role.
+- Root cause: a retry that carries no content
+  is persisted as a message, the pi-ai adapter serializes it as
+  `{"role":"user","content":""}` with no empty guard, and because the turn stays
+  in the durable transcript every later request on that route fails until the
+  model is changed.
+- Add `normalizeCopilotMessages` and `MAX_TRIMMABLE_BODY_BYTES` to the package
+  surface. Only the exact failing shape is removed: the same route accepts a
+  whitespace-only string, an empty content array, and empty assistant or tool
+  messages, so a body with no empty text turn stays byte-identical and a
+  repaired body is idempotent.
+- Run the repair inside the existing single wire transform, next to the tool
+  guard and temperature normalization, so no second body installer can replace
+  the guard. A repair failure stays contained and never discards a temperature
+  or strictness fix; an all-empty history is left untouched rather than traded
+  for the route's separate `Request must contain at least one non-empty
+  message.` rejection.
+- Add `messages.dropEmpty` (default `true`) and `messages.logFixes`
+  (default `false`). The log line reports the count and never logs message
+  content. `dropEmpty: false` sends the request exactly as built, for
+  diagnosis.
+- Add `messages: {}` to the bundle patch and cover the new group in the config
+  parity tests, the patch contract test and the wire composition tests.
+- Run every wire stage over one parse. Responses strictness, temperature
+  omission, empty-text removal and tool-declaration defaults were independent
+  string-in/string-out normalizers, so a request needing three of them parsed
+  and re-serialized the same multi-megabyte body three times. Each stage now
+  exposes an object-level half that mutates the parsed request, and
+  `normalizeCopilotRequest` composes them in the original order with one parse
+  and at most one re-serialization: 5.50 ms → 2.37 ms on a 2.52 MB request
+  (57%), measured, not estimated.
+- Keep the string-level entry points unchanged for the package surface and
+  their unit tests; they are now thin wrappers over the same object-level
+  halves, so a caller cannot observe a difference beyond the composition.
+- Preserve every per-stage scope and bound in the composed pass: strictness
+  stays Responses-only, empty-text removal stays chat-completions-only,
+  temperature stays unbounded, and each stage keeps its own body-size bound.
+  A settings group that cannot be read still disables only its own stage.
+
 ## 0.5.6 — live OpenCode Go model catalog
 
 - Refresh and cache the `opencode-go` route's chat catalog from OpenCode's public

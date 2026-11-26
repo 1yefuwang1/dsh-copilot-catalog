@@ -9,13 +9,15 @@ export interface PackedPackage { name: string; version: string; files: { path: s
 
 const policies: Record<string, Policy> = {
   'dsh-better-copilot': {
-    modules: ['index', 'plugin', 'config', 'runtime', 'catalog', 'catalog-adapter', 'catalog-cache', 'catalog-controller', 'catalog-store', 'discovery', 'identity', 'catalog-types', 'auth', 'endpoint', 'errors', 'provider', 'refresh', 'responses', 'search', 'search-types', 'schema', 'guard', 'guard-types', 'auto-review', 'temperature', 'stream-guard', 'strict', 'opencode', 'opencode-discovery', 'opencode-controller'],
+    modules: ['index', 'plugin', 'config', 'runtime', 'catalog', 'catalog-adapter', 'catalog-cache', 'catalog-controller', 'catalog-store', 'discovery', 'identity', 'catalog-types', 'auth', 'endpoint', 'errors', 'provider', 'refresh', 'responses', 'search', 'search-types', 'schema', 'guard', 'guard-types', 'messages', 'auto-review', 'temperature', 'stream-guard', 'strict', 'wire', 'opencode', 'opencode-discovery', 'opencode-controller'],
     // The three predecessor allowlists total 196,755 bytes; the merged leaf keeps
     // bounded headroom below their combined 450,000-byte bound. The read-only
     // subagent route badge adds the package's first browser bundle; the stream
     // guard, the OpenCode Go catalog discovery/cache/controller modules and their
-    // documentation add about 55k.
-    extras: ['dist/client.js'], maxBytes: 310_000,
+    // documentation add about 55k; the empty-text repair and the single-parse
+    // composition add about 27k (13.4k of it the two new modules, the rest
+    // documentation and the composed transform). Measured at 332,712 bytes.
+    extras: ['dist/client.js'], maxBytes: 345_000,
   },
   '@1yefuwang1/dsh-worktrees': {
     modules: ['index', 'types', 'errors', 'runtime', 'schema', 'store', 'sessions', 'context', 'service', 'branch-release', 'git', 'naming', 'rpc', 'projects', 'project-store', 'project-rpc', 'project-context', 'quiet-rpc', 'first-message', 'cleanup-store', 'cleanup', 'recovery-rpc'],

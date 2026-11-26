@@ -21,3 +21,4 @@
           github-copilot: {}
         search: {}
         toolSchema: {}
+        messages: {}

@@ -97,6 +97,7 @@ function volatileConfig(values: { providers: string[]; families: string[]; logFi
       families: { get: () => values.families },
       logFixes: { get: () => values.logFixes },
     },
+    messages: Config().messages,
   };
 }
 
@@ -183,6 +184,7 @@ test('a throwing logger or settings accessor never fails or corrupts the request
     catalog: Config().catalog,
     search: {},
     toolSchema: { providers: { get: () => ['github-copilot'] }, families: { get: () => { throw new Error('settings unavailable'); } }, logFixes: { get: () => false } },
+    messages: Config().messages,
   }, async ({ captures }) => {
     const body = fixtures.chatBody([fixtures.missingBucketTool]);
     await globalThis.fetch(COPILOT_URL, { method: 'POST', body });

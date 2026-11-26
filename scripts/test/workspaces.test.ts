@@ -183,7 +183,7 @@ test('release workflow stages one pnpm package with provenance and no stored tok
 test('publication allowlists and bounds preserve every existing leaf and explicitly add Client assets', () => {
   const common = ['CHANGELOG.md', 'LICENSE', 'README.md', 'cordis.patch.yml', 'package.json'];
   const modules = {
-    'dsh-better-copilot': ['index', 'plugin', 'config', 'runtime', 'catalog', 'catalog-adapter', 'catalog-cache', 'catalog-controller', 'catalog-store', 'discovery', 'identity', 'catalog-types', 'auth', 'endpoint', 'errors', 'provider', 'refresh', 'responses', 'search', 'search-types', 'schema', 'guard', 'guard-types', 'auto-review', 'temperature', 'stream-guard', 'strict', 'opencode', 'opencode-discovery', 'opencode-controller'],
+    'dsh-better-copilot': ['index', 'plugin', 'config', 'runtime', 'catalog', 'catalog-adapter', 'catalog-cache', 'catalog-controller', 'catalog-store', 'discovery', 'identity', 'catalog-types', 'auth', 'endpoint', 'errors', 'provider', 'refresh', 'responses', 'search', 'search-types', 'schema', 'guard', 'guard-types', 'messages', 'auto-review', 'temperature', 'stream-guard', 'strict', 'wire', 'opencode', 'opencode-discovery', 'opencode-controller'],
     '@1yefuwang1/dsh-worktrees': ['index', 'types', 'errors', 'runtime', 'schema', 'store', 'sessions', 'context', 'service', 'branch-release', 'git', 'naming', 'rpc', 'projects', 'project-store', 'project-rpc', 'project-context', 'quiet-rpc', 'first-message', 'cleanup-store', 'cleanup', 'recovery-rpc'],
   };
   const extras: Record<string, string[]> = {
@@ -191,7 +191,7 @@ test('publication allowlists and bounds preserve every existing leaf and explici
     '@1yefuwang1/dsh-worktrees': ['dist/client.js', 'locale/en.json', 'icon.svg'],
   };
   const bounds: Record<string, number> = {
-    'dsh-better-copilot': 310_000,
+    'dsh-better-copilot': 345_000,
     '@1yefuwang1/dsh-worktrees': 875_000,
   };
   for (const [name, names] of Object.entries(modules)) {
@@ -246,7 +246,7 @@ test('root and every plugin use their own exact installed runtime and preserve e
     assert.equal(evaluatePluginCompatibility(manifest), undefined,
       manifest.name + ' must install on its own runtime without an exemption');
     if (path === 'packages/better-copilot') {
-      assert.equal(manifest.version, '0.5.6');
+      assert.equal(manifest.version, '0.5.7');
       assert.equal(manifest.devDependencies?.['@deepseek-ai/dsh-app-boot'], expected);
       assert.equal(manifest.devDependencies?.['@deepseek-ai/dsh-storage-json'], expected);
       assert.equal(manifest.peerDependencies?.['@earendil-works/pi-ai'], '^1.3.0');

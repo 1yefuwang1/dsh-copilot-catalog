@@ -27,7 +27,7 @@ packages. Their behaviour is consolidated here; see the migration notes below.
 
 ## Compatibility
 
-- Better Copilot `0.5.6`: exact DSH and DSH peer packages `0.2.2-rc.5`.
+- Better Copilot `0.5.7`: exact DSH and DSH peer packages `0.2.2-rc.5`.
 - `@earendil-works/pi-ai`: peer `^1.3.0`, tested baseline `1.3.0`.
 - Zod: `4.6.6`.
 - DSH CLI/host runtime: Node.js `>=24.9.0`.
@@ -46,14 +46,15 @@ affiliated with GitHub, DeepSeek or the pi-ai maintainers.
 ## Installation
 
 Install or link this leaf package, not the monorepo root. Its package name is
-`dsh-better-copilot`. Version `0.5.6` targets exact DSH `0.2.2-rc.5` and is
+`dsh-better-copilot`. Version `0.5.7` targets exact DSH `0.2.2-rc.5` and is
 published through the package-specific staged release workflow; npm availability
-requires maintainer 2FA approval. `0.5.6` adds live OpenCode Go catalog discovery
-and caching; synthetic unit and real-DSH integration tests cover discovery, cache
-validation, refresh policy and catalog publication, but no live GUI or account
-testing is claimed. Until the staged version is approved, use an explicitly built
-local tarball or workspace link only if you intend to change a profile. Restart
-the DSH host after installing or removing a host plugin.
+requires maintainer 2FA approval. `0.5.7` repairs the empty text turn Copilot's
+`chat/completions` route rejects and runs every wire stage over one parse;
+synthetic unit and real-DSH integration tests cover the repair, its composition
+and each stage's bound, but no live GUI or account testing is claimed. Until the
+staged version is approved, use an explicitly built local tarball or workspace
+link only if you intend to change a profile. Restart the DSH host after
+installing or removing a host plugin.
 
 The bundle patch:
 
@@ -91,6 +92,9 @@ The bundle patch:
       providers: [github-copilot]
       families: [gemini]
       logFixes: false
+    messages:
+      dropEmpty: true
+      logFixes: false
     autoReview:
       enabled: true
       # Optional: leave unset for Terra on Copilot, current model otherwise
@@ -107,13 +111,13 @@ provider setting behaves exactly as it does with the stock adapter. `catalog`
 controls persistent caching, the demand-refresh interval and which non-Copilot
 routes receive live discovery; Copilot discovery is always enabled. `search`
 configures the web-search provider; `toolSchema` configures the Gemini guard;
-`autoReview` configures the builtin review request only; `streamGuard` bounds a
-model attempt by stream progress.
+`messages` repairs empty text turns; `autoReview` configures the builtin review
+request only; `streamGuard` bounds a model attempt by stream progress.
 
 Loader patches replace a row's `config` wholesale, not key by key: an override
 must restate every non-default group it needs together. Omitted `catalog`,
-`search`, `toolSchema`, `autoReview` and `streamGuard` groups resolve their
-defaults.
+`search`, `toolSchema`, `messages`, `autoReview` and `streamGuard` groups
+resolve their defaults.
 
 ## Stream guard
 
@@ -182,11 +186,12 @@ discovery. Cache and interval settings are volatile and affect the next refresh;
 disabling persistence does not delete previously saved records. A host restart
 is needed to load an updated plugin implementation, not to adopt a live catalog.
 
-`0.5.6` preserves all existing configuration, credential record keys and the
-persisted Copilot cache format. OpenCode Go records add a `kind` discriminator
-inside the same version-1 cache envelope, so no migration or reset is required;
-the default `catalog.providers` includes `opencode-go`, and discovery only runs
-when that route profile exists.
+`0.5.7` preserves all existing configuration, credential record keys and the
+persisted Copilot cache format; the new `messages` group defaults to repairing
+the wire. OpenCode Go records keep their `kind` discriminator inside the same
+version-1 cache envelope, so no migration or reset is required; the default
+`catalog.providers` includes `opencode-go`, and discovery only runs when that
+route profile exists.
 
 ## OpenCode Go model catalog
 
@@ -288,8 +293,44 @@ serialized request the adapter dispatches. Inside the same refcounted, trusted-p
 carries the wire identity, it adds an empty root `properties` bucket to object
 tool schemas that lack one for a configured Copilot route and model family, and
 leaves every other byte of the request untouched. It never replaces an adapter or
-another plugin's settings, and a guard failure preserves the body after any
-successful temperature normalization.
+another plugin's settings.
+
+Every wire stage shares one parse. Responses strictness, temperature omission,
+empty-text removal and the tool-schema guard were independent normalizers, each
+parsing and re-serializing the whole body; they now mutate one parsed request and
+re-serialize at most once. Each stage keeps its own scope and body-size bound, and
+a settings group that cannot be read disables only its own stage. On a 2.52 MB
+request the pass costs 2.37 ms instead of 5.50 ms.
+
+## Empty-text repair
+
+`messages` repairs one defect that Copilot measures before it resolves a model.
+The `chat/completions` route rejects a whole request when a `user`, `system` or
+`developer` message carries the **empty string** as its content:
+
+```
+400 {"error":{"message":"invalid request body","code":"invalid_request_body"}}
+```
+
+The error names neither the message nor the role. The route accepts a
+whitespace-only string, an empty content array, and an empty assistant or tool
+message, so only the exact failing shape is removed and every other request
+stays byte-identical.
+
+The turn gets into the history without typing: a retry that carries no content
+is persisted as a message, and because it survives in the durable transcript it
+invalidates **every** later request on that route until the model is changed.
+`dropEmpty` (default `true`) removes such turns from the serialized body inside
+the same wire transform as the guard, so a poisoned conversation recovers
+without editing the session file. `logFixes` (default `false`) reports how many
+turns were dropped, without logging message content. Set `dropEmpty: false` to
+send the request exactly as built.
+
+The repair never empties a message list: a history made only of empty turns is
+a different, separately reported rejection, so it is left untouched. It also
+applies only to the Copilot route and the `chat/completions` surface — the
+Responses surface does not use a `messages` array, and a foreign provider body
+is never rewritten.
 
 ## Subagent route badge (Web)
 

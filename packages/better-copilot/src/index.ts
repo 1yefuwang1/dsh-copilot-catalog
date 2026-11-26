@@ -17,7 +17,13 @@ export const syncCopilotCatalog = (credentials?: CredentialReader, authOptions?:
 export { DEFAULT_SEARCH_MODEL } from './config.js';
 export { configureAutoReview, DEFAULT_REVIEW_MODEL } from './auto-review.js';
 export type { AutoReviewOverrides } from './auto-review.js';
-export { normalizeCopilotTemperature } from './temperature.js';
+export { applyTemperatureOmission, normalizeCopilotTemperature } from './temperature.js';
+export { applyEmptyMessageDrop, MAX_TRIMMABLE_BODY_BYTES, normalizeCopilotMessages } from './messages.js';
+export type { TrimmedBody } from './messages.js';
+export { applyResponsesStrictDefaults } from './strict.js';
+export { applyToolSchemaDefaults, guardCopilotRequestBody } from './guard.js';
+export { normalizeCopilotRequest } from './wire.js';
+export type { CopilotWireResult, CopilotWireStages } from './wire.js';
 export { liveCost, selectAccountModels } from './catalog.js';
 export { DiscoveryError } from './discovery.js';
 export {
@@ -29,7 +35,7 @@ export {
   rewriteCopilotRequestHeaders,
   wireIdentityMode,
 } from './identity.js';
-export { guardCopilotRequestBody, MAX_GUARDED_BODY_BYTES } from './guard.js';
+export { MAX_GUARDED_BODY_BYTES } from './guard.js';
 export type { GuardedBody } from './guard.js';
 export { COPILOT_SEARCH_PROVIDER_ID, CopilotSearchProvider } from './provider.js';
 export { matchesRoute, normalizeToolSchemas, TOOL_SCHEMA_SKIPPED } from './schema.js';
@@ -43,7 +49,7 @@ export {
   selectOpencodeModels,
 } from './opencode.js';
 export type { OpencodeMetadata, OpencodeProtocol, OpencodeSelection } from './opencode.js';
-export type { AutoReviewSettings, CatalogSettings, BetterCopilotConfig, BetterCopilotConfigSchema } from './config.js';
+export type { AutoReviewSettings, CatalogSettings, BetterCopilotConfig, BetterCopilotConfigSchema, MessageConfigValue } from './config.js';
 export type { BetterCopilotDependencies, BetterCopilotPlugin } from './plugin.js';
 export type { AccountModelOptions } from './catalog.js';
 export type { NormalizeResult } from './schema.js';

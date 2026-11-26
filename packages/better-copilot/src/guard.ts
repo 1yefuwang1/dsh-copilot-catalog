@@ -46,14 +46,60 @@ function declarationOf(tool: unknown): { holder: Record<string, unknown>; name: 
   return typeof holder.name === 'string' && holder.name.length > 0 ? { holder, name: holder.name } : undefined;
 }
 
+/** What one tool-schema pass changed and refused to change. */
+export interface ToolSchemaOutcome {
+  /** Tool names whose declaration gained an empty properties bucket. */
+  readonly fixed: string[];
+  /** Tools left byte-identical, with a controlled reason. */
+  readonly skipped: readonly SkippedTool[];
+}
+
+const NOTHING_TO_DO: ToolSchemaOutcome = { fixed: [], skipped: [] };
+
 /**
- * Normalize tool declarations on one serialized Copilot inference request.
+ * Normalize tool declarations on an already-parsed Copilot inference request.
  *
  * The Gemini route measures this at the HTTP boundary: it rejects a request whose
  * tool declaration carries an object parameter schema with no properties bucket.
  * The presentation assembly no longer exposes declarations to listeners, so the
- * guard rewrites the exact serialized body instead — lexically the last point
- * before dispatch, and the same place the failure is measured.
+ * guard rewrites the request itself — lexically the last point before dispatch,
+ * and the same place the failure is measured.
+ *
+ * The object-level half of {@link guardCopilotRequestBody}: it mutates the parsed
+ * request so one parse can serve every wire stage. Nothing is invented — a
+ * request with no tool array, or one outside the configured route and family, is
+ * left untouched.
+ *
+ * @param request - the parsed request body.
+ * @param settings - one configuration snapshot for this request.
+ * @returns the fixed tool names and the controlled reasons the rest were skipped.
+ */
+export function applyToolSchemaDefaults(request: Record<string, unknown>, settings: GuardSettings): ToolSchemaOutcome {
+  if (!Array.isArray(request.tools) || request.tools.length === 0) return NOTHING_TO_DO;
+  if (!matchesRoute(COPILOT_ROUTE, request.model, settings)) return NOTHING_TO_DO;
+  const declarations = request.tools.map(declarationOf);
+  if (declarations.every(declaration => declaration === undefined)) return NOTHING_TO_DO;
+  const fixed: string[] = [];
+  const skipped: SkippedTool[] = [];
+  for (const declaration of declarations) {
+    if (declaration === undefined) continue;
+    const decision = classifyParameters(declaration.holder.parameters);
+    if (decision.fix) {
+      fixed.push(declaration.name);
+      declaration.holder.parameters = { ...(declaration.holder.parameters as Record<string, unknown>), properties: {} };
+      continue;
+    }
+    if (decision.reason !== undefined) skipped.push({ tool: declaration.name, reason: decision.reason });
+  }
+  return { fixed, skipped };
+}
+
+/**
+ * Normalize tool declarations on one serialized Copilot inference request.
+ *
+ * Kept for the package surface and its unit tests; the mounted plugin now runs
+ * {@link applyToolSchemaDefaults} inside the single-parse wire pass, whose own
+ * bound is {@link MAX_GUARDED_BODY_BYTES}.
  *
  * Nothing is invented: a body that is not JSON, carries no tool array, exceeds
  * the bound, or targets another route or model family is returned untouched.
@@ -69,22 +115,8 @@ export function guardCopilotRequestBody(body: string, settings: GuardSettings): 
   if (!body.includes('"tools"')) return unchanged;
   let parsed: unknown;
   try { parsed = JSON.parse(body); } catch { return unchanged; }
-  if (!isRecord(parsed) || !Array.isArray(parsed.tools) || parsed.tools.length === 0) return unchanged;
-  if (!matchesRoute(COPILOT_ROUTE, parsed.model, settings)) return unchanged;
-  const declarations = parsed.tools.map(declarationOf);
-  if (declarations.every(declaration => declaration === undefined)) return unchanged;
-  const fixed: string[] = [];
-  const skipped: SkippedTool[] = [];
-  for (const declaration of declarations) {
-    if (declaration === undefined) continue;
-    const decision = classifyParameters(declaration.holder.parameters);
-    if (decision.fix) {
-      fixed.push(declaration.name);
-      declaration.holder.parameters = { ...(declaration.holder.parameters as Record<string, unknown>), properties: {} };
-      continue;
-    }
-    if (decision.reason !== undefined) skipped.push({ tool: declaration.name, reason: decision.reason });
-  }
+  if (!isRecord(parsed)) return unchanged;
+  const { fixed, skipped } = applyToolSchemaDefaults(parsed, settings);
   if (fixed.length === 0) return { body: undefined, changed: false, fixed, skipped };
   return { body: JSON.stringify(parsed), changed: true, fixed, skipped };
 }

@@ -1,5 +1,31 @@
 # Monorepo changelog
 
+## Better Copilot 0.5.7 — empty-text repair and a single-pass wire
+
+- Repair the `chat/completions` rejection that reports only
+  `400 {"error":{"message":"invalid request body","code":"invalid_request_body"}}`
+  when a `user`, `system` or `developer` message carries the empty string as its
+  content. A retry that carries no content is persisted as a message, so the turn
+  invalidated every later request on that route until the model changed.
+- Add the `messages` group — `dropEmpty` (default `true`) and `logFixes`
+  (default `false`) — plus `normalizeCopilotMessages` and
+  `applyEmptyMessageDrop`. Only the exact failing shape is removed: a
+  whitespace-only string, an empty content array and empty assistant or tool
+  messages all decode, so those stay byte-identical and a repaired body is
+  idempotent.
+- Run the repair inside the existing single wire transform so no second body
+  installer can replace the tool-schema guard, and keep an all-empty history
+  untouched rather than trading it for the route's separate
+  `Request must contain at least one non-empty message.` rejection.
+- Run every wire stage over one parse: Responses strictness, temperature
+  omission, empty-text removal and tool-declaration defaults now mutate one
+  parsed request and re-serialize at most once. A 2.52 MB request costs 2.37 ms
+  instead of 5.50 ms, and each stage keeps its own scope and body-size bound.
+- Raise the `dsh-better-copilot` publication allowlist to the two new modules and
+  its packed-size bound to 345,000 bytes, measured at 332,712 for 70 files.
+- Publish `0.5.7` through the package-specific staged npm release workflow; the
+  staged version becomes available only after maintainer 2FA approval.
+
 ## Better Copilot 0.5.6 — live OpenCode Go model catalog
 
 - Discover, replace and persist the `opencode-go` chat catalog from OpenCode's

@@ -30,6 +30,12 @@ export interface GuardConfigValue {
   logFixes: Volatile<boolean>;
 }
 
+/** Repair of the empty text turns Copilot's chat-completions route rejects. */
+export interface MessageConfigValue {
+  dropEmpty: Volatile<boolean>;
+  logFixes: Volatile<boolean>;
+}
+
 /** Builtin Auto review routing; omitted leaves retain the model's adapter defaults. */
 export interface AutoReviewSettings {
   enabled: Volatile<boolean>;
@@ -59,6 +65,7 @@ export interface BetterCopilotConfig {
   catalog: CatalogSettings;
   search: SearchSettings;
   toolSchema: GuardConfigValue;
+  messages: MessageConfigValue;
   autoReview: AutoReviewSettings;
   streamGuard: StreamGuardSettings;
 }
@@ -81,6 +88,10 @@ export interface BetterCopilotConfigInput {
   toolSchema?: {
     providers?: string[];
     families?: string[];
+    logFixes?: boolean;
+  };
+  messages?: {
+    dropEmpty?: boolean;
     logFixes?: boolean;
   };
   autoReview?: {
@@ -133,6 +144,17 @@ export const SearchConfig = z.object({
 export const GuardConfig = z.object({
   providers: z.array(z.string()).default(['github-copilot']).volatile(),
   families: z.array(z.string()).default(['gemini']).volatile(),
+  logFixes: z.boolean().default(false).volatile(),
+});
+
+/**
+ * Empty-text turn repair. Copilot's chat-completions route rejects a `user`,
+ * `system` or `developer` message whose content is the empty string, and a
+ * persisted content-less retry turn keeps every later request invalid, so the
+ * repair is on by default and can be turned off for diagnosis.
+ */
+export const MessageConfig = z.object({
+  dropEmpty: z.boolean().default(true).volatile(),
   logFixes: z.boolean().default(false).volatile(),
 });
 
@@ -194,6 +216,7 @@ export function createConfig(originalConfig: unknown): BetterCopilotConfigSchema
     catalog: CatalogConfig,
     search: SearchConfig,
     toolSchema: GuardConfig,
+    messages: MessageConfig,
     autoReview: AutoReviewConfig,
     streamGuard: StreamGuardConfig,
   }) as unknown as BetterCopilotConfigSchema;

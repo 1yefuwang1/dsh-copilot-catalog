@@ -81,6 +81,17 @@ test('stream guard settings enable Copilot by default and bound the override', (
   }
 });
 
+test('empty-text repair is on by default and can be turned off for diagnosis', () => {
+  const defaults = Config({ providers: {} });
+  assert.equal(defaults.messages.dropEmpty.get(), true);
+  assert.equal(defaults.messages.logFixes.get(), false);
+
+  const overridden = Config({ messages: { dropEmpty: false, logFixes: true } });
+  assert.equal(overridden.messages.dropEmpty.get(), false);
+  assert.equal(overridden.messages.logFixes.get(), true);
+  assert.throws(() => Config({ messages: { dropEmpty: 'yes' as never } }));
+});
+
 test('catalog cache settings are volatile with bounded demand-refresh defaults', () => {
   const defaults = Config();
   assert.equal(defaults.catalog.cache.get(), true);

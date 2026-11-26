@@ -5,7 +5,6 @@ import { DiscoveryError, syncCopilotCatalog } from './discovery.js';
 import { createCopilotWireIdentity, installCopilotIdentityHeaders, installCopilotRequestTransform, wireIdentityMode, type CopilotRequestTransform } from './identity.js';
 import { CopilotSearchProvider } from './provider.js';
 import { TOOL_SCHEMA_SKIPPED } from './schema.js';
-import { guardCopilotRequestBody } from './guard.js';
 import type { BetterCopilotRuntime } from './runtime.js';
 import type {
   CopilotAuthOptions,
@@ -19,8 +18,7 @@ import type {
 import type { CopilotSearchOptions, SearchContext, SearchRuntime } from './search-types.js';
 import type { GuardSettings } from './guard-types.js';
 import { installAutoReviewRouting } from './auto-review.js';
-import { normalizeCopilotTemperature } from './temperature.js';
-import { normalizeCopilotResponsesStrict } from './strict.js';
+import { normalizeCopilotRequest } from './wire.js';
 import { createCatalogController } from './catalog-controller.js';
 import { createOpencodeCatalogController } from './opencode-controller.js';
 import { openCatalogStore } from './catalog-store.js';
@@ -77,6 +75,11 @@ type CredentialRef = Parameters<Parameters<OriginalAdapter['apply']>[0]['credent
 /** One settings snapshot per assembly: the guard never mixes configuration revisions. */
 function guardSettings(config: BetterCopilotConfig['toolSchema']): GuardSettings {
   return { providers: config.providers.get(), families: config.families.get(), logFixes: config.logFixes.get() };
+}
+
+/** Read the empty-text repair flags once per request, never per message. */
+function messageSettings(config: BetterCopilotConfig['messages']): { dropEmpty: boolean; logFixes: boolean } {
+  return { dropEmpty: config.dropEmpty.get(), logFixes: config.logFixes.get() };
 }
 
 /**
@@ -184,31 +187,51 @@ export function createPlugin(dependencies: BetterCopilotDependencies): BetterCop
         });
       }
 
-      // 2. Copilot tool defaults and Gemini guard: one contained wire transform. The
-      //    assembly waterfall no longer sees provider-owned declarations, so the
-      //    guard rewrites the serialized request at the boundary that measures
-      //    the defect. It is installed even when wire identity is opted out.
+      // 2. Copilot tool defaults, empty-turn repair and the Gemini guard: one
+      //    contained wire transform. The assembly waterfall no longer sees
+      //    provider-owned declarations, and a content-less retry turn survives in
+      //    the durable history, so both defects are rewritten in the serialized
+      //    request at the boundary that measures them. It is installed even when
+      //    wire identity is opted out, and it must stay the single body transform:
+      //    a second installer would replace this one.
       contain('tool-schema guard', 'Gemini tool-schema normalization', () => {
+        // Every stage shares one parse and at most one re-serialization. A stage
+        // whose settings group cannot be read is disabled on its own, so an
+        // unreadable group never takes the other stages down with it.
         const transform: CopilotRequestTransform = ({ url, body }) => {
-          let normalized: string | undefined;
+          let toolSchema: GuardSettings | undefined;
           try {
-            normalized = normalizeCopilotResponsesStrict(url, body);
-            normalized = normalizeCopilotTemperature(normalized ?? body, dependencies.catalog) ?? normalized;
+            toolSchema = guardSettings(config.toolSchema);
           } catch {
-            log('warn', 'better-copilot: skipped request defaults after an internal error');
+            log('warn', 'better-copilot: skipped tool-schema normalization after an internal error');
+          }
+          let dropEmpty = false;
+          let messageLogFixes = false;
+          try {
+            const messages = messageSettings(config.messages);
+            dropEmpty = messages.dropEmpty;
+            messageLogFixes = messages.logFixes;
+          } catch {
+            log('warn', 'better-copilot: skipped empty-message repair after an internal error');
           }
           try {
-            const settings = guardSettings(config.toolSchema);
-            const result = guardCopilotRequestBody(normalized ?? body, settings);
-            if (settings.logFixes) {
-              if (result.fixed.length > 0) log('info', 'better-copilot: added a properties bucket to %d tool schema(s) on the Copilot wire', result.fixed.length);
-              if (result.skipped.length > 0) log('warn', 'better-copilot: %s left %d tool schema(s) unchanged: %s', TOOL_SCHEMA_SKIPPED, result.skipped.length, JSON.stringify(result.skipped));
+            const result = normalizeCopilotRequest(url, body, {
+              catalog: dependencies.catalog,
+              toolSchema,
+              dropEmptyMessages: dropEmpty,
+            });
+            if (toolSchema?.logFixes === true) {
+              if (result.fixedTools.length > 0) log('info', 'better-copilot: added a properties bucket to %d tool schema(s) on the Copilot wire', result.fixedTools.length);
+              if (result.skippedTools.length > 0) log('warn', 'better-copilot: %s left %d tool schema(s) unchanged: %s', TOOL_SCHEMA_SKIPPED, result.skippedTools.length, JSON.stringify(result.skippedTools));
             }
-            return result.body ?? normalized;
+            if (messageLogFixes && result.droppedMessages > 0) {
+              log('info', 'better-copilot: dropped %d empty-text message(s) from the Copilot wire', result.droppedMessages);
+            }
+            return result.body;
           } catch {
-            // Guard failure never fails a call or discards a temperature fix.
+            // One contained failure leaves the request exactly as the adapter built it.
             log('warn', 'better-copilot: skipped one request after an internal error');
-            return normalized;
+            return undefined;
           }
         };
         ctx.effect(() => installCopilotRequestTransform(transform), 'copilot: tool-schema wire normalization');
