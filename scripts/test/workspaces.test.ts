@@ -246,7 +246,7 @@ test('root and every plugin use their own exact installed runtime and preserve e
     assert.equal(evaluatePluginCompatibility(manifest), undefined,
       manifest.name + ' must install on its own runtime without an exemption');
     if (path === 'packages/better-copilot') {
-      assert.equal(manifest.version, '0.5.7');
+      assert.equal(manifest.version, '0.5.8');
       assert.equal(manifest.devDependencies?.['@deepseek-ai/dsh-app-boot'], expected);
       assert.equal(manifest.devDependencies?.['@deepseek-ai/dsh-storage-json'], expected);
       assert.equal(manifest.peerDependencies?.['@earendil-works/pi-ai'], '^1.3.0');
