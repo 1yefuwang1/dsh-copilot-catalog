@@ -27,7 +27,7 @@ packages. Their behaviour is consolidated here; see the migration notes below.
 
 ## Compatibility
 
-- Better Copilot `0.5.7`: exact DSH and DSH peer packages `0.2.2-rc.5`.
+- Better Copilot `0.5.8`: exact DSH and DSH peer packages `0.2.2-rc.5`.
 - `@earendil-works/pi-ai`: peer `^1.3.0`, tested baseline `1.3.0`.
 - Zod: `4.6.6`.
 - DSH CLI/host runtime: Node.js `>=24.9.0`.
@@ -46,9 +46,9 @@ affiliated with GitHub, DeepSeek or the pi-ai maintainers.
 ## Installation
 
 Install or link this leaf package, not the monorepo root. Its package name is
-`dsh-better-copilot`. Version `0.5.7` targets exact DSH `0.2.2-rc.5` and is
+`dsh-better-copilot`. Version `0.5.8` targets exact DSH `0.2.2-rc.5` and is
 published through the package-specific staged release workflow; npm availability
-requires maintainer 2FA approval. `0.5.7` repairs the empty text turn Copilot's
+requires maintainer 2FA approval. `0.5.8` repairs the empty text turn Copilot's
 `chat/completions` route rejects and runs every wire stage over one parse;
 synthetic unit and real-DSH integration tests cover the repair, its composition
 and each stage's bound, but no live GUI or account testing is claimed. Until the
@@ -186,7 +186,7 @@ discovery. Cache and interval settings are volatile and affect the next refresh;
 disabling persistence does not delete previously saved records. A host restart
 is needed to load an updated plugin implementation, not to adopt a live catalog.
 
-`0.5.7` preserves all existing configuration, credential record keys and the
+`0.5.8` preserves all existing configuration, credential record keys and the
 persisted Copilot cache format; the new `messages` group defaults to repairing
 the wire. OpenCode Go records keep their `kind` discriminator inside the same
 version-1 cache envelope, so no migration or reset is required; the default
@@ -302,6 +302,15 @@ re-serialize at most once. Each stage keeps its own scope and body-size bound, a
 a settings group that cannot be read disables only its own stage. On a 2.52 MB
 request the pass costs 2.37 ms instead of 5.50 ms.
 
+The stages see the body however the caller encoded it. A call that passes a
+string `init.body` is rewritten in place. A call that passes one `Request` — the
+shape a fetch observer produces when it re-dispatches `fetch(url, init)` as
+`fetch(new Request(url, init))` — is read through a clone, and a rewrite is
+dispatched as a new `Request` built from the caller's one, so method, headers,
+signal and the caller's unread object survive. Bodies this transform cannot read
+(a stream, a `Blob`, a `FormData`, a bodyless or already-consumed request) and
+requests outside the trusted Copilot shape are delegated exactly as built.
+
 ## Empty-text repair
 
 `messages` repairs one defect that Copilot measures before it resolves a model.
@@ -331,6 +340,12 @@ a different, separately reported rejection, so it is left untouched. It also
 applies only to the Copilot route and the `chat/completions` surface — the
 Responses surface does not use a `messages` array, and a foreign provider body
 is never rewritten.
+
+The repair reads the request from either body encoding. A host that replaces
+`globalThis.fetch` with an observer and re-dispatches every call as one `Request`
+still reaches it, which is the shape DSH uses: `0.5.7` read only a string
+`init.body`, so the stage silently never ran and a poisoned transcript kept
+failing with the same 400.
 
 ## Subagent route badge (Web)
 

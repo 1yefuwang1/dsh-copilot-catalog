@@ -23,7 +23,7 @@ for the exact migration table.
 
 | Scope | Runtime baseline |
 | --- | --- |
-| Better Copilot `0.5.7` | Exact DSH and DSH peers `0.2.2-rc.5`; `@earendil-works/pi-ai` peer `^1.3.0`, tested baseline `1.3.0`; Zod `4.6.6` |
+| Better Copilot `0.5.8` | Exact DSH and DSH peers `0.2.2-rc.5`; `@earendil-works/pi-ai` peer `^1.3.0`, tested baseline `1.3.0`; Zod `4.6.6` |
 | Worktrees and root development SDK | DSH and DSH peers `0.2.2-rc.1`; unchanged by the Better Copilot migration |
 
 These are separate runtime baselines, not a claim that both plugins support the
@@ -217,16 +217,19 @@ A release selects **one package**, never the root or multiple packages at once:
 - `@1yefuwang1/dsh-worktrees-vX.Y.Z`
 
 The tag must match its leaf version and repository identity. `dsh-better-copilot` is
-`0.5.7`, prepared for exact DSH `0.2.2-rc.5`, pi-ai peer `^1.3.0`
+`0.5.8`, prepared for exact DSH `0.2.2-rc.5`, pi-ai peer `^1.3.0`
 (tested baseline `1.3.0`) and Zod `4.6.6`. It is published through the
 package-specific staged release workflow; npm availability requires maintainer
-2FA approval. `0.5.7` repairs the `chat/completions` request Copilot rejects when
+2FA approval. `0.5.8` repairs the `chat/completions` request Copilot rejects when
 a content-less retry turn is persisted and then serialized as an empty user
 content string, and runs every wire stage — Responses strictness, temperature
 omission, empty-text removal and tool-declaration defaults — over a single parse
-instead of one parse each. Synthetic unit and real-DSH integration tests cover
-the repair, its composition, and each stage's scope and body-size bound; no live
-GUI or account testing is claimed. It retains persistent account-scoped Copilot
+instead of one parse each. `0.5.8` also reads the request body from either a
+string `init.body` or a caller-supplied `Request`, so a host whose fetch observer
+re-dispatches every call as one Request reaches the same stages; `0.5.7` skipped
+them all for that shape. Synthetic unit and real-DSH integration tests cover both
+encodings, the repair itself, its composition, and each stage's scope and
+body-size bound; no live GUI or account testing is claimed. It retains persistent account-scoped Copilot
 catalogs, live registry refresh, native Responses search, wire identity, Gemini
 schema guarding, temperature normalization, builtin Auto review overrides and
 the read-only subagent route badge. Existing configuration, cache domain/version

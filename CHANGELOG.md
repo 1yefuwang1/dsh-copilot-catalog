@@ -1,5 +1,25 @@
 # Monorepo changelog
 
+## Better Copilot 0.5.8 — Request-carried request bodies reach the wire transform
+
+- The `0.5.7` empty-text repair was unreachable in a real DSH host. DSH's fetch
+  observer replaces `globalThis.fetch` and re-dispatches every call as one
+  `Request`, and the plugin's transform only read `init.body` when it was a
+  string, so `(Request, undefined)` skipped every body stage: empty-text removal,
+  the Gemini tool default, temperature omission and Responses strictness.
+  Identity headers kept working because they read the Request's headers, which
+  hid the gap: requests looked repaired-by-default until a poisoned transcript
+  hit the route.
+- The wrapper now reads the body from either encoding, cloning a Request-carried
+  body so the caller's object stays unread, and dispatches a rewrite as a new
+  `Request` built from the caller's one with fresh framing. Streams, `Blob`,
+  `FormData`, bodyless and consumed requests stay byte-identical.
+- Regression coverage: wrapper tests for both encodings plus an integration test
+  that mounts the plugin under an observer-style fetch and asserts a pi-ai stream
+  still emits a repaired body. That test fails against `0.5.7`.
+- `0.5.8` keeps every runtime baseline, configuration group, cache domain/version
+  and credential record key unchanged; no migration or reset is required.
+
 ## Better Copilot 0.5.7 — empty-text repair and a single-pass wire
 
 - Repair the `chat/completions` rejection that reports only

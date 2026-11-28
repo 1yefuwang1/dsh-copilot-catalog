@@ -6,12 +6,14 @@ import { test } from 'node:test';
 import {
   createCopilotWireIdentity,
   installCopilotIdentityHeaders,
+  installCopilotRequestTransform,
   isCopilotRequestPath,
   isTrustedCopilotUrl,
   machineIdFromMac,
   readStoredUuid,
   rewriteCopilotRequestHeaders,
   wireIdentityMode,
+  type CopilotRequestTransform,
   type CopilotWireIdentity,
 } from '../dist/identity.js';
 
@@ -311,6 +313,37 @@ async function withInstalled(
   }
 }
 
+async function withTransform(
+  fetcher: typeof fetch,
+  transform: CopilotRequestTransform,
+  operation: () => Promise<void>,
+): Promise<void> {
+  const original = globalThis.fetch;
+  globalThis.fetch = fetcher;
+  const release = installCopilotRequestTransform(transform);
+  try {
+    await operation();
+  } finally {
+    release();
+    globalThis.fetch = original;
+  }
+}
+
+const CHAT_URL = 'https://api.individual.githubcopilot.com/chat/completions';
+const EMPTY_TURN_BODY = JSON.stringify({
+  model: 'gemini-4-neon',
+  messages: [
+    { role: 'user', content: 'hi' },
+    { role: 'user', content: '' },
+    { role: 'user', content: 'continue' },
+  ],
+});
+const repairedBody = (body: string): string => {
+  const parsed = JSON.parse(body) as { messages: { role: string; content: string }[] };
+  parsed.messages = parsed.messages.filter(message => !(message.role === 'user' && message.content === ''));
+  return JSON.stringify(parsed);
+};
+
 test('installer rewrites string requests and preserves unrelated init fields', async () => {
   const { fetcher, captures } = capture();
   await withInstalled(fetcher, FULL, async () => {
@@ -568,4 +601,98 @@ test('non-Copilot, lookalike, and boundary-negative requests pass through', asyn
     assert.equal(sent.get('user-agent'), 'deepseek-harness/test');
     assert.equal(sent.get('x-stainless-lang'), 'js');
   }
+});
+
+test('a string init body is rewritten in place', async () => {
+  const { fetcher, captures } = capture();
+  const seen: string[] = [];
+  await withTransform(fetcher, ({ body }) => { seen.push(body); return repairedBody(body); }, async () => {
+    await globalThis.fetch(CHAT_URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body: EMPTY_TURN_BODY });
+  });
+  assert.deepEqual(seen, [EMPTY_TURN_BODY]);
+  const captured = captures[0]!;
+  assert.equal(captured.input, CHAT_URL);
+  assert.equal(captured.init?.body, repairedBody(EMPTY_TURN_BODY));
+});
+
+test('a Request-carried body reaches the transform and is re-framed for dispatch', async () => {
+  const { fetcher, captures } = capture();
+  const seen: string[] = [];
+  const request = new Request(CHAT_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'content-length': String(EMPTY_TURN_BODY.length), 'x-caller': 'kept' },
+    body: EMPTY_TURN_BODY,
+  });
+  await withTransform(fetcher, ({ body }) => { seen.push(body); return repairedBody(body); }, async () => {
+    await globalThis.fetch(request);
+  });
+  assert.deepEqual(seen, [EMPTY_TURN_BODY], 'the Request body must reach the transform');
+  assert.equal(captures[0]?.init, undefined, 'a rebuilt Request needs no init override');
+  const dispatched = captures[0]!.input;
+  assert.ok(dispatched instanceof Request, 'the rewrite must be dispatched as a Request');
+  assert.equal(dispatched.method, 'POST');
+  assert.equal(await dispatched.text(), repairedBody(EMPTY_TURN_BODY));
+  assert.equal(dispatched.headers.get('content-type'), 'application/json');
+  assert.equal(dispatched.headers.get('x-caller'), 'kept');
+  assert.equal(dispatched.headers.get('content-length'), null, 'stale framing must not survive a rewrite');
+  assert.equal(request.bodyUsed, false, 'the caller Request must stay unread and reusable');
+});
+
+test('an unchanged Request body is delegated as the caller Request', async () => {
+  const { fetcher, captures } = capture();
+  const request = new Request(CHAT_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{"messages":[{"role":"user","content":"hi"}]}',
+  });
+  await withTransform(fetcher, () => undefined, async () => {
+    await globalThis.fetch(request);
+  });
+  const captured = captures[0]!;
+  assert.equal(captured.input, request, 'an unchanged body must keep the caller Request identity');
+  assert.equal(captured.init?.body, undefined);
+  assert.equal(new Headers(captured.init?.headers).get('content-type'), 'application/json');
+});
+
+test('a Request without a body or outside the trusted path is never read', async () => {
+  const { fetcher, captures } = capture();
+  let calls = 0;
+  await withTransform(fetcher, () => { calls += 1; return undefined; }, async () => {
+    await globalThis.fetch(new Request(CHAT_URL, { method: 'GET' }));
+    await globalThis.fetch(new Request('https://example.test/chat/completions', { method: 'POST', body: EMPTY_TURN_BODY }));
+    await globalThis.fetch(new Request('https://api.individual.githubcopilot.com/unrelated', { method: 'POST', body: EMPTY_TURN_BODY }));
+  });
+  assert.equal(calls, 0, 'no body the transform can read may be turned into a rewrite');
+  assert.equal(captures.length, 3);
+  // A trusted GET still receives the identity header override and no body override.
+  assert.equal(captures[0]!.input instanceof Request, true);
+  assert.equal(captures[0]!.init?.body, undefined);
+  // Requests outside the trusted shape are delegated byte-identically, init and all.
+  assert.equal(captures[1]!.init, undefined);
+  assert.equal(captures[2]!.init, undefined);
+  assert.equal(captures[1]!.input instanceof Request, true);
+  assert.equal(await (captures[1]!.input as Request).text(), EMPTY_TURN_BODY);
+});
+
+test('a transform failure delegates the caller Request once', async () => {
+  const { fetcher, captures } = capture();
+  const request = new Request(CHAT_URL, { method: 'POST', body: EMPTY_TURN_BODY });
+  await withTransform(fetcher, () => { throw new Error('synthetic transform failure'); }, async () => {
+    await globalThis.fetch(request);
+  });
+  assert.equal(captures.length, 1, 'a failed rewrite is never retried');
+  assert.equal(captures[0]!.input, request);
+  assert.equal(request.bodyUsed, false);
+});
+
+test('a Request with a consumed body is delegated untouched', async () => {
+  const { fetcher, captures } = capture();
+  const request = new Request(CHAT_URL, { method: 'POST', body: EMPTY_TURN_BODY });
+  await request.text();
+  let calls = 0;
+  await withTransform(fetcher, () => { calls += 1; return undefined; }, async () => {
+    await globalThis.fetch(request);
+  });
+  assert.equal(calls, 0);
+  assert.equal(captures[0]!.input, request);
 });

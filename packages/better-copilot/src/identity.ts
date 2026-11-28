@@ -212,6 +212,11 @@ type Fetch = typeof globalThis.fetch;
  *
  * Returning a string replaces the body; `undefined` keeps it byte-identical.
  * A throw is contained like every other pre-dispatch normalization failure.
+ *
+ * The transform receives the body whatever encoding the caller used: a string
+ * `init.body`, or the body a single `Request` argument carries. A transport that
+ * normalizes every call into a `Request` (as a fetch observer does) leaves no
+ * `init` at all, so reading only `init.body` would silently skip every stage.
  */
 export type CopilotRequestTransform = (request: { readonly url: URL; readonly body: string }) => string | undefined;
 
@@ -248,8 +253,22 @@ function effectiveHeaders(input: RequestInfo | URL, init?: RequestInit): Headers
   return new Headers();
 }
 
+/**
+ * Read the serialized body a Fetch call carries, whichever way it was encoded.
+ *
+ * `init.body` covers the SDK-shaped call. A single `Request` argument covers a
+ * transport that normalizes calls itself; its body must be cloned so the caller's
+ * Request stays undelivered and unread. Everything else has no body this
+ * transform can read: a stream, a `Blob`, a `FormData`, or a GET.
+ */
+async function requestBodyText(input: RequestInfo | URL, init?: RequestInit): Promise<string | undefined> {
+  if (typeof init?.body === 'string') return init.body;
+  if (!(input instanceof Request) || input.body === null || input.bodyUsed) return undefined;
+  return input.clone().text();
+}
+
 function createWrapper(state: ControllerState, downstream: Fetch): Fetch {
-  const wrapper: Fetch = (input, init) => {
+  const wrapper: Fetch = async (input, init) => {
     // Cached SDK clients may still call this wrapper after the last release.
     if (!state.active) return downstream(input, init);
     let url: URL;
@@ -260,15 +279,22 @@ function createWrapper(state: ControllerState, downstream: Fetch): Fetch {
       if (!isTrustedCopilotUrl(url) || !isCopilotRequestPath(url.pathname)) return downstream(input, init);
       headers = effectiveHeaders(input, init);
       if (state.identity !== null) rewriteCopilotRequestHeaders(url, headers, state.identity);
-      if (state.transform !== null && typeof init?.body === 'string') {
-        body = state.transform({ url, body: init.body });
-        // A replaced body usually changes length, so its framing cannot be reused.
-        if (body !== undefined) { headers.delete('content-length'); headers.delete('transfer-encoding'); }
+      if (state.transform !== null) {
+        const original = await requestBodyText(input, init);
+        if (original !== undefined && original.length > 0) {
+          body = state.transform({ url, body: original });
+          // A replaced body usually changes length, so its framing cannot be reused.
+          if (body !== undefined) { headers.delete('content-length'); headers.delete('transfer-encoding'); }
+        }
       }
     } catch {
       // Only pre-dispatch normalization failures are fail-open; the request is
       // delegated once and its eventual rejection is never caught or retried.
       return downstream(input, init);
+    }
+    if (body !== undefined && input instanceof Request && typeof init?.body !== 'string') {
+      // The body lives on the Request, so only a new Request can carry the rewrite.
+      return downstream(new Request(input, { ...init, headers, body }));
     }
     return downstream(input, body === undefined ? { ...init, headers } : { ...init, headers, body });
   };
@@ -308,9 +334,11 @@ export function installCopilotIdentityHeaders(identity: CopilotWireIdentity = cr
  *
  * It shares the header interceptor's controller, trust checks and release
  * discipline, so both halves are installed once and released independently. A
- * body is normalized only when the request is a trusted Copilot inference call
- * and the caller passes a serialized string body; every other shape is
- * delegated untouched.
+ * body is normalized only when the request is a trusted Copilot inference call,
+ * and the body is read from either a string `init.body` or the `Request` the
+ * caller passed; every other shape is delegated untouched. A rewrite of a
+ * Request-carried body is dispatched as a new Request built from the caller's
+ * one, so method, signal and unread caller state survive.
  */
 export function installCopilotRequestTransform(transform: CopilotRequestTransform): () => void {
   return install({ transform });

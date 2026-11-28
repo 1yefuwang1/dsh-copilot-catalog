@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.5.8 — Request-carried bodies reach the wire transform
+
+- Fix the defect that made `0.5.7`'s empty-turn repair unreachable in a real DSH
+  host. The wire transform only read `init.body` when it was a string, but DSH's
+  fetch observer replaces `globalThis.fetch` and re-dispatches every call as a
+  single `Request`, so the transform saw `(Request, undefined)` and skipped every
+  body stage: empty-text removal, the Gemini tool default, temperature omission
+  and Responses strictness. Identity headers still applied, because they read the
+  Request's headers, which is why the failure looked like a repair that did not
+  work rather than a stage that never ran.
+- Read the body from either encoding: `init.body` when it is a string, otherwise
+  the body of the caller's `Request`, cloned so the caller's object stays unread
+  and reusable. A rewrite of a Request-carried body is dispatched as a new
+  `Request` built from the caller's one, preserving method, headers, signal and
+  all other init state; `content-length` and `transfer-encoding` are dropped so
+  the new body is framed by fetch. Non-string bodies (streams, `Blob`,
+  `FormData`), bodyless requests, consumed bodies and untrusted shapes are
+  delegated exactly as before.
+- Add wrapper tests for the string and Request encodings, unchanged bodies,
+  untrusted and bodyless requests, a consumed body, and a throwing transform, plus
+  one integration test that reproduces the real order: the plugin mounts first,
+  an observer-style fetch replaces `globalThis.fetch`, and a pi-ai stream must
+  still emit a wire body without the empty turn. That test fails against 0.5.7.
+
 ## 0.5.7 — empty-text turn repair and a single-pass wire
 
 - Repair the Copilot `chat/completions` rejection that reports only

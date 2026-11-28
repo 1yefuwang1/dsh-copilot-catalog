@@ -1,6 +1,6 @@
 {
   "name": "dsh-better-copilot",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "description": "Account-aware GitHub Copilot model discovery, Copilot-compatible wire identity, native Responses web search and a Copilot Gemini tool-declaration guard in one DeepSeek Harness plugin.",
   "type": "module",
   "main": "./dist/index.js",

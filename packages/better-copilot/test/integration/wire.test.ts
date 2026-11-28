@@ -5,7 +5,7 @@ import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.l
 import { normalizeContext } from '@earendil-works/pi-ai/utils/transcript';
 import { selectAccountModels } from '../../dist/catalog.js';
 import { accountItem } from '../catalog-helpers.js';
-import { normalizeToolSchemas } from '../../dist/index.js';
+import { normalizeCopilotMessages, normalizeToolSchemas } from '../../dist/index.js';
 import * as fixtures from '../guard-fixtures.js';
 import { normalizeCopilotTemperature, withCopilotTemperatureSupport } from '../../dist/temperature.js';
 import { installCopilotRequestTransform } from '../../dist/identity.js';
@@ -150,4 +150,45 @@ test('discovered Responses models serialize strict: false rather than omitting s
   assert.ok(capturedBody?.tools?.length === 1);
   assert.equal(capturedBody!.tools![0]!.strict, false);
   assert.deepEqual(capturedBody!.tools![0]!.parameters?.required, ['code']);
+});
+
+test('an observer-style transport that rebuilds calls into Requests still gets the empty turn repaired', async () => {
+  // The real DSH order: the plugin wraps globalThis.fetch at mount, then a fetch
+  // observer replaces globalThis.fetch and re-dispatches every call as one
+  // Request. The plugin therefore sees `(Request)` and no `init` at all.
+  const originalFetch = globalThis.fetch;
+  const dispatched: string[] = [];
+  globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    dispatched.push(input instanceof Request ? await input.text() : String(init?.body));
+    return new Response(SSE, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  };
+  const release = installCopilotRequestTransform(({ body }) =>
+    normalizeCopilotMessages(new URL('https://api.individual.githubcopilot.com/chat/completions'), body).body);
+  const observed: typeof fetch = async (input, init) => {
+    const request = new Request(input, init);
+    return globalThis.fetch(request);
+  };
+  try {
+    assert.equal(globalThis.fetch === observed, false);
+    const context = normalizeContext({
+      messages: [
+        { role: 'user', content: 'hi', timestamp: 0 },
+        { role: 'user', content: '', timestamp: 0 },
+        { role: 'user', content: 'continue', timestamp: 0 },
+      ],
+    });
+    const model = { ...MODEL, baseUrl: 'https://api.individual.githubcopilot.com' } as unknown as StreamArgs[0];
+    const stream = openAICompletionsApi().stream(model, context, { apiKey: 'unused', fetch: observed });
+    try { for await (const _chunk of stream) { /* drain the synthetic stream */ } } catch { /* the dispatched body is the assertion */ }
+  } finally {
+    release();
+    globalThis.fetch = originalFetch;
+  }
+  assert.equal(dispatched.length, 1, 'the observer must dispatch exactly one model request');
+  const wire = JSON.parse(dispatched[0]!) as { messages: { role: string; content: unknown }[] };
+  assert.deepEqual(
+    wire.messages.filter(message => message.role === 'user').map(message => message.content),
+    ['hi', 'continue'],
+    'the empty retry turn must not reach the Copilot wire through a Request-carried body',
+  );
 });
